@@ -8,6 +8,7 @@ A single `settings` instance is exported and shared across the application.
 """
 
 import logging
+import os
 from typing import Optional
 
 from pydantic import Field, model_validator
@@ -83,6 +84,13 @@ class Settings(BaseSettings):
 # Singleton instance — import this everywhere in the application
 # ---------------------------------------------------------------------------
 settings = Settings()
+
+# Export tracing and API keys to os.environ so LangChain/LangSmith SDKs pick them up
+os.environ["LANGCHAIN_TRACING_V2"] = str(settings.LANGCHAIN_TRACING_V2).lower()
+os.environ["LANGCHAIN_PROJECT"] = settings.LANGCHAIN_PROJECT
+if settings.LANGCHAIN_API_KEY:
+    os.environ["LANGCHAIN_API_KEY"] = settings.LANGCHAIN_API_KEY
+os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
 
 logger.info(
     "Configuration loaded successfully. "

@@ -19,9 +19,13 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
+from langsmith import traceable
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from app.models.state import AgentState
@@ -38,7 +42,6 @@ _LLM = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0,
     api_key=settings.OPENAI_API_KEY,
-    model_kwargs={"response_format": {"type": "json_object"}},
 )
 
 # ---------------------------------------------------------------------------
@@ -52,13 +55,13 @@ _SYSTEM_PROMPT = (
     "Do not hallucinate indicators not present in the data. "
     "\n\n"
     "Respond with valid JSON matching this exact schema:\n"
-    "{\n"
+    "{{\n"
     '  "attack_classification": "APT" | "RANSOMWARE" | "INSIDER" | "DDOS" | "UNKNOWN",\n'
     '  "classification_confidence": <float 0.0–1.0>,\n'
     '  "triage_summary": "<2-3 sentence human-readable assessment>",\n'
     '  "escalate_to_human": <true|false>,\n'
     '  "reasoning": "<brief explanation of your classification decision>"\n'
-    "}"
+    "}}"
 )
 
 # ---------------------------------------------------------------------------
@@ -66,22 +69,13 @@ _SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 
-def _build_context(attack_window: dict, top_ips: list[dict]) -> str:
+def _build_sanitized_context(attack_window: dict, top_ips: list[dict]) -> str:
     """
-    Construct a human-readable context paragraph from raw Splunk stats.
-
-    This string is injected as the user message to the LLM.  Formatting it
-    clearly helps the model parse the data without ambiguity.
-
-    Args:
-        attack_window: Dict returned by SplunkClient.get_attack_window().
-        top_ips:       List returned by SplunkClient.get_top_source_ips().
-
-    Returns:
-        Formatted multi-line string ready to be used as an LLM user message.
+    Construct a sanitized context string for the LLM that omits specific IP 
+    addresses to comply with security tracing requirements.
     """
-    ip_lines = "\n".join(
-        f"  {i + 1}. {row['ip']}  →  {row['event_count']:,} events"
+    ip_stats = "\n".join(
+        f"  - Source IP #{i + 1}  →  {row['event_count']:,} events"
         for i, row in enumerate(top_ips)
     ) or "  (no source IPs found)"
 
@@ -93,11 +87,10 @@ def _build_context(attack_window: dict, top_ips: list[dict]) -> str:
         f"({attack_window.get('peak_count', 0):,} events)\n"
         f"  Total events   : {attack_window.get('total_events', 0):,}\n"
         f"\n"
-        f"=== TOP SOURCE IPs BY EVENT COUNT ===\n"
-        f"{ip_lines}\n"
+        f"=== TOP SOURCE IP STATISTICS ===\n"
+        f"{ip_stats}\n"
         f"\n"
-        f"Dataset: BOTS v3 (Boss of the SOC v3) — a realistic APT attack scenario "
-        f"with 2,083,056 events across 107 sourcetypes.\n"
+        f"Dataset: BOTS v3 (Boss of the SOC v3) — a realistic APT attack scenario.\n"
     )
 
 
@@ -155,6 +148,11 @@ def _parse_llm_response(raw: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+@traceable(
+    name="TriageAgent",
+    run_type="chain",
+    tags=["triage", "splunk-sentinel"],
+)
 async def triage_agent(state: AgentState) -> AgentState:
     """
     LangGraph node — TriageAgent.
@@ -209,18 +207,30 @@ async def triage_agent(state: AgentState) -> AgentState:
         top_ips = []
 
     # ── Step 3: Build LLM context ───────────────────────────────────────────
-    context = _build_context(attack_window, top_ips)
+    context = _build_sanitized_context(attack_window, top_ips)
     logger.debug("[%s] LLM context:\n%s", investigation_id, context)
 
-    # ── Step 4: Call gpt-4o-mini ────────────────────────────────────────────
+    # ── Step 4: Call gpt-4o-mini (Traced) ──────────────────────────────────
     try:
-        messages = [
-            SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(content=context),
-        ]
-        response = await _LLM.ainvoke(messages)
-        raw_content: str = response.content if hasattr(response, "content") else str(response)
-        logger.debug("[%s] Raw LLM response: %r", investigation_id, raw_content[:300])
+        # Use RunnableSequence for LangSmith named span
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", _SYSTEM_PROMPT),
+            ("user", "{context}"),
+        ])
+        
+        chain = (prompt | _LLM | JsonOutputParser()).with_config({
+            "run_name": "triage_llm_call",
+            "metadata": {
+                "investigation_id": investigation_id,
+                "attack_window_start": attack_window.get("start"),
+                "attack_window_end": attack_window.get("end"),
+                "attack_window_peak": attack_window.get("peak_hour"),
+                "top_source_ip_count": len(top_ips),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        })
+        
+        parsed = await chain.ainvoke({"context": context})
     except Exception as exc:
         logger.error("[%s] LLM call failed: %s", investigation_id, exc)
         return {
@@ -232,10 +242,8 @@ async def triage_agent(state: AgentState) -> AgentState:
             "spl_audit_log": list(state.get("spl_audit_log", [])) + splunk.audit_log,
         }
 
-    # ── Step 5: Parse LLM response ──────────────────────────────────────────
-    parsed = _parse_llm_response(raw_content)
-
-    # ── Step 6: Enforce escalation threshold ────────────────────────────────
+    # ── Step 5: Enforce escalation threshold ────────────────────────────────
+    # (LLM response already parsed into dict by JsonOutputParser)
     parsed["escalate_to_human"] = parsed["classification_confidence"] < 0.5
 
     if parsed["escalate_to_human"]:
