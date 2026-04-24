@@ -92,7 +92,10 @@ async def _stream_investigation(initial_state: AgentState) -> AsyncGenerator[dic
         final_state: AgentState = {}
 
         # LangGraph's astream yields intermediate state dicts per node
-        async for chunk in compiled_graph.astream(initial_state):
+        async for chunk in compiled_graph.astream(
+            initial_state, 
+            config={"run_name": "Triage Agent"}
+        ):
             for node_name, node_state in chunk.items():
                 logger.info(
                     "[%s] SSE progress: node '%s' completed.",
@@ -196,7 +199,10 @@ async def investigate(request: Request, body: InvestigateRequest):
 
     # Non-streaming path: await full graph execution
     try:
-        final_state: AgentState = await compiled_graph.ainvoke(initial_state)
+        final_state: AgentState = await compiled_graph.ainvoke(
+            initial_state,
+            config={"run_name": "Triage Agent"}
+        )
     except Exception as exc:
         logger.error(
             "Graph execution failed | id=%s | error=%s",
