@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.env
+*.env
+
+# Logs
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.deepeval/
+
+# LangSmith / LangChain
+.langchain/
+
+# Node / Frontend
+node_modules/
+dist/
+.next/
+coverage/
+
+# Splunk
+*.tgz
+*.spl
+
+# Secrets & Certs
+*.pem
+*.key
+*.cert
+secrets.json
+
+# OS
+desktop.ini
+
+# Do NOT ignore important project files
+!requirements.txt
+!.env.example
+!README.md
+!**/*.py
