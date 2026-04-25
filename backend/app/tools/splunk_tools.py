@@ -33,6 +33,20 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="splunk-worker"
 
 AUDIT_LOG_PATH = Path("logs") / "spl_audit.log"
 
+# Singleton instance — use get_splunk_client() to access
+_splunk_client_instance: SplunkClient | None = None
+
+
+def get_splunk_client() -> SplunkClient:
+    """
+    Singleton provider for the SplunkClient.
+    Ensures the service connection is only established once per lifecycle.
+    """
+    global _splunk_client_instance
+    if _splunk_client_instance is None:
+        _splunk_client_instance = SplunkClient()
+    return _splunk_client_instance
+
 
 class SplunkClient:
     """
@@ -197,112 +211,65 @@ class SplunkClient:
         return results
 
     async def get_attack_window(self) -> dict:
-        """
-        Determine the temporal scope of the attack stored in botsv3.
-
-        Runs an SPL that buckets events by hour, then identifies:
-        - ``start``       — earliest hour with events
-        - ``end``         — latest hour with events
-        - ``peak_hour``   — the hour with the highest event count
-        - ``peak_count``  — event count in the peak hour
-        - ``total_events``— total events across the dataset
-
-        Returns:
-            Dict with keys: start, end, peak_hour, peak_count, total_events.
-            Returns a safe default dict on failure (so the graph keeps running).
-        """
+        """Get the time range and peak activity window from botsv3."""
         spl = (
-            "index=botsv3 earliest=0"
-            " | bucket _time span=1h"
-            " | stats count by _time"
-            " | sort _time"
-            " | eval hour=strftime(_time, \"%Y-%m-%d %H:00\")"
-            " | table hour, count"
+            "index=botsv3 earliest=0 "
+            "| bucket _time span=1h "
+            "| stats count by _time "
+            "| sort _time "
+            "| eval hour=strftime(_time, \"%Y-%m-%d %H:00\") "
+            "| table hour, count "
+            "| head 1000"
         )
         try:
-            rows = await self.run_search(spl, earliest="0", latest="now", max_results=10_000)
-        except Exception as exc:
-            logger.error("get_attack_window failed: %s", exc)
+            results = await self.run_search(spl)
+            if not results:
+                return {
+                    "start": "unknown", "end": "unknown",
+                    "peak_hour": "unknown", "peak_count": 0,
+                    "total_events": 0
+                }
+            hours = [r["hour"] for r in results if "hour" in r]
+            counts = [int(r.get("count", 0)) for r in results]
+            total = sum(counts)
+            peak_idx = counts.index(max(counts)) if counts else 0
             return {
-                "start": "unknown",
-                "end": "unknown",
-                "peak_hour": "unknown",
-                "peak_count": 0,
-                "total_events": 0,
+                "start": hours[0] if hours else "unknown",
+                "end": hours[-1] if hours else "unknown",
+                "peak_hour": hours[peak_idx] if hours else "unknown",
+                "peak_count": max(counts) if counts else 0,
+                "total_events": total
             }
-
-        if not rows:
-            logger.warning("get_attack_window: no rows returned from Splunk.")
+        except Exception as e:
+            logger.error(f"get_attack_window failed: {e}")
             return {
-                "start": "unknown",
-                "end": "unknown",
-                "peak_hour": "unknown",
-                "peak_count": 0,
-                "total_events": 0,
+                "start": "unknown", "end": "unknown",
+                "peak_hour": "unknown", "peak_count": 0,
+                "total_events": 0
             }
-
-        hours: list[str] = []
-        counts: list[int] = []
-        for row in rows:
-            hour = row.get("hour") or row.get("_time", "")
-            try:
-                count = int(row.get("count", 0))
-            except (ValueError, TypeError):
-                count = 0
-            hours.append(str(hour))
-            counts.append(count)
-
-        total_events = sum(counts)
-        peak_idx = counts.index(max(counts)) if counts else 0
-
-        return {
-            "start": hours[0] if hours else "unknown",
-            "end": hours[-1] if hours else "unknown",
-            "peak_hour": hours[peak_idx] if hours else "unknown",
-            "peak_count": counts[peak_idx] if counts else 0,
-            "total_events": total_events,
-        }
 
     async def get_top_source_ips(self, top_n: int = 10) -> list[dict]:
-        """
-        Retrieve the top source IP addresses by event count from botsv3.
-
-        Uses the ``src`` field which is the canonical Splunk CIM field for
-        source address.  Falls back to ``src_ip`` if ``src`` is unavailable.
-
-        Args:
-            top_n: Number of top IPs to return (default 10).
-
-        Returns:
-            List of dicts with keys ``ip`` and ``event_count``,
-            sorted descending by event_count.
-            Returns an empty list on failure (graceful degradation).
-        """
+        """Get top source IPs by event count across all sourcetypes."""
         spl = (
-            f"index=botsv3 earliest=0"
-            f" | stats count as event_count by src_ip"
-            f" | where isnotnull(src_ip)"
-            f" | sort -event_count"
-            f" | head {top_n}"
-            f" | rename src_ip as ip"
+            "index=botsv3 earliest=0 "
+            "| stats count as event_count by src_ip "
+            "| where isnotnull(src_ip) AND src_ip != \"\" "
+            "| sort -event_count "
+            f"| head {top_n}"
         )
         try:
-            rows = await self.run_search(spl, earliest="0", latest="now", max_results=top_n)
-        except Exception as exc:
-            logger.error("get_top_source_ips failed: %s", exc)
+            results = await self.run_search(spl)
+            return [
+                {
+                    "ip": r.get("src_ip", "unknown"),
+                    "event_count": int(r.get("event_count", 0))
+                }
+                for r in results
+                if r.get("src_ip")
+            ]
+        except Exception as e:
+            logger.error(f"get_top_source_ips failed: {e}")
             return []
-
-        results: list[dict] = []
-        for row in rows:
-            ip = row.get("ip") or row.get("src") or "unknown"
-            try:
-                count = int(row.get("event_count", 0))
-            except (ValueError, TypeError):
-                count = 0
-            results.append({"ip": str(ip), "event_count": count})
-
-        logger.info("get_top_source_ips: found %d IPs", len(results))
-        return results
 
     async def write_notable_event(
         self,

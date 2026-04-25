@@ -109,13 +109,7 @@ def _build_graph() -> StateGraph:
 
     # ── Wire edges ───────────────────────────────────────────────────────────
     graph.add_edge(START, "triage_agent")
-
-    graph.add_conditional_edges(
-        "triage_agent",
-        _route_after_triage,
-        # Explicit map tells LangGraph which node names are reachable
-        {END: END},
-    )
+    graph.add_edge("triage_agent", END)
 
     return graph
 

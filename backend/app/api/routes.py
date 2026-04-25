@@ -216,10 +216,13 @@ async def investigate(request: Request, body: InvestigateRequest):
         ) from exc
 
     logger.info(
-        "Investigation complete | id=%s | classification=%s | confidence=%.2f",
-        investigation_id,
-        final_state.get("attack_classification"),
-        final_state.get("classification_confidence", 0.0),
+        f"Investigation complete | "
+        f"id={final_state['investigation_id']} | "
+        f"classification={final_state.get('attack_classification')} | "
+        f"confidence={final_state.get('classification_confidence', 0.0):.2f} | "
+        f"window={final_state.get('attack_window', {}).get('start')} "
+        f"to {final_state.get('attack_window', {}).get('end')} | "
+        f"source_ips={len(final_state.get('top_source_ips', []))}"
     )
     return JSONResponse(content=final_state)
 

@@ -35,7 +35,6 @@ BLOCKED_KEYWORDS: list[str] = [
     "drop index",
     "| truncate",
     "| outputlookup overwrite=true",
-    "index=_",          # prevent querying Splunk internal indexes
     "| sendemail",
     "| script",
 ]
@@ -68,15 +67,14 @@ def _layer2_index_check(spl: str) -> str | None:
     """
     Return the first non-permitted index name found in *spl*, or None.
 
-    This is Layer 2 of the guardrail — it ensures agents can only query
-    the BOTS v3 dataset and never touch production indexes.
+    Uses a regex to extract all index= values and rejects any that are
+    not the permitted botsv3 index.
     """
-    matches = _INDEX_PATTERN.findall(spl)
-    for index_name in matches:
-        # Strip any surrounding quotes that may appear in SPL
-        clean_name = index_name.strip("\"'")
-        if clean_name.lower() != PERMITTED_INDEX.lower():
-            return clean_name
+    index_matches = re.findall(r'index\s*=\s*([^\s|]+)', spl, re.IGNORECASE)
+    for idx in index_matches:
+        idx_clean = idx.strip().strip('"').strip("'")
+        if idx_clean.lower() != PERMITTED_INDEX.lower():
+            return idx_clean
     return None
 
 

@@ -136,6 +136,16 @@ class AgentState(TypedDict, total=False):
     The graph routes to END when this is not None.
     """
 
+    # ── Triage Rich Context ───────────────────────────────────────────────────
+    sourcetype_distribution: list[dict]
+    """Top 15 sourcetypes by event count."""
+
+    auth_failures: list[dict]
+    """Top 10 authentication failures (EventCode 4625) by src_ip and Account_Name."""
+
+    external_ips: list[dict]
+    """Top 5 external source IPs in stream:http traffic."""
+
     # ── Audit trail ───────────────────────────────────────────────────────────
     spl_audit_log: list[str]
     """
