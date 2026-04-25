@@ -51,7 +51,14 @@ class TriageResult(BaseModel):
     classification_confidence: float = Field(ge=0.0, le=1.0)
     triage_summary: str
     escalate_to_human: bool
-    key_indicators: list[str]
+    key_indicators: list[str] = Field(
+        min_length=1,
+        description="3-5 specific evidence items from telemetry. Must include "
+                    "at least one of: specific IP addresses observed, specific "
+                    "process names with counts, specific EventCode numbers with "
+                    "counts, specific URI paths, or specific DNS query patterns. "
+                    "Never empty. Never generic statements."
+    )
 
     @field_validator("triage_summary")
     @classmethod
@@ -110,12 +117,22 @@ _SYSTEM_PROMPT = (
     "- EventCode=4688 shows WMIC.exe, cmd.exe, reg.exe spawning at volume.\n"
     "- Combined with network filtering events (5156/5157).\n"
     "- stream:dns shows unusual query patterns alongside process execution.\n\n"
-    "CLASSIFY AS BRUTE_FORCE ONLY if:\n"
-    "- EventCode=4625 count exceeds 50 events.\n"
-    "- If count is below 20, do NOT classify as BRUTE_FORCE regardless of "
-    "trigger text \u2014 explicitly state: 'Telemetry does not confirm brute "
-    "force pattern in this dataset. Classification based on available "
-    "process and network evidence only.'\n\n"
+    "HARD CONSTRAINT — BRUTE_FORCE CLASSIFICATION:\n"
+    "This constraint applies ONLY when the trigger explicitly mentions "
+    "brute force, failed logins, password spray, credential stuffing, "
+    "or authentication attacks.\n\n"
+    "If AND ONLY IF the trigger is about authentication/brute force AND "
+    "the EventCode 4625 total count returned by telemetry is BELOW 20:\n"
+    "  - You MUST NOT classify as BRUTE_FORCE\n"
+    "  - You MUST classify as UNKNOWN\n"
+    "  - Your triage_summary MUST state the actual 4625 count and that "
+    "it is below the minimum threshold\n"
+    "  - escalate_to_human must be True\n\n"
+    "For ALL OTHER trigger types (APT, ransomware, lateral movement, "
+    "insider threat, web attacks), the EventCode 4625 count is "
+    "IRRELEVANT to your classification decision. Do not mention the "
+    "brute force threshold in summaries for non-authentication triggers. "
+    "Classify based on the actual attack evidence present in the telemetry.\n\n"
     "CLASSIFY AS UNKNOWN only when:\n"
     "- Fewer than 3 of the above signals are present.\n"
     "- Confidence must be set below 0.4.\n"
@@ -126,9 +143,19 @@ _SYSTEM_PROMPT = (
     "- WinEventLog:Security \u2192 EventCode, New_Process_Name (4688), "
     "Account_Name (4625)\n"
     "- EventCode counts: 5156=11501, 4689=7446, 4688=7427, 4673=4122\n\n"
-    "Populate key_indicators with the specific data points (IPs, EventCodes, "
-    "timestamps, counts) that most strongly support your classification. "
-    "Be precise \u2014 cite actual values from the telemetry."
+    "Populate key_indicators with 3-5 specific items of telemetry evidence. "
+    "Each item must be a concrete data point from the Splunk queries, not "
+    "a generic observation.\n"
+    "CORRECT examples:\n"
+    "- \"EventCode 4688: WMIC.exe spawned 536 times\"\n"
+    "- \"Top source IP 172.16.0.178 with 99794 events (RFC1918 internal)\"\n"
+    "- \"AWS metadata service 169.254.169.254 queried 11 times via stream:http\"\n"
+    "- \"EventCode 4625: 6 failed logons across 4 accounts\"\n"
+    "- \"stream:dns: 20 long-query DNS entries (len > 40 chars) detected\"\n\n"
+    "INCORRECT examples (do not use):\n"
+    "- \"Unusual process execution detected\"\n"
+    "- \"Network anomaly observed\"\n"
+    "- \"Authentication failure present\""
 )
 
 # ---------------------------------------------------------------------------
@@ -195,6 +222,8 @@ _WEB_QUERIES: list[str] = [
 _LATERAL_KEYWORDS = {
     "ransomware", "lateral", "smb", "wmic", "process", "execution",
     "shadow copy", "persistence", "registry", "malware", "infection",
+    "insider", "privileged", "abuse", "account", "permission", "privilege",
+    "internal user", "file access",
 }
 _LATERAL_QUERIES: list[str] = [
     # All process creation — full execution picture
@@ -284,12 +313,45 @@ def _select_dynamic_queries(trigger: str) -> tuple[list[str], str]:
     return list(dict.fromkeys(extra_queries)), "+".join(labels) if labels else "GENERIC"
 
 
+# Attack signal keywords for trigger quality check
+_HIGH_SIGNAL_KEYWORDS = {
+    "attack", "exploit", "malware", "ransomware", "lateral", "credential",
+    "exfiltration", "brute force", "bruteforce", "injection", "scanning",
+    "privilege", "suspicious", "unauthorized", "compromise", "breach",
+    "threat", "apt", "ssrf", "c2", "beacon", "tunnel", "metadata",
+    "shadow copy", "wmic", "cmd.exe", "reg.exe", "powershell", "phishing",
+    "insider", "privileged", "file access", "svchost", "spawning",
+    "execution chain", "parent process", "non-standard", "process creation",
+    "credential theft", "iam", "ec2", "exfiltrat", "encrypt", "ransom",
+    "lateral movement", "command and control", "dns tunnel", "data exfil",
+    "escalation", "privilege escalation", "mass file", "permission change",
+    "eventcode", "4625", "4673", "4688", "4672", "4670",
+}
+
+
+def _is_low_signal_trigger(trigger: str) -> bool:
+    """
+    Returns True if the trigger contains fewer than 2 attack-signal 
+    keywords AND is shorter than 20 words. Pure Python — no LLM.
+    """
+    trigger_lower = trigger.lower()
+    word_count = len(trigger.split())
+    
+    matched = sum(
+        1 for kw in _HIGH_SIGNAL_KEYWORDS 
+        if kw in trigger_lower
+    )
+    
+    return matched < 2 and word_count < 20
+
+
 def apply_escalation_guardrail(result: TriageResult) -> TriageResult:
     """
     Enforces post-processing safety guardrails:
     1. CRITICAL severity always forces escalation.
     2. UNKNOWN classification with low confidence always forces escalation.
-    3. Confidence is capped at 0.95 to reflect statistical uncertainty.
+    3. Severity floor by classification (cannot be below minimums).
+    4. Confidence is capped at 0.95 to reflect statistical uncertainty.
     """
     # 1. CRITICAL severity hard guardrail
     if result.severity == "CRITICAL":
@@ -299,7 +361,28 @@ def apply_escalation_guardrail(result: TriageResult) -> TriageResult:
     if result.attack_classification == "UNKNOWN" and result.classification_confidence < 0.4:
         result.escalate_to_human = True
 
-    # 3. Confidence cap (0.95)
+    # 3. Severity floor by classification
+    severity_floor = {
+        "APT": "HIGH",
+        "RANSOMWARE": "HIGH", 
+        "INSIDER_THREAT": "MEDIUM",
+        "BRUTE_FORCE": "MEDIUM",
+    }
+    severity_order = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    
+    floor = severity_floor.get(result.attack_classification)
+    if floor and result.severity:
+        current_idx = severity_order.index(result.severity) \
+            if result.severity in severity_order else 0
+        floor_idx = severity_order.index(floor)
+        if current_idx < floor_idx:
+            logger.warning(
+                f"Severity floor applied: {result.attack_classification} "
+                f"cannot be {result.severity} — raising to {floor}"
+            )
+            result.severity = floor
+
+    # 4. Confidence cap (0.95)
     if result.classification_confidence > 0.95:
         result.classification_confidence = 0.95
 
@@ -442,13 +525,18 @@ async def triage_agent(state: AgentState) -> AgentState:
             )
 
             # Populate cache — one entry per investigation_id
-            _telemetry_cache[investigation_id] = {
-                "attack_window": attack_window,
-                "top_ips": top_ips,
-                "event_codes": event_codes,
-                "auth_failures": auth_failures,
-                "dynamic_results": dynamic_results,
-            }
+            # Only cache if telemetry was actually retrieved successfully
+            if (
+                attack_window.get("total_events", 0) > 0 and
+                len(top_ips) > 0
+            ):
+                _telemetry_cache[investigation_id] = {
+                    "attack_window": attack_window,
+                    "top_ips": top_ips,
+                    "event_codes": event_codes,
+                    "auth_failures": auth_failures,
+                    "dynamic_results": dynamic_results,
+                }
 
         except Exception as exc:
             logger.error("[%s] Telemetry retrieval failed: %s", investigation_id, exc)
@@ -471,6 +559,34 @@ async def triage_agent(state: AgentState) -> AgentState:
             f"{json.dumps(data_list, indent=2)}\n"
         )
 
+    # Build EVIDENCE ANCHORS — pre-formatted, quotable facts the LLM must cite
+    top_ip_entry = top_ips[0] if top_ips else {}
+    top_ip_str = (
+        f"{top_ip_entry.get('ip', 'N/A')} "
+        f"({int(top_ip_entry.get('event_count', 0)):,} events)"
+        if top_ip_entry else "N/A"
+    )
+    fail_total = sum(int(r.get("failures", 0)) for r in (auth_failures or []))
+    top_ec_lines = ""
+    for ec in (event_codes or [])[:5]:
+        top_ec_lines += (
+            f"  EventCode {ec.get('EventCode', 'N/A')}: "
+            f"{int(ec.get('count', 0)):,} events\n"
+        )
+
+    evidence_anchors = (
+        f"\nEVIDENCE ANCHORS (cite these exact facts in triage_summary and key_indicators):\n"
+        f"  Top source IP: {top_ip_str}\n"
+        f"{top_ec_lines}"
+        f"  EventCode 4625 total failures: {fail_total}"
+        + (
+            f" (BELOW 20-event brute-force threshold — do not classify as BRUTE_FORCE)"
+            if fail_total < 20 and ("BRUTE" in trigger_category.upper() or "AUTH" in trigger_category.upper())
+            else ""
+        )
+        + "\n"
+    )
+
     context = f"""
 SECURITY INCIDENT TELEMETRY
 ===========================
@@ -486,10 +602,70 @@ TOP WINDOWS EVENT CODES:
 
 AUTHENTICATION FAILURES (EventCode 4625):
 {json.dumps(auth_failures, indent=2)}
-{dynamic_sections}
+{dynamic_sections}{evidence_anchors}
 TRIGGER: {trigger}
 """
     logger.debug("[%s] LLM context:\n%s", investigation_id, context)
+
+    # Python-based trigger quality check — runs before LLM
+    if _is_low_signal_trigger(state["trigger"]):
+        logger.info(
+            f"[{investigation_id}] Trigger quality check: LOW SIGNAL — "
+            f"forcing UNKNOWN before LLM call"
+        )
+        # Build key_indicators from base telemetry
+        key_indicators = []
+
+        top_ips_list = top_ips if top_ips else []
+        if top_ips_list:
+            top = top_ips_list[0]
+            key_indicators.append(
+                f"Top source IP: {top.get('ip', 'N/A')} "
+                f"({top.get('event_count', 0)} events)"
+            )
+
+        event_codes_list = event_codes or []
+        for ec in event_codes_list[:3]:
+            key_indicators.append(
+                f"EventCode {ec.get('EventCode', 'N/A')}: "
+                f"{ec.get('count', 0)} events"
+            )
+
+        fail_count = sum(
+            int(r.get("failures", 0))
+            for r in (auth_failures or [])
+        )
+        key_indicators.append(
+            f"EventCode 4625: {fail_count} failed logons "
+            f"({'below' if fail_count < 20 else 'above'} 20-event threshold)"
+        )
+
+        # Build summary for return
+        top_ip = top_ips_list[0] if top_ips_list else {}
+        ip_str = f"{top_ip.get('ip', 'N/A')} ({int(top_ip.get('event_count', 0))} events)"
+        dominant_codes = [f"EventCode {ec.get('EventCode')} ({int(ec.get('count', 0))} events)" for ec in event_codes_list[:3]]
+        codes_str = ", ".join(dominant_codes) if dominant_codes else "no dominant EventCodes"
+
+        summary = (
+            f"Trigger provided insufficient attack signal. "
+            f"Base telemetry shows: top source IP {ip_str}, {codes_str}. "
+            f"EventCode 4625 count: {fail_count} events "
+            f"({'below' if fail_count < 20 else 'above'} the 20-event brute force threshold). "
+            f"Cannot classify without additional context — escalating to human analyst."
+        )
+
+        return {
+            **state,
+            "attack_classification": "UNKNOWN",
+            "classification_confidence": 0.35,
+            "severity": "LOW",
+            "escalate_to_human": True,
+            "triage_summary": summary,
+            "key_indicators": key_indicators,
+            "error": None,
+            "confidence_scores": {"triage": 0.35},
+            "spl_audit_log": splunk.audit_log[:],
+        }
 
     # ── Step 5: Call gpt-4o via with_structured_output() ───────────────────
     # with_structured_output uses OpenAI's native function-calling API.
@@ -521,8 +697,44 @@ TRIGGER: {trigger}
             "spl_audit_log": list(state.get("spl_audit_log", [])) + splunk.audit_log,
         }
 
+    # ── Post-processing: ensure key_indicators is populated ─────────────────
+    # gpt-4o-mini with with_structured_output ignores minItems constraints.
+    # If the LLM returned empty key_indicators, build them from telemetry.
+    if not result.key_indicators:
+        ki: list[str] = []
+        if top_ips:
+            top = top_ips[0]
+            ki.append(
+                f"Top source IP: {top.get('ip', 'N/A')} "
+                f"({int(top.get('event_count', 0)):,} events)"
+            )
+        for ec in (event_codes or [])[:3]:
+            ki.append(
+                f"EventCode {ec.get('EventCode', 'N/A')}: "
+                f"{int(ec.get('count', 0)):,} events"
+            )
+        fail_count = sum(int(r.get("failures", 0)) for r in (auth_failures or []))
+        ki.append(
+            f"EventCode 4625: {fail_count} total failures "
+            f"({'below' if fail_count < 20 else 'above'} 20-event brute-force threshold)"
+        )
+        result.key_indicators = ki if ki else ["Base telemetry retrieved — classification based on event code patterns"]
+        logger.info(
+            "[%s] key_indicators was empty from LLM — built %d items from telemetry",
+            investigation_id, len(result.key_indicators)
+        )
+
     # ── Step 6 & 7: Apply escalation guardrails ───────────────────────────
     result = apply_escalation_guardrail(result)
+
+    # Cache invalidation for empty triage_summary
+    if not result.triage_summary or not result.triage_summary.strip():
+        _telemetry_cache.pop(investigation_id, None)
+        raise ValueError(
+            f"[{investigation_id}] TriageAgent produced empty triage_summary — "
+            "cache invalidated, result discarded"
+        )
+
     escalate_to_human = (result.classification_confidence < 0.5) or result.escalate_to_human
 
     if escalate_to_human:
@@ -544,7 +756,9 @@ TRIGGER: {trigger}
         "top_source_ips": top_ips,
         "attack_classification": result.attack_classification,
         "classification_confidence": result.classification_confidence,
+        "severity": result.severity,
         "triage_summary": result.triage_summary,
+        "key_indicators": result.key_indicators,
         "escalate_to_human": escalate_to_human,
         "confidence_scores": {
             **state.get("confidence_scores", {}),

@@ -63,8 +63,14 @@ class AgentState(TypedDict, total=False):
     classification_confidence: float
     """LLM-assigned confidence for the classification. Range: 0.0 – 1.0."""
 
+    severity: str
+    """Assessed severity of the incident: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"."""
+
     triage_summary: str
     """Human-readable 2-3 sentence assessment produced by TriageAgent."""
+
+    key_indicators: list[str]
+    """3-5 specific telemetry data points cited as evidence for the classification."""
 
     # ── Kill-chain reconstruction ──────────────────────────────────────────────
     kill_chain: list[dict]

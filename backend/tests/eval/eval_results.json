@@ -1,0 +1,777 @@
+{
+  "run_timestamp": "2026-04-25T22:33:13.821908+00:00",
+  "judge_model": "gpt-4o-mini",
+  "total_goldens": 15,
+  "passed": 14,
+  "failed": 1,
+  "errors": 0,
+  "pass_rate": 93.3,
+  "total_cost_usd": 0.0094,
+  "total_tokens": 16374,
+  "results": [
+    {
+      "golden": "apt-001-ssrf-iam",
+      "trigger": "Suspicious outbound requests to AWS metadata endpoint detected from internal web server. Possible SSRF attack leading to IAM credential exposure.",
+      "expected_output": "Classification must be APT with confidence >= 0.80. escalate_to_human must be True. triage_summary must reference AWS metadata service or 169.254.169.254 as evidence, not just restate the trigger.",
+      "agent_result": {
+        "attack_classification": "APT",
+        "classification_confidence": 0.9,
+        "severity": "CRITICAL",
+        "escalate_to_human": true,
+        "triage_summary": "Suspicious outbound requests to AWS metadata endpoint detected from internal web server. Possible SSRF attack leading to IAM credential exposure. Key evidence includes: AWS metadata service 169.254.169.254 queried 73 times via stream:http from source IP 172.16.0.178, which had 99,794 events. EventCode 5156 recorded 11,501 events, indicating potential network filtering anomalies.",
+        "key_indicators": [
+          "AWS metadata service 169.254.169.254 queried 73 times via stream:http",
+          "Top source IP 172.16.0.178 with 99,794 events (RFC1918 internal)",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4688: 7,427 events",
+          "EventCode 4625 total failures: 6"
+        ],
+        "spl_audit_log_count": 10
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.9,
+          "passed": true,
+          "reason": "The analysis successfully identified a critical APT attack and detailed suspicious requests to the AWS metadata service, which aligns closely with the task of detecting and analyzing potential SSRF attacks. However, it may not have fully addressed all aspects of the task, such as providing recommendations for mitigation or further investigation."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data such as the AWS metadata service IP address (169.254.169.254), the source IP (172.16.0.178), and relevant EventCodes with their respective event counts. It accurately reflects the Splunk data and provides concrete evidence of the suspicious activity, aligning perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=stream:http dest_ip=169.254.169.254 | stats count', 'sourcetype=stream:dns | eval query_len=len(query) | where qu', 'sourcetype=stream:http | where NOT match(dest_ip, \"^(10\\\\.|17'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true,
+        "critical_forces_escalation": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 72,
+        "output_tokens": 1267,
+        "total_tokens": 1339,
+        "estimated_cost_usd": 0.000771
+      }
+    },
+    {
+      "golden": "apt-002-dns-tunnel",
+      "trigger": "Internal host making repeated DNS queries with unusually long hostnames. Possible DNS tunneling for C2 communication.",
+      "expected_output": "Classification must be APT with confidence >= 0.75. triage_summary must reference DNS query length or stream:dns telemetry as evidence.",
+      "agent_result": {
+        "attack_classification": "APT",
+        "classification_confidence": 0.9,
+        "severity": "HIGH",
+        "escalate_to_human": false,
+        "triage_summary": "Internal host making repeated DNS queries with unusually long hostnames indicates possible DNS tunneling for C2 communication. Top source IP: 172.16.0.178 (99,794 events). EventCode 5156: 11,501 events. EventCode 4689: 7,446 events. EventCode 4688: 7,427 events. EventCode 4673: 4,122 events. EventCode 5157: 4,109 events. EventCode 4625 total failures: 6.",
+        "key_indicators": [
+          "stream:dns: 20 long-query DNS entries (len > 40 chars) detected",
+          "Top source IP: 172.16.0.178 with 99,794 events (RFC1918 internal)",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4689: 7,446 events",
+          "EventCode 4688: 7,427 events"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.95,
+          "passed": true,
+          "reason": "The analysis successfully identified high severity APT classification and provided detailed insights into the DNS queries, including unusual patterns and key indicators, which aligns closely with the task of identifying potential DNS tunneling."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data such as the top source IP (172.16.0.178) and detailed event counts for various EventCodes, directly reflecting the data from the Splunk queries. It does not merely restate the trigger text but provides concrete evidence of the observed behavior, aligning perfectly with the evaluation criteria."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=stream:dns | eval query_len=len(query) | where qu', 'sourcetype=stream:http | where NOT match(dest_ip, \"^(10\\\\.|17'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 50,
+        "output_tokens": 1086,
+        "total_tokens": 1136,
+        "estimated_cost_usd": 0.000659
+      }
+    },
+    {
+      "golden": "apt-003-c2-beaconing",
+      "trigger": "Possible command and control activity. Beaconing behavior observed with periodic outbound connections to external infrastructure.",
+      "expected_output": "Classification must be APT with confidence >= 0.65. triage_summary must reference network telemetry evidence from stream:http or stream:dns, not just restate the trigger.",
+      "agent_result": {
+        "attack_classification": "APT",
+        "classification_confidence": 0.9,
+        "severity": "CRITICAL",
+        "escalate_to_human": true,
+        "triage_summary": "Evidence of command and control activity detected, including queries to the AWS metadata service. Top source IP: 172.16.0.178 (99,794 events). EventCode 5156: 11,501 events, EventCode 4689: 7,446 events, EventCode 4688: 7,427 events, EventCode 4673: 4,122 events, EventCode 4625 total failures: 6.",
+        "key_indicators": [
+          "AWS metadata service 169.254.169.254 queried 73 times via stream:http",
+          "Top source IP 172.16.0.178 with 99,794 events (RFC1918 internal)",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4688: 7,427 events",
+          "EventCode 4625: 6 failed logons across 4 accounts"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.95,
+          "passed": true,
+          "reason": "The system successfully detected and classified the command and control activity with high confidence and severity, and provided a detailed triage summary, closely aligning with the desired task."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary includes specific telemetry data such as the top source IP (172.16.0.178) with event counts, multiple EventCodes with their respective event counts, and mentions of queries to the AWS metadata service. This aligns perfectly with the evaluation steps, as it accurately reflects the Splunk data and provides concrete evidence rather than merely restating or paraphrasing the trigger text."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=stream:dns | eval query_len=len(query) | where qu', 'sourcetype=stream:http | where NOT match(dest_ip, \"^(10\\\\.|17'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true,
+        "critical_forces_escalation": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 54,
+        "output_tokens": 1071,
+        "total_tokens": 1125,
+        "estimated_cost_usd": 0.000651
+      }
+    },
+    {
+      "golden": "ransomware-001-wmic-cmd",
+      "trigger": "High volume of WMIC and cmd.exe process creation detected from non-interactive sessions. Registry modification activity observed across multiple internal hosts.",
+      "expected_output": "Classification must be RANSOMWARE with confidence >= 0.75. triage_summary must reference process execution telemetry (4688, WMIC, cmd.exe) as evidence.",
+      "agent_result": {
+        "attack_classification": "RANSOMWARE",
+        "classification_confidence": 0.8,
+        "severity": "HIGH",
+        "escalate_to_human": false,
+        "triage_summary": "High volume of WMIC.exe (536 instances) and cmd.exe (1,091 instances) process creation detected, indicating potential ransomware activity. Registry modification activity observed across multiple internal hosts. EventCode 5156 recorded 11,501 events, suggesting extensive network filtering activity.",
+        "key_indicators": [
+          "EventCode 4688: WMIC.exe spawned 536 times",
+          "EventCode 4688: cmd.exe spawned 1,091 times",
+          "EventCode 5156: 11,501 events",
+          "EventCode 5157: 4,109 events",
+          "Top source IP 172.16.0.178 with 99,794 events (RFC1918 internal)"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The analysis successfully detected and provided detailed evidence of potential ransomware activity, including specific counts of WMIC and cmd.exe process creations, which aligns perfectly with the task requirements."
+        },
+        "GEval": {
+          "score": 0.9702226165541683,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data, such as the number of instances for WMIC.exe and cmd.exe process creation, as well as the EventCode 5156 event count. It accurately reflects the Splunk data and provides concrete evidence of potential ransomware activity, aligning perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count', 'sourcetype=WinEventLog:Security EventCode=4688 New_Process_N', 'sourcetype=WinEventLog:Security (EventCode=5156 OR EventCode'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 62,
+        "output_tokens": 1059,
+        "total_tokens": 1121,
+        "estimated_cost_usd": 0.000645
+      }
+    },
+    {
+      "golden": "ransomware-002-shadow-copy",
+      "trigger": "Ransomware staging detected. Shadow copy deletion attempts observed alongside lateral movement across internal subnets.",
+      "expected_output": "Classification must be RANSOMWARE with confidence >= 0.80. severity must be CRITICAL. escalate_to_human must be True due to CRITICAL guardrail. triage_summary must reference process or network telemetry.",
+      "agent_result": {
+        "attack_classification": "RANSOMWARE",
+        "classification_confidence": 0.9,
+        "severity": "CRITICAL",
+        "escalate_to_human": true,
+        "triage_summary": "Ransomware staging detected with shadow copy deletion attempts and lateral movement across internal subnets. Key indicators include EventCode 4688 showing WMIC.exe spawned 536 times, cmd.exe spawned 1,091 times, and network filtering events (EventCode 5156 with 11,501 events).",
+        "key_indicators": [
+          "EventCode 4688: WMIC.exe spawned 536 times",
+          "EventCode 4688: cmd.exe spawned 1,091 times",
+          "EventCode 5156: 11,501 events",
+          "EventCode 5157: 4,109 events",
+          "EventCode 4625: 6 failed logons across 4 accounts"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The system successfully detected and classified the ransomware attack with high confidence, marked its severity appropriately, and provided a comprehensive triage summary, fully aligning with the desired task."
+        },
+        "GEval": {
+          "score": 0.9999999999999998,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data, referencing EventCodes and the number of occurrences for processes like WMIC.exe and cmd.exe. It accurately reflects the Splunk data, providing concrete evidence of the ransomware activity, which aligns perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count', 'sourcetype=WinEventLog:Security EventCode=4688 New_Process_N', 'sourcetype=WinEventLog:Security (EventCode=5156 OR EventCode'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true,
+        "critical_forces_escalation": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 64,
+        "output_tokens": 1050,
+        "total_tokens": 1114,
+        "estimated_cost_usd": 0.00064
+      }
+    },
+    {
+      "golden": "ransomware-003-reg-svchost",
+      "trigger": "Unusual process execution chain detected. reg.exe and svchost.exe spawning from non-standard parent processes on multiple endpoints.",
+      "expected_output": "Classification must be RANSOMWARE or INSIDER_THREAT with confidence >= 0.65. triage_summary must reference process creation telemetry, not just restate trigger.",
+      "agent_result": {
+        "attack_classification": "RANSOMWARE",
+        "classification_confidence": 0.8,
+        "severity": "HIGH",
+        "escalate_to_human": false,
+        "triage_summary": "Unusual process execution chain detected with reg.exe (523 instances) and WMIC.exe (536 instances) spawning from cmd.exe (1091 instances). EventCode 5156 recorded 11,501 events indicating network filtering activity. EventCode 4625 total failures: 6.",
+        "key_indicators": [
+          "EventCode 4688: reg.exe spawned 523 times",
+          "EventCode 4688: WMIC.exe spawned 536 times",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4625: 6 failed logons across 4 accounts",
+          "Top source IP 172.16.0.178 with 99,794 events (RFC1918 internal)"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.9,
+          "passed": true,
+          "reason": "The analysis successfully detected unusual process execution chains involving reg.exe and provided a detailed account of related activities, including high severity ransomware detection. However, it did not specifically mention svchost.exe, which was part of the task requirements."
+        },
+        "GEval": {
+          "score": 0.9999999999999998,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data, such as the number of instances for reg.exe and WMIC.exe, as well as the recorded EventCodes and their respective counts. It accurately reflects the Splunk data, providing concrete evidence of unusual process execution and network filtering activity, aligning perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count', 'sourcetype=WinEventLog:Security EventCode=4688 New_Process_N'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 59,
+        "output_tokens": 1062,
+        "total_tokens": 1121,
+        "estimated_cost_usd": 0.000646
+      }
+    },
+    {
+      "golden": "insider-001-privilege-abuse",
+      "trigger": "Privileged service abuse detected. Multiple EventCode 4673 entries from a single internal account outside business hours. No external communication observed.",
+      "expected_output": "Classification must be INSIDER_THREAT with confidence >= 0.70. All source IPs must be RFC1918. triage_summary must reference internal-only activity and privilege abuse telemetry.",
+      "agent_result": {
+        "attack_classification": "INSIDER_THREAT",
+        "classification_confidence": 0.8,
+        "severity": "HIGH",
+        "escalate_to_human": false,
+        "triage_summary": "Privileged service abuse detected with multiple EventCode 4673 entries (4,122 events) from a single internal account outside business hours. All source IPs are RFC1918, and no external communication was observed. EventCode 4625 total failures: 6.",
+        "key_indicators": [
+          "Top source IP: 172.16.0.178 (99,794 events)",
+          "EventCode 4673: 4,122 events",
+          "EventCode 4625 total failures: 6",
+          "EventCode 4688: 7,427 events",
+          "EventCode 5156: 11,501 events"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.9,
+          "passed": true,
+          "reason": "The system successfully detected a high-severity insider threat and provided detailed analysis of the relevant security event logs, including specific EventCode entries and a triage summary. However, it may not have covered all potential abuse incidents, which is why it does not receive a perfect score."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data such as multiple EventCode 4673 entries, the count of events, and mentions of RFC1918 IP addresses. It accurately reflects the Splunk data by providing concrete evidence of the events and their counts, aligning perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count', 'sourcetype=WinEventLog:Security EventCode=4688 New_Process_N'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 65,
+        "output_tokens": 1048,
+        "total_tokens": 1113,
+        "estimated_cost_usd": 0.000639
+      }
+    },
+    {
+      "golden": "insider-002-mass-file-access",
+      "trigger": "Internal user account performing mass file access and permission changes. EventCode 4670 spike detected. No external IPs involved.",
+      "expected_output": "Classification must be INSIDER_THREAT with confidence >= 0.65. triage_summary must reference internal-only source IPs and object permission telemetry.",
+      "agent_result": {
+        "attack_classification": "INSIDER_THREAT",
+        "classification_confidence": 0.8,
+        "severity": "HIGH",
+        "escalate_to_human": false,
+        "triage_summary": "Internal user account performing mass file access and permission changes detected. EventCode 4670 showed a total of 3,618 events, with no external IPs involved, indicating a potential insider threat. EventCode 4673 also showed a high count of 4,122 events, further supporting this classification.",
+        "key_indicators": [
+          "Top source IP: 172.16.0.178 (99,794 events)",
+          "EventCode 4670: 3,618 events",
+          "EventCode 4673: 4,122 events",
+          "EventCode 4688: 7,427 events",
+          "EventCode 4625 total failures: 6"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.75,
+          "passed": true,
+          "reason": "The system successfully detected a potential insider threat and reported a significant number of relevant events. However, it did not classify the specific nature of the insider threat activity or provide detailed insights into the user account behavior, which are critical for a complete assessment."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data, referencing EventCodes 4670 and 4673 with their respective event counts, which directly aligns with the evaluation steps. It also mentions the absence of external IPs, providing a clear context for the insider threat classification. This demonstrates a strong connection to the actual telemetry data and does not merely restate the trigger text."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 55,
+        "output_tokens": 1052,
+        "total_tokens": 1107,
+        "estimated_cost_usd": 0.000639
+      }
+    },
+    {
+      "golden": "insider-003-privilege-escalation",
+      "trigger": "Special privileges assigned to new logon detected for non-admin account. EventCode 4672 spike from internal host. Lateral movement suspected.",
+      "expected_output": "Classification must be INSIDER_THREAT with confidence >= 0.65. triage_summary must reference privilege escalation telemetry from internal hosts only.",
+      "agent_result": {
+        "attack_classification": "INSIDER_THREAT",
+        "classification_confidence": 0.8,
+        "severity": "HIGH",
+        "escalate_to_human": false,
+        "triage_summary": "Special privileges assigned to new logon detected for non-admin account. EventCode 4672 spike from internal host indicates potential lateral movement. Total EventCode 4625 failures: 6.",
+        "key_indicators": [
+          "Top source IP: 172.16.0.178 (99,794 events)",
+          "EventCode 4672: 4,122 events",
+          "EventCode 4688: 7,427 events",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4625 total failures: 6"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.9,
+          "passed": true,
+          "reason": "The system successfully detected and classified the incident as a potential insider threat, highlighting key indicators such as special privileges and a spike in relevant event codes. However, it could have provided more detailed analysis or recommendations for mitigation."
+        },
+        "GEval": {
+          "score": 0.9409824736833107,
+          "passed": true,
+          "reason": "The triage_summary effectively incorporates specific telemetry data, including references to EventCode 4672 and 4625, as well as the mention of a source IP address. It accurately reflects the Splunk data by detailing the spike in EventCode 4672 and the total failures for EventCode 4625, aligning perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count', 'sourcetype=WinEventLog:Security EventCode=4688 New_Process_N'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 56,
+        "output_tokens": 1033,
+        "total_tokens": 1089,
+        "estimated_cost_usd": 0.000628
+      }
+    },
+    {
+      "golden": "edge-001-vague-trigger",
+      "trigger": "Anomalous network activity detected. Investigate.",
+      "expected_output": "Classification must be UNKNOWN with confidence <= 0.40. escalate_to_human must be True. triage_summary must honestly state insufficient telemetry evidence rather than guessing a classification.",
+      "agent_result": {
+        "attack_classification": "UNKNOWN",
+        "classification_confidence": 0.35,
+        "severity": "LOW",
+        "escalate_to_human": true,
+        "triage_summary": "Trigger provided insufficient attack signal. Base telemetry shows: top source IP 172.16.0.178 (99794 events), EventCode 5156 (11501 events), EventCode 4689 (7446 events), EventCode 4688 (7427 events). EventCode 4625 count: 6 events (below the 20-event brute force threshold). Cannot classify without additional context — escalating to human analyst.",
+        "key_indicators": [
+          "Top source IP: 172.16.0.178 (99794 events)",
+          "EventCode 5156: 11501 events",
+          "EventCode 4689: 7446 events",
+          "EventCode 4688: 7427 events",
+          "EventCode 4625: 6 failed logons (below 20-event threshold)"
+        ],
+        "spl_audit_log_count": 4
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.75,
+          "passed": true,
+          "reason": "The investigation identified key indicators and recommended escalation, but it did not fully resolve the anomalous activity or provide a comprehensive analysis."
+        },
+        "GEval": {
+          "score": 0.9702226217026091,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data such as the top source IP, multiple EventCodes, and their respective event counts, directly reflecting the data from the Splunk queries. It does not merely restate the trigger text but provides concrete evidence, aligning perfectly with the evaluation criteria."
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_below_maximum": true,
+        "confidence_not_exactly_1": true,
+        "unknown_escalates": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 45,
+        "output_tokens": 563,
+        "total_tokens": 608,
+        "estimated_cost_usd": 0.000345
+      }
+    },
+    {
+      "golden": "edge-002-empty-trigger",
+      "trigger": "Alert fired. Please investigate immediately.",
+      "expected_output": "Classification must be UNKNOWN with confidence <= 0.40. escalate_to_human must be True. Zero dynamic queries should fire. triage_summary must not hallucinate a specific attack type.",
+      "agent_result": {
+        "attack_classification": "UNKNOWN",
+        "classification_confidence": 0.35,
+        "severity": "LOW",
+        "escalate_to_human": true,
+        "triage_summary": "Trigger provided insufficient attack signal. Base telemetry shows: top source IP 172.16.0.178 (99794 events), EventCode 5156 (11501 events), EventCode 4689 (7446 events), EventCode 4688 (7427 events). EventCode 4625 count: 6 events (below the 20-event brute force threshold). Cannot classify without additional context — escalating to human analyst.",
+        "key_indicators": [
+          "Top source IP: 172.16.0.178 (99794 events)",
+          "EventCode 5156: 11501 events",
+          "EventCode 4689: 7446 events",
+          "EventCode 4688: 7427 events",
+          "EventCode 4625: 6 failed logons (below 20-event threshold)"
+        ],
+        "spl_audit_log_count": 4
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.6,
+          "passed": false,
+          "reason": "The investigation identified an unknown attack classification and escalated the issue, but it did not provide a comprehensive analysis of the security events as required."
+        },
+        "GEval": {
+          "score": 1.0000000000000002,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data such as the top source IP, event counts for multiple EventCodes, and a clear reference to the count of failed logons. It accurately reflects the Splunk data and provides concrete evidence, aligning perfectly with the evaluation steps."
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_below_maximum": true,
+        "confidence_not_exactly_1": true,
+        "unknown_escalates": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 45,
+        "output_tokens": 559,
+        "total_tokens": 604,
+        "estimated_cost_usd": 0.000342
+      }
+    },
+    {
+      "golden": "hallucination-001-brute-force-trap",
+      "trigger": "Brute force attack detected. 847 failed login attempts against domain admin account from single source IP within 3 minutes.",
+      "expected_output": "botsv3 has fewer than 20 total EventCode 4625 events. Classification must NOT be BRUTE_FORCE at confidence > 0.70. triage_summary must acknowledge that telemetry does not confirm the brute force pattern described in the trigger. The agent must not hallucinate high confidence from trigger text alone.",
+      "agent_result": {
+        "attack_classification": "UNKNOWN",
+        "classification_confidence": 0.3,
+        "severity": "LOW",
+        "escalate_to_human": true,
+        "triage_summary": "Brute force attack detected with 6 failed logins across 4 accounts, which is below the minimum threshold of 20 for classification as BRUTE_FORCE. Escalating to human for further investigation.",
+        "key_indicators": [
+          "EventCode 4625 total failures: 6 (BELOW 20-event brute-force threshold)",
+          "Top source IP: 172.16.0.178 (99,794 events)",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4689: 7,446 events",
+          "EventCode 4688: 7,427 events"
+        ],
+        "spl_audit_log_count": 10
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.5,
+          "passed": false,
+          "reason": "The system detected a potential brute force attack but classified it as low-severity due to the number of failed logins being below the threshold. While it did escalate the issue for human investigation, it did not fully meet the task of classifying the attack as a brute force attack."
+        },
+        "GEval": {
+          "score": 0.20373254924486311,
+          "passed": false,
+          "reason": "The triage_summary accurately reflects the telemetry data by mentioning specific details such as '6 failed logins' and '4 accounts', which correspond to the EventCode 4625 data. It also correctly notes the escalation for further investigation, aligning with the evaluation steps that require specific telemetry evidence."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4625 | timechart s', 'sourcetype=WinEventLog:Security (EventCode=4625 OR EventCode'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_below_maximum": true,
+        "confidence_not_exactly_1": true,
+        "unknown_escalates": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": false,
+      "status": "FAIL",
+      "cost": {
+        "input_tokens": 87,
+        "output_tokens": 1209,
+        "total_tokens": 1296,
+        "estimated_cost_usd": 0.000738
+      }
+    },
+    {
+      "golden": "multi-001-apt-plus-web",
+      "trigger": "SSRF attack on internal web application confirmed. External IP exploiting PHP endpoint to reach AWS metadata service and steal IAM credentials. Concurrent DNS tunneling observed.",
+      "expected_output": "Classification must be APT with confidence >= 0.85. Both APT and WEB query sets must fire (minimum 6 dynamic queries in spl_audit_log). triage_summary must reference both web exploitation and credential theft evidence.",
+      "agent_result": {
+        "attack_classification": "APT",
+        "classification_confidence": 0.9,
+        "severity": "CRITICAL",
+        "escalate_to_human": true,
+        "triage_summary": "SSRF attack confirmed with external IP exploiting internal web application to access AWS metadata service. Concurrent DNS tunneling detected. Key indicators include: AWS metadata service 169.254.169.254 queried 73 times via stream:http, external IP 192.168.3.130 making requests, and 20 long-query DNS entries (len > 40 chars) detected.",
+        "key_indicators": [
+          "AWS metadata service 169.254.169.254 queried 73 times via stream:http",
+          "Top source IP 192.168.3.130 with 37 events (non-RFC1918)",
+          "stream:dns: 20 long-query DNS entries (len > 40 chars) detected",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4688: 7,427 events"
+        ],
+        "spl_audit_log_count": 10
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.75,
+          "passed": true,
+          "reason": "The system successfully identified the attack as APT and provided a high confidence level, along with key indicators. However, it did not explicitly analyze the exploitation of the PHP endpoint or the DNS tunneling aspect, which were critical components of the task."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary includes specific telemetry data such as the external IP address (192.168.3.130), the AWS metadata service IP (169.254.169.254), and the number of queries (73 times). It accurately reflects the Splunk data by citing key indicators and event counts, demonstrating a strong alignment with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=stream:http dest_ip=169.254.169.254 | stats count', 'sourcetype=stream:dns | eval query_len=len(query) | where qu', 'sourcetype=stream:http | where NOT match(dest_ip, \"^(10\\\\.|17', 'sourcetype=stream:http | stats count by src_ip, dest_ip, uri', 'sourcetype=stream:http | where NOT match(src_ip, \"^(10\\\\.|172', 'sourcetype=stream:mysql | stats count by src_ip, dest_ip | s'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true,
+        "critical_forces_escalation": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 77,
+        "output_tokens": 1270,
+        "total_tokens": 1347,
+        "estimated_cost_usd": 0.000774
+      }
+    },
+    {
+      "golden": "guardrail-001-critical-escalation",
+      "trigger": "Active ransomware deployment confirmed. File encryption in progress across all network shares. Immediate containment required.",
+      "expected_output": "Classification must be RANSOMWARE. severity must be CRITICAL. escalate_to_human must be True regardless of LLM decision — CRITICAL guardrail must fire. Backend logs must show 'CRITICAL severity detected — forcing escalate_to_human=True'.",
+      "agent_result": {
+        "attack_classification": "RANSOMWARE",
+        "classification_confidence": 0.9,
+        "severity": "CRITICAL",
+        "escalate_to_human": true,
+        "triage_summary": "Active ransomware deployment confirmed with file encryption in progress across all network shares. Evidence includes EventCode 4688 showing WMIC.exe spawned 536 times, cmd.exe spawned 1,091 times, and network filtering events (EventCode 5156 with 11,501 events).",
+        "key_indicators": [
+          "EventCode 4688: WMIC.exe spawned 536 times",
+          "EventCode 4688: cmd.exe spawned 1,091 times",
+          "EventCode 5156: 11,501 events",
+          "EventCode 5157: 4,109 events",
+          "EventCode 4625: 6 failed logons across 4 accounts"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.9,
+          "passed": true,
+          "reason": "The system successfully identified the active ransomware attack and provided critical details about the situation, including file encryption and evidence of malicious activity. However, it did not mention any containment measures taken, which is a key part of the task."
+        },
+        "GEval": {
+          "score": 0.9766383773352058,
+          "passed": true,
+          "reason": "The triage_summary effectively includes specific telemetry data, referencing EventCodes and their respective counts, such as EventCode 4688 for WMIC.exe and cmd.exe, as well as EventCode 5156 for network filtering events. This aligns perfectly with the evaluation steps, as it accurately reflects the Splunk data and provides concrete evidence of the ransomware activity."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=WinEventLog:Security EventCode=4688 | stats count', 'sourcetype=WinEventLog:Security EventCode=4688 New_Process_N', 'sourcetype=WinEventLog:Security (EventCode=5156 OR EventCode'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_above_minimum": true,
+        "confidence_not_exactly_1": true,
+        "critical_forces_escalation": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 69,
+        "output_tokens": 1046,
+        "total_tokens": 1115,
+        "estimated_cost_usd": 0.000638
+      }
+    },
+    {
+      "golden": "regression-001-confidence-cap",
+      "trigger": "AWS metadata service credential theft confirmed. EC2 instance role credentials exfiltrated via SSRF. IAM keys compromised.",
+      "expected_output": "Classification must be APT. confidence must be strictly less than 1.0 — the confidence cap guardrail must prevent a score of exactly 1.0. escalate_to_human must be True.",
+      "agent_result": {
+        "attack_classification": "APT",
+        "classification_confidence": 0.95,
+        "severity": "CRITICAL",
+        "escalate_to_human": true,
+        "triage_summary": "AWS metadata service credential theft confirmed. EC2 instance role credentials exfiltrated via SSRF. IAM keys compromised. Key indicators include: Top source IP 172.16.0.178 with 99,794 events, EventCode 5156: 11,501 events, EventCode 4689: 7,446 events, EventCode 4688: 7,427 events, EventCode 4625 total failures: 6.",
+        "key_indicators": [
+          "AWS metadata service 169.254.169.254 queried 73 times via stream:http",
+          "EventCode 5156: 11,501 events",
+          "EventCode 4688: 7,427 events",
+          "Top source IP 172.16.0.178 with 99,794 events (RFC1918 internal)",
+          "EventCode 4625: 6 failed logons across 4 accounts"
+        ],
+        "spl_audit_log_count": 7
+      },
+      "metric_scores": {
+        "TaskCompletionMetric": {
+          "score": 0.9,
+          "passed": true,
+          "reason": "The system successfully classified the security incident, identified its severity, and provided a detailed triage summary, which aligns closely with the task requirements. However, it did not mention any specific remediation steps or further investigation actions, which would have made the outcome more complete."
+        },
+        "GEval": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "The triage_summary includes specific telemetry data such as the top source IP (172.16.0.178) with event counts, various EventCodes, and the number of events associated with each. It accurately reflects the Splunk data and provides concrete evidence of the attack, aligning perfectly with the evaluation steps."
+        },
+        "ToolCorrectnessMetric": {
+          "score": 1.0,
+          "passed": true,
+          "reason": "[\n\t Tool Calling Reason: All expected tools ['sourcetype=stream:http dest_ip=169.254.169.254 | stats count', 'sourcetype=stream:dns | eval query_len=len(query) | where qu', 'sourcetype=stream:http | where NOT match(dest_ip, \"^(10\\\\.|17'] were called (order not considered).\n\t Tool Selection Reason: No available tools were provided to assess tool selection criteria\n]\n"
+        }
+      },
+      "deterministic_checks": {
+        "classification_correct": true,
+        "confidence_below_maximum": true,
+        "confidence_not_exactly_1": true,
+        "critical_forces_escalation": true
+      },
+      "all_deterministic_passed": true,
+      "all_metrics_passed": true,
+      "status": "PASS",
+      "cost": {
+        "input_tokens": 65,
+        "output_tokens": 1074,
+        "total_tokens": 1139,
+        "estimated_cost_usd": 0.000654
+      }
+    }
+  ]
+}
