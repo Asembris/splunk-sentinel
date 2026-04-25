@@ -71,6 +71,11 @@ def _layer2_index_check(spl: str) -> str | None:
     not the permitted botsv3 index.
     """
     index_matches = re.findall(r'index\s*=\s*([^\s|]+)', spl, re.IGNORECASE)
+
+    # Strictly require at least one index specification
+    if not index_matches:
+        return "MISSING_INDEX"
+
     for idx in index_matches:
         idx_clean = idx.strip().strip('"').strip("'")
         if idx_clean.lower() != PERMITTED_INDEX.lower():
@@ -174,3 +179,35 @@ def get_blocked_reason(spl: str) -> str | None:
         )
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Object-oriented API (used by tests)
+# ---------------------------------------------------------------------------
+
+class ValidationResult:
+    """Encapsulates the result of a guardrail validation check."""
+    def __init__(self, is_blocked: bool, reason: str | None = None):
+        self.is_blocked = is_blocked
+        self.reason = reason
+
+
+class SPLGuardrail:
+    """
+    Stateful wrapper for the SPL guardrail system.
+    Maintains a local audit log for testing/transparency.
+    """
+    def __init__(self) -> None:
+        self.audit_entries: list[str] = []
+
+    def validate(self, spl: str) -> ValidationResult:
+        """deterministic layer 1 & 2 check"""
+        reason = get_blocked_reason(spl)
+        return ValidationResult(is_blocked=reason is not None, reason=reason)
+
+    def audit(self, spl: str) -> None:
+        """layer 3: record the query with timestamp"""
+        _layer3_audit_log(spl)
+        # Capture in memory for testing/verification
+        timestamp = datetime.now(timezone.utc).isoformat()
+        self.audit_entries.append(f"[{timestamp}] {spl}")

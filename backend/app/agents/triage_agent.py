@@ -27,7 +27,7 @@ from typing import Literal
 from langsmith import traceable
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.state import AgentState
 from app.tools.splunk_tools import get_splunk_client
@@ -52,6 +52,13 @@ class TriageResult(BaseModel):
     triage_summary: str
     escalate_to_human: bool
     key_indicators: list[str]
+
+    @field_validator("triage_summary")
+    @classmethod
+    def summary_must_not_be_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("triage_summary must not be empty")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +242,15 @@ _BRUTEFORCE_QUERIES: list[str] = [
 ]
 
 
+def categorize_trigger(trigger: str) -> tuple[str, int]:
+    """
+    Public wrapper for trigger categorization logic used by tests.
+    Returns (category_label, number_of_queries).
+    """
+    queries, label = _select_dynamic_queries(trigger)
+    return label, len(queries)
+
+
 def _select_dynamic_queries(trigger: str) -> tuple[list[str], str]:
     """
     Inspect the trigger string with keyword matching (no LLM) and return
@@ -265,7 +281,29 @@ def _select_dynamic_queries(trigger: str) -> tuple[list[str], str]:
         extra_queries.extend(_BRUTEFORCE_QUERIES)
         labels.append("BRUTE_FORCE/AUTH")
 
-    return extra_queries, "+".join(labels) if labels else "GENERIC"
+    return list(dict.fromkeys(extra_queries)), "+".join(labels) if labels else "GENERIC"
+
+
+def apply_escalation_guardrail(result: TriageResult) -> TriageResult:
+    """
+    Enforces post-processing safety guardrails:
+    1. CRITICAL severity always forces escalation.
+    2. UNKNOWN classification with low confidence always forces escalation.
+    3. Confidence is capped at 0.95 to reflect statistical uncertainty.
+    """
+    # 1. CRITICAL severity hard guardrail
+    if result.severity == "CRITICAL":
+        result.escalate_to_human = True
+
+    # 2. Low-confidence UNKNOWN escalation
+    if result.attack_classification == "UNKNOWN" and result.classification_confidence < 0.4:
+        result.escalate_to_human = True
+
+    # 3. Confidence cap (0.95)
+    if result.classification_confidence > 0.95:
+        result.classification_confidence = 0.95
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -483,22 +521,16 @@ TRIGGER: {trigger}
             "spl_audit_log": list(state.get("spl_audit_log", [])) + splunk.audit_log,
         }
 
-    # ── Step 6: CRITICAL severity hard guardrail ────────────────────────────
-    if result.severity == "CRITICAL":
-        result.escalate_to_human = True
-        logger.warning(
-            "[%s] CRITICAL severity detected — forcing escalate_to_human=True.",
-            investigation_id,
-        )
-
-    # ── Step 7: Enforce low-confidence escalation ────────────────────────────
+    # ── Step 6 & 7: Apply escalation guardrails ───────────────────────────
+    result = apply_escalation_guardrail(result)
     escalate_to_human = (result.classification_confidence < 0.5) or result.escalate_to_human
-    if escalate_to_human and result.severity != "CRITICAL":
+
+    if escalate_to_human:
         logger.warning(
-            "[%s] Escalation triggered (confidence=%.2f, llm_requested=%s).",
+            "[%s] Escalation triggered (severity=%s, confidence=%.2f).",
             investigation_id,
+            result.severity,
             result.classification_confidence,
-            result.escalate_to_human,
         )
 
     # ── Step 8: Update audit log ────────────────────────────────────────────
