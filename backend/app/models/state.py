@@ -75,25 +75,62 @@ class AgentState(TypedDict, total=False):
     # ── Kill-chain reconstruction ──────────────────────────────────────────────
     kill_chain: list[dict]
     """
-    Causal event chain (ATT&CK kill-chain stages), e.g.:
-    [{"stage": "Reconnaissance", "timestamp": "...", "evidence": "..."}, ...]
-    Populated by ReconstructionAgent (future node).
+    Chronological MITRE ATT&CK kill-chain stages, e.g.:
+    [{
+        "stage_number": 1,
+        "stage_name": "Initial Access",
+        "mitre_tactic": "TA0001",
+        "mitre_technique": "T1190 - Exploit Public-Facing Application",
+        "timestamp": "2018-08-20 12:34:56",
+        "evidence": "src_ip 10.0.x.x queried 169.254.169.254 73 times",
+        "confidence": "CONFIRMED",
+        "affected_assets": ["172.16.0.178"]
+    }, ...]
+    Populated by ReconstructionAgent.
     """
 
     # ── Patient-zero attribution ──────────────────────────────────────────────
     patient_zero: dict
     """
-    The first compromised host/account, e.g.:
-    {"host": "wrk-btun", "ip": "10.0.2.106", "first_seen": "...", "method": "..."}
-    Populated by PatientZeroAgent (future node).
+    The first compromised host / initial attacker IP, e.g.:
+    {
+        "ip_address": "192.168.3.130",
+        "first_seen": "2018-08-20 12:34:56",
+        "role": "External Attacker",
+        "evidence": "Earliest stream:http request to internal web server",
+        "confidence": "CONFIRMED"
+    }
+    Populated by ReconstructionAgent.
     """
 
     # ── Blast-radius assessment ───────────────────────────────────────────────
     blast_radius: dict
     """
-    Scope of lateral movement and data exposure, e.g.:
-    {"affected_hosts": [...], "exfil_bytes": 0, "lateral_moves": 3}
-    Populated by BlastRadiusAgent (future node).
+    Full scope of assets touched by the attack, e.g.:
+    {
+        "total_affected_ips": 4,
+        "internal_ips_affected": ["172.16.0.178"],
+        "external_ips_observed": ["192.168.3.130"],
+        "affected_sourcetypes": ["stream:http", "WinEventLog:Security"],
+        "data_at_risk": "AWS IAM credentials, internal web server",
+        "containment_priority": "IMMEDIATE"
+    }
+    Populated by ReconstructionAgent.
+    """
+
+    # ── Attack narrative ──────────────────────────────────────────────────────
+    attack_narrative: str
+    """
+    2-3 sentence plain English summary of the full attack produced by
+    ReconstructionAgent, suitable for executive briefing.
+    """
+
+    # ── Reconstruction confidence ─────────────────────────────────────────────
+    reconstruction_confidence: float
+    """
+    Overall confidence in the kill chain reconstruction. Range: 0.0 – 0.95.
+    Capped at 0.95 to reflect forensic uncertainty.
+    Populated by ReconstructionAgent.
     """
 
     # ── Threat intelligence ───────────────────────────────────────────────────

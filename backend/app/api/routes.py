@@ -216,15 +216,17 @@ async def investigate(request: Request, body: InvestigateRequest):
         ) from exc
 
     logger.info(
-        f"Investigation complete | "
-        f"id={final_state['investigation_id']} | "
-        f"classification={final_state.get('attack_classification')} | "
-        f"confidence={final_state.get('classification_confidence', 0.0):.2f} | "
-        f"window={final_state.get('attack_window', {}).get('start')} "
-        f"to {final_state.get('attack_window', {}).get('end')} | "
-        f"source_ips={len(final_state.get('top_source_ips', []))}"
+        "Investigation complete | id=%s | classification=%s | "
+        "confidence=%.2f | stages=%d | patient_zero=%s | containment=%s",
+        final_state.get("investigation_id"),
+        final_state.get("attack_classification"),
+        final_state.get("classification_confidence", 0.0),
+        len(final_state.get("kill_chain", [])),
+        final_state.get("patient_zero", {}).get("ip_address", "N/A"),
+        final_state.get("blast_radius", {}).get("containment_priority", "N/A"),
     )
     return JSONResponse(content=final_state)
+
 
 
 # ---------------------------------------------------------------------------
