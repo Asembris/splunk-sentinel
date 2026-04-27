@@ -333,6 +333,38 @@ def apply_containment_guardrail(
         blast_radius.containment_priority = "IMMEDIATE"
     return blast_radius
 
+
+def _infer_sourcetypes_from_spl(spl: str) -> set[str]:
+    """
+    Extract sourcetype names from SPL query string.
+    Used to populate sourcetypes_seen when result rows 
+    don't include a sourcetype field.
+    """
+    import re
+    sourcetypes = set()
+
+    # Match sourcetype=value patterns
+    matches = re.findall(
+        r'sourcetype\s*=\s*([^\s|)\]]+)', spl, re.IGNORECASE
+    )
+    for match in matches:
+        # Clean quotes if present
+        sourcetypes.add(match.strip('"\''))
+
+    # Also infer from known patterns
+    if 'stream:http' in spl:
+        sourcetypes.add('stream:http')
+    if 'stream:dns' in spl:
+        sourcetypes.add('stream:dns')
+    if 'WinEventLog:Security' in spl:
+        sourcetypes.add('WinEventLog:Security')
+    if 'stream:tcp' in spl:
+        sourcetypes.add('stream:tcp')
+    if 'osquery' in spl:
+        sourcetypes.add('osquery:results')
+
+    return sourcetypes
+
 _MAX_CONSECUTIVE_ERRORS = 3
 _MAX_SPL_RETRIES = 2
 
@@ -509,6 +541,11 @@ async def reconstruction_agent(
                 results, final_spl = output
                 iteration_results[final_spl] = results
                 all_telemetry[final_spl] = results
+
+                # Infer sourcetypes from SPL string (primary method)
+                sourcetypes_seen.update(_infer_sourcetypes_from_spl(final_spl))
+
+                # Also check result rows (secondary method)
                 for row in results:
                     if "sourcetype" in row:
                         sourcetypes_seen.add(row["sourcetype"])
@@ -588,16 +625,6 @@ TELEMETRY FROM THIS ITERATION:
                 "observation": observation.model_dump(),
             })
 
-            # SSE Progress Update
-            if progress_callback and observation.new_stages_identified:
-                await progress_callback({
-                    "event": "reconstruction_progress",
-                    "iteration": iteration,
-                    "new_stages": observation.new_stages_identified,
-                    "confidence": current_confidence,
-                    "gaps_remaining": len(observation.gaps_remaining),
-                })
-
             # Update confidence using deterministic formula
             confirmed_count = len(accumulated_stage_names)
             current_confidence = compute_reconstruction_confidence(
@@ -617,6 +644,17 @@ TELEMETRY FROM THIS ITERATION:
                     for ip in top_source_ips
                 ),
             )
+
+            # Always emit progress — show activity even when no new stages found
+            if progress_callback:
+                await progress_callback({
+                    "event": "reconstruction_progress",
+                    "iteration": iteration,
+                    "new_stages": observation.new_stages_identified,
+                    "confidence": round(current_confidence, 2),
+                    "gaps_remaining": len(observation.gaps_remaining),
+                    "total_stages_found": len(accumulated_stage_names),
+                })
 
             logger.info(
                 "[%s] Iteration %d | new_stages=%d | "
