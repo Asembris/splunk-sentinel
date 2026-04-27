@@ -297,6 +297,42 @@ def compute_reconstruction_confidence(
         score += 0.15
     return round(min(score, 0.95), 3)
 
+
+def correct_patient_zero_role(patient_zero: PatientZero) -> PatientZero:
+    """
+    Ensures RFC1918 IP addresses are never classified as External Attacker.
+    Returns corrected PatientZero object.
+    """
+    RFC1918_PREFIXES = (
+        "10.", "192.168.",
+        "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+        "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+        "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+    )
+    is_internal = any(
+        patient_zero.ip_address.startswith(p) for p in RFC1918_PREFIXES
+    )
+    if is_internal and patient_zero.role == "External Attacker":
+        patient_zero.role = "Compromised Internal Host"
+    return patient_zero
+
+
+def apply_containment_guardrail(
+    blast_radius: BlastRadius,
+    kill_chain: list[KillChainStage],
+    severity: str,
+) -> BlastRadius:
+    """
+    Forces IMMEDIATE containment for CRITICAL severity attacks 
+    with at least one CONFIRMED kill chain stage.
+    """
+    if (
+        severity == "CRITICAL"
+        and any(s.confidence == "CONFIRMED" for s in kill_chain)
+    ):
+        blast_radius.containment_priority = "IMMEDIATE"
+    return blast_radius
+
 _MAX_CONSECUTIVE_ERRORS = 3
 _MAX_SPL_RETRIES = 2
 
@@ -820,31 +856,12 @@ the telemetry above. Do not hallucinate events not in the data.
             )
         ]
 
-    # Enforce IMMEDIATE for CRITICAL confirmed attacks
-    if (
-        state.get("severity") == "CRITICAL"
-        and any(s.confidence == "CONFIRMED" for s in raw.kill_chain)
-    ):
-        raw.blast_radius.containment_priority = "IMMEDIATE"
-
-    # Enforce severity floor on patient_zero role
     if raw.patient_zero:
-        pz_ip = raw.patient_zero.ip_address
-        is_internal = any(
-            pz_ip.startswith(p)
-            for p in ("10.", "192.168.", "172.16.", "172.17.",
-                      "172.18.", "172.19.", "172.20.", "172.21.",
-                      "172.22.", "172.23.", "172.24.", "172.25.",
-                      "172.26.", "172.27.", "172.28.", "172.29.",
-                      "172.30.", "172.31.")
-        )
-        if is_internal and raw.patient_zero.role == "External Attacker":
-            raw.patient_zero.role = "Compromised Internal Host"
-            logger.info(
-                "[%s] patient_zero role corrected: RFC1918 IP %s "
-                "cannot be External Attacker",
-                investigation_id, pz_ip
-            )
+        raw.patient_zero = correct_patient_zero_role(raw.patient_zero)
+
+    raw.blast_radius = apply_containment_guardrail(
+        raw.blast_radius, raw.kill_chain, state.get("severity", "")
+    )
 
     # Build final validated result
     result = ReconstructionResult(
