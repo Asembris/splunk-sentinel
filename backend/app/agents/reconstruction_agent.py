@@ -175,7 +175,7 @@ SEED_QUERIES["UNKNOWN"] = SEED_QUERIES["APT"]
 # LLM Setup
 # ---------------------------------------------------------------------------
 
-_REASONING_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+_REASONING_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, max_tokens=600)
 _REASONING_STRUCTURED = _REASONING_LLM.with_structured_output(ReActObservation)
 
 _SYNTHESIS_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -378,7 +378,10 @@ async def _execute_query_with_retry(
 # Main ReAct Agent Function
 # ---------------------------------------------------------------------------
 
-async def reconstruction_agent(state: AgentState) -> AgentState:
+async def reconstruction_agent(
+    state: AgentState, 
+    progress_callback=None
+) -> AgentState:
     investigation_id = state.get("investigation_id", "unknown")
     classification = state.get("attack_classification", "UNKNOWN")
     trigger = state.get("trigger", "")
@@ -548,6 +551,16 @@ TELEMETRY FROM THIS ITERATION:
                 },
                 "observation": observation.model_dump(),
             })
+
+            # SSE Progress Update
+            if progress_callback and observation.new_stages_identified:
+                await progress_callback({
+                    "event": "reconstruction_progress",
+                    "iteration": iteration,
+                    "new_stages": observation.new_stages_identified,
+                    "confidence": current_confidence,
+                    "gaps_remaining": len(observation.gaps_remaining),
+                })
 
             # Update confidence using deterministic formula
             confirmed_count = len(accumulated_stage_names)

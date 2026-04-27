@@ -110,7 +110,12 @@ def _build_graph() -> StateGraph:
 
     # ── Register nodes ────────────────────────────────────────────────────────
     graph.add_node("triage_agent", triage_agent)
-    graph.add_node("reconstruction_agent", reconstruction_agent)
+
+    async def _reconstruction_node(state, config):
+        callback = config.get("configurable", {}).get("progress_callback")
+        return await reconstruction_agent(state, progress_callback=callback)
+
+    graph.add_node("reconstruction_agent", _reconstruction_node)
     # Future nodes registered here:
     # graph.add_node("threat_intel_agent", threat_intel_agent)
     # graph.add_node("ttp_agent", ttp_agent)

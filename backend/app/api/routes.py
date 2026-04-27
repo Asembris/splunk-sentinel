@@ -70,70 +70,78 @@ async def _stream_investigation(initial_state: AgentState) -> AsyncGenerator[dic
     """
     Stream investigation progress as Server-Sent Events.
 
-    Yields a ``progress`` event for each graph state update, followed by a
-    final ``complete`` event containing the full state when the graph finishes.
-
-    Args:
-        initial_state: The starting AgentState passed to the graph.
-
     Yields:
-        Dict with ``event`` and ``data`` keys compatible with SSE protocol.
+        - 'progress' events when graph nodes complete
+        - 'reconstruction_progress' events during ReAct iterations
+        - 'complete' event with final full state
     """
     investigation_id = initial_state.get("investigation_id", "unknown")
+    queue = asyncio.Queue()
+    final_state_container = {}
 
-    try:
-        yield {
-            "event": "progress",
-            "data": json.dumps(
-                {"stage": "started", "investigation_id": investigation_id}
-            ),
-        }
+    async def progress_callback(event_data):
+        # This is called from inside the ReconstructionAgent ReAct loop
+        await queue.put(event_data)
 
-        final_state: AgentState = {}
-
-        # LangGraph's astream yields intermediate state dicts per node
-        async for chunk in compiled_graph.astream(
-            initial_state, 
-            config={"run_name": "Triage Agent"}
-        ):
-            for node_name, node_state in chunk.items():
-                logger.info(
-                    "[%s] SSE progress: node '%s' completed.",
-                    investigation_id,
-                    node_name,
-                )
-                yield {
-                    "event": "progress",
-                    "data": json.dumps(
-                        {
-                            "stage": node_name,
-                            "investigation_id": investigation_id,
-                            "escalate_to_human": node_state.get("escalate_to_human"),
-                            "attack_classification": node_state.get("attack_classification"),
-                            "classification_confidence": node_state.get(
-                                "classification_confidence"
-                            ),
-                            "error": node_state.get("error"),
-                        }
-                    ),
+    async def run_graph():
+        try:
+            async for chunk in compiled_graph.astream(
+                initial_state, 
+                config={
+                    "run_name": "Investigation Pipeline",
+                    "configurable": {"progress_callback": progress_callback}
                 }
-                final_state.update(node_state)
+            ):
+                for node_name, node_state in chunk.items():
+                    final_state_container.update(node_state)
+                    await queue.put({
+                        "event": "progress",
+                        "stage": node_name,
+                        "investigation_id": investigation_id,
+                        "attack_classification": node_state.get("attack_classification"),
+                        "classification_confidence": node_state.get("classification_confidence"),
+                        "error": node_state.get("error"),
+                    })
+            await queue.put({"event": "complete"})
+        except Exception as e:
+            logger.error("[%s] Graph error in SSE: %s", investigation_id, e)
+            await queue.put({"event": "error", "error": str(e)})
 
-        yield {
-            "event": "complete",
-            "data": json.dumps(final_state),
-        }
+    # Start investigation in background
+    task = asyncio.create_task(run_graph())
 
-    except Exception as exc:
-        logger.error(
-            "[%s] SSE stream error: %s", investigation_id, exc, exc_info=True
-        )
-        yield {
-            "event": "error",
-            "data": json.dumps(
-                {"error": str(exc), "investigation_id": investigation_id}
-            ),
-        }
+    # Initial start event
+    yield {
+        "event": "progress",
+        "data": json.dumps({"stage": "started", "investigation_id": investigation_id})
+    }
+
+    while True:
+        item = await queue.get()
+        event_type = item.get("event")
+
+        if event_type == "complete":
+            await task
+            yield {
+                "event": "complete",
+                "data": json.dumps(final_state_container)
+            }
+            break
+        elif event_type == "error":
+            yield {
+                "event": "error",
+                "data": json.dumps({
+                    "error": item.get("error"),
+                    "investigation_id": investigation_id
+                })
+            }
+            break
+        else:
+            # Emit progress or reconstruction_progress
+            yield {
+                "event": event_type,
+                "data": json.dumps(item)
+            }
 
 
 # ---------------------------------------------------------------------------
