@@ -1,19 +1,12 @@
 """
 reconstruction_agent.py
 -----------------------
-LangGraph node — ReconstructionAgent.
+LangGraph node — ReconstructionAgent (ReAct Mode).
 
-Receives TriageAgent output and reconstructs the full attack narrative:
-  - Kill chain stages with MITRE ATT&CK mapping and timestamps
-  - Patient zero identification by earliest timestamp
-  - Blast radius assessment (internal/external IPs, containment priority)
-
-Design constraints:
-  - Reuses the existing SplunkClient singleton (get_splunk_client)
-  - Runs all Splunk queries in parallel via asyncio.gather()
-  - One structured LLM call using with_structured_output(ReconstructionResult)
-  - Target latency: under 25 seconds for Splunk + LLM combined
-  - Does NOT duplicate base telemetry queries already run by TriageAgent
+This agent implements a Reasoning + Acting (ReAct) loop to iteratively
+reconstruct the attack timeline. It generates follow-up SPL queries
+based on previous findings, self-corrects broken queries, and
+produces a synthesized final report.
 """
 
 from __future__ import annotations
@@ -22,258 +15,370 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
 
 from app.models.state import AgentState
-from app.tools.splunk_tools import get_splunk_client
+from app.tools.splunk_tools import get_splunk_client, SplunkClient
+from app.guardrails.spl_guardrail import SPLGuardrail
 
 logger = logging.getLogger(__name__)
 
-
 # ---------------------------------------------------------------------------
-# Output schema
+# Pydantic Models
 # ---------------------------------------------------------------------------
-
 
 class KillChainStage(BaseModel):
     stage_number: int
-    stage_name: str          # e.g. "Initial Access", "Execution", "Lateral Movement"
-    mitre_tactic: str        # e.g. "TA0001"
-    mitre_technique: str     # e.g. "T1190 - Exploit Public-Facing Application"
-    timestamp: str           # earliest observed timestamp for this stage
-    evidence: str            # specific telemetry citation: IP, EventCode, count, URI
+    stage_name: str
+    mitre_tactic: str   # e.g. "TA0001"
+    mitre_technique: str  # e.g. "T1190 - Exploit Public-Facing Application"
+    timestamp: str
+    evidence: str  # MUST cite specific IP, EventCode+count, process name, or URI
     confidence: Literal["CONFIRMED", "INFERRED"]
-    affected_assets: list[str]  # IPs or hostnames involved in this stage
-
+    affected_assets: list[str]
 
 class PatientZero(BaseModel):
     ip_address: str
-    first_seen: str          # earliest timestamp this IP appeared
-    role: str                # "External Attacker", "Compromised Internal Host", etc.
-    evidence: str            # the specific query result that identifies patient zero
+    first_seen: str
+    role: str  # "External Attacker" or "Compromised Internal Host"
+    evidence: str
     confidence: Literal["CONFIRMED", "INFERRED"]
-
 
 class BlastRadius(BaseModel):
     total_affected_ips: int
     internal_ips_affected: list[str]
     external_ips_observed: list[str]
     affected_sourcetypes: list[str]
-    data_at_risk: str        # plain English assessment of what data/systems are at risk
+    data_at_risk: str  # specific systems/data named, not generic
     containment_priority: Literal["IMMEDIATE", "HIGH", "MEDIUM", "LOW"]
 
-
-class ReconstructionResult(BaseModel):
-    kill_chain: list[KillChainStage] = Field(min_length=1)
-    patient_zero: PatientZero
-    blast_radius: BlastRadius
-    attack_narrative: str    # 2-3 sentence plain English summary of the full attack
-    reconstruction_confidence: float = Field(ge=0.0, le=1.0)
-
-
 class ReconstructionResultRaw(BaseModel):
-    """Relaxed version — all fields optional to catch partial LLM output."""
+    """Relaxed model — all fields optional to handle gpt-4o-mini dropping fields."""
     kill_chain: list[KillChainStage] = Field(default_factory=list)
     patient_zero: Optional[PatientZero] = None
     blast_radius: Optional[BlastRadius] = None
     attack_narrative: Optional[str] = None
     reconstruction_confidence: Optional[float] = None
 
+class ReconstructionResult(BaseModel):
+    kill_chain: list[KillChainStage] = Field(min_length=1)
+    patient_zero: PatientZero
+    blast_radius: BlastRadius
+    attack_narrative: str
+    reconstruction_confidence: float = Field(ge=0.0, le=1.0)
+
+class ReActObservation(BaseModel):
+    """What the agent learned from executing queries in one iteration."""
+    iteration: int
+    findings: str  # plain English: what do the results show?
+    new_stages_identified: list[str]  # stage names found this iteration
+    gaps_remaining: list[str]  # what is still unknown
+    recommended_next_queries: list[str]  # raw SPL for next iteration (1-3)
+    current_confidence: float = Field(ge=0.0, le=1.0)
+    should_terminate: bool
 
 # ---------------------------------------------------------------------------
-# Forensic reconstruction queries (keyed by TriageAgent classification)
-# These are timeline/attribution queries — NOT duplicates of TriageAgent
-# classification queries which focus on counts and patterns.
+# Seed Queries
 # ---------------------------------------------------------------------------
 
-RECONSTRUCTION_QUERIES: dict[str, list[str]] = {
+SEED_QUERIES: dict[str, list[str]] = {
     "APT": [
-        # Temporal sequence of external HTTP access — establishes initial access timeline
+        # External HTTP access — who hit what first and when
         (
-            "index=botsv3 earliest=0 sourcetype=stream:http "
-            "| where NOT match(src_ip, \"^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)\")"
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, src_ip, dest_ip, uri_path, http_method"
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=stream:http '
+            '| where NOT match(src_ip, "^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)")'
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, src_ip, dest_ip, uri_path, http_method'
+            '| sort time | head 20'
         ),
-        # AWS metadata service access timeline — credential theft staging
+        # AWS metadata service access timeline
         (
-            "index=botsv3 earliest=0 sourcetype=stream:http dest_ip=169.254.169.254 "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, src_ip, uri_path "
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=stream:http dest_ip=169.254.169.254 '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, src_ip, uri_path '
+            '| sort time | head 20'
         ),
-        # DNS tunneling timeline — C2 communication sequence
+        # Process execution timeline
         (
-            "index=botsv3 earliest=0 sourcetype=stream:dns "
-            "| eval query_len=len(query) | where query_len > 40 "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, src_ip, query "
-            "| sort time | head 20"
-        ),
-        # Process execution timeline — post-exploitation activity
-        (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4688 "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, New_Process_Name, Creator_Process_Name, ComputerName "
-            "| sort time | head 20"
-        ),
-        # Privilege escalation timeline — access elevation events
-        (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security "
-            "(EventCode=4672 OR EventCode=4673) "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, EventCode, Account_Name, ComputerName "
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4688 '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, New_Process_Name, Creator_Process_Name, ComputerName'
+            '| sort time | head 20'
         ),
     ],
-
     "RANSOMWARE": [
-        # Process execution chain timeline — malware deployment sequence
+        # Process execution chain
         (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4688 "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, New_Process_Name, Creator_Process_Name, ComputerName "
-            "| sort time | head 30"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4688 '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, New_Process_Name, Creator_Process_Name, ComputerName'
+            '| sort time | head 30'
         ),
-        # Network connections during execution — lateral movement / C2 traffic
+        # Network connections during execution
         (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=5156 "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, src_ip, dest_ip, dest_port "
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=5156 '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, src_ip, dest_ip '
+            '| sort time | head 20'
         ),
-        # File and object access — encryption targets and permission changes
+        # File and object access
         (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security "
-            "(EventCode=4663 OR EventCode=4659 OR EventCode=4670) "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, EventCode, Object_Name, Account_Name "
-            "| sort time | head 20"
-        ),
-        # Privilege usage during ransomware — service/token abuse
-        (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security "
-            "(EventCode=4672 OR EventCode=4673) "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, EventCode, Account_Name, ComputerName "
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security '
+            '(EventCode=4663 OR EventCode=4659 OR EventCode=4670) '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, EventCode, Object_Name, Account_Name'
+            '| sort time | head 20'
         ),
     ],
-
     "INSIDER_THREAT": [
-        # Account activity timeline — logon and privilege events
+        # Account activity timeline
         (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security "
-            "(EventCode=4624 OR EventCode=4672 OR EventCode=4673) "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, EventCode, Account_Name, ComputerName "
-            "| sort time | head 30"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security '
+            '(EventCode=4624 OR EventCode=4672 OR EventCode=4673) '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, EventCode, Account_Name, ComputerName'
+            '| sort time | head 30'
         ),
-        # Object access and permission changes — data exfil or sabotage
+        # Object access and permission changes
         (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security "
-            "(EventCode=4670 OR EventCode=4663) "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, EventCode, Object_Name, Account_Name "
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security '
+            '(EventCode=4670 OR EventCode=4663) '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, EventCode, Object_Name, Account_Name'
+            '| sort time | head 20'
         ),
-        # Process execution by internal accounts — tool usage timeline
+        # Process execution by internal accounts
         (
-            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4688 "
-            "| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")"
-            "| table time, New_Process_Name, Creator_Process_Name, Account_Name "
-            "| sort time | head 20"
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4688 '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, New_Process_Name, Creator_Process_Name, Account_Name'
+            '| sort time | head 20'
+        ),
+    ],
+    "BRUTE_FORCE": [
+        (
+            'index=botsv3 earliest=0 sourcetype=WinEventLog:Security '
+            '(EventCode=4625 OR EventCode=4624) '
+            '| eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")'
+            '| table time, EventCode, Account_Name, src_ip, ComputerName'
+            '| sort time | head 30'
         ),
     ],
 }
-
-# Fallback for UNKNOWN or any unmatched classification
-FALLBACK_QUERIES = RECONSTRUCTION_QUERIES["APT"]
-
+SEED_QUERIES["UNKNOWN"] = SEED_QUERIES["APT"]
 
 # ---------------------------------------------------------------------------
-# LLM setup
+# LLM Setup
 # ---------------------------------------------------------------------------
 
-_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_LLM_STRUCTURED_RAW = _LLM.with_structured_output(ReconstructionResultRaw)
+_REASONING_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+_REASONING_STRUCTURED = _REASONING_LLM.with_structured_output(ReActObservation)
 
-_SYSTEM_PROMPT = (
-    "You are a senior threat intelligence analyst performing forensic attack "
-    "reconstruction. You have received pre-classified telemetry from a triage "
-    "agent and must reconstruct the full attack timeline.\n\n"
-    "Your job:\n"
-    "1. Build a chronological kill chain from the telemetry evidence\n"
-    "2. Identify patient zero — the EARLIEST external IP or compromised internal "
-    "host where the attack originated. Patient zero is determined by TIMESTAMP "
-    "not by event count.\n"
-    "3. Assess blast radius — all assets touched by the attack\n\n"
-    "KILL CHAIN RULES:\n"
-    "- Map each stage to a MITRE ATT&CK tactic (TA00XX) and technique (TXXX)\n"
-    "- Every stage must cite specific evidence: IP addresses, EventCodes with "
-    "counts, timestamps, process names, or URI paths\n"
-    "- If you cannot find direct evidence for a stage, set confidence=INFERRED "
-    "and explain why it is inferred\n"
-    "- Stages must be in chronological order by timestamp\n"
-    "- Use only evidence present in the telemetry — do not hallucinate stages\n\n"
-    "PATIENT ZERO RULES:\n"
-    "- Patient zero is the FIRST external IP seen in stream:http or stream:dns "
-    "contacting an internal host, by earliest timestamp\n"
-    "- If all IPs are RFC1918, patient zero is the internal host with the "
-    "earliest anomalous activity timestamp\n"
-    "- Never assign patient zero based on event count alone\n\n"
-    "BLAST RADIUS RULES:\n"
-    "- List every unique internal IP that appears in any telemetry result\n"
-    "- List every unique external IP observed\n"
-    "- containment_priority must be IMMEDIATE for APT or RANSOMWARE with "
-    "CONFIRMED kill chain stages\n"
-    "- data_at_risk must be specific: name the systems, credentials, or "
-    "data types at risk based on the evidence\n\n"
-    "MITRE ATT&CK REFERENCE (use these for botsv3 attack patterns):\n"
-    "- TA0001 Initial Access: T1190 Exploit Public-Facing Application\n"
-    "- TA0002 Execution: T1059.003 Windows Command Shell, T1047 WMI\n"
-    "- TA0003 Persistence: T1547 Boot/Logon Autostart\n"
-    "- TA0004 Privilege Escalation: T1078 Valid Accounts\n"
-    "- TA0005 Defense Evasion: T1070 Indicator Removal\n"
-    "- TA0006 Credential Access: T1552.005 Cloud Instance Metadata API\n"
-    "- TA0007 Discovery: T1082 System Information Discovery\n"
-    "- TA0008 Lateral Movement: T1021 Remote Services\n"
-    "- TA0009 Collection: T1005 Data from Local System\n"
-    "- TA0010 Exfiltration: T1048 Exfiltration Over Alternative Protocol\n"
-    "- TA0040 Impact: T1486 Data Encrypted for Impact\n"
-)
-
+_SYNTHESIS_LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+_SYNTHESIS_STRUCTURED = _SYNTHESIS_LLM.with_structured_output(ReconstructionResultRaw)
 
 # ---------------------------------------------------------------------------
-# LangGraph node
+# System Prompts
 # ---------------------------------------------------------------------------
 
+_REASONING_SYSTEM_PROMPT = """You are a senior threat intelligence 
+analyst performing iterative forensic reconstruction of a cyber attack.
+
+Each iteration you receive:
+1. The attack classification and trigger from the triage agent
+2. Kill chain stages already identified in previous iterations
+3. Telemetry results from queries executed this iteration
+4. What gaps remain
+
+Your job each iteration:
+1. REASON: What do the results show? What attack stages are confirmed?
+   What causal relationships can you establish between events?
+2. IDENTIFY: List any new kill chain stages found this iteration by name
+3. ACT: Generate 1-3 precise SPL queries to fill the most critical 
+   remaining gaps. Do not repeat already-executed queries.
+4. ASSESS: Update confidence based on evidence strength
+5. DECIDE: Should you terminate?
+
+SPL QUERY GENERATION RULES (STRICT):
+- Every query MUST start with: index=botsv3 earliest=0
+- Every query MUST include timestamp: 
+  | eval time=strftime(_time, "%Y-%m-%d %H:%M:%S")
+- Every query MUST end with: | sort time | head 20
+- Use specific IPs, EventCodes, and hostnames from previous results
+- Never repeat a query already executed
+- If a query returned 0 rows, query something different
+- Focus on establishing CAUSAL RELATIONSHIPS and TIMESTAMPS
+
+KILL CHAIN STAGE RULES:
+- CONFIRMED: direct telemetry evidence — specific timestamp, IP, 
+  EventCode, URI, or process name
+- INFERRED: logically deduced but no direct evidence
+- New stage names must map to MITRE ATT&CK tactics
+
+TERMINATION — set should_terminate=True if ANY:
+- current_confidence >= 0.85
+- No new stages found AND iteration >= 3
+- gaps_remaining is empty
+- Patient zero identified AND blast radius clear AND >= 4 confirmed stages
+
+MITRE ATT&CK REFERENCE:
+TA0001 Initial Access | TA0002 Execution | TA0003 Persistence
+TA0004 Privilege Escalation | TA0005 Defense Evasion
+TA0006 Credential Access | TA0007 Discovery | TA0008 Lateral Movement  
+TA0009 Collection | TA0010 Exfiltration | TA0040 Impact
+"""
+
+_SYNTHESIS_SYSTEM_PROMPT = """You are producing the final forensic 
+reconstruction report from a completed ReAct investigation loop.
+
+Produce a ReconstructionResult with:
+
+kill_chain: Chronological list of confirmed and inferred attack stages.
+Each stage evidence field MUST cite at minimum ONE specific data point:
+- A specific IP address with timestamp
+- An EventCode with count (e.g. "EventCode 4688: WMIC.exe 536 times")
+- A specific process name spawning sequence
+- A specific URI path accessed
+Generic statements like "suspicious activity detected" are REJECTED.
+
+patient_zero: The EARLIEST external IP or compromised host by TIMESTAMP.
+- External IP (non-RFC1918) seen in stream:http or stream:dns = 
+  role "External Attacker"
+- All RFC1918 IPs = role "Compromised Internal Host" — use earliest 
+  anomalous activity timestamp
+- Never assign patient zero by event count alone — use timestamp
+
+blast_radius: Every unique IP from all telemetry.
+- containment_priority MUST be IMMEDIATE for APT or RANSOMWARE
+- data_at_risk must name specific systems and data types:
+  GOOD: "IAM credentials via AWS metadata service 169.254.169.254, 
+         EC2 instance role EC2InstanceRole exfiltrated"
+  BAD:  "data may be at risk"
+
+attack_narrative: 2-3 sentences. Must include: attack type, initial 
+vector with specific evidence, what was compromised, immediate action.
+
+reconstruction_confidence: Set to 0.75 as placeholder — Python will 
+overwrite this with the deterministic formula.
+
+CRITICAL: Only use evidence present in the telemetry provided.
+Do not hallucinate events, IPs, or timestamps not in the data.
+"""
+
+# ---------------------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------------------
+
+def compute_reconstruction_confidence(
+    confirmed_stages: int,
+    total_stages: int,
+    sourcetypes_covered: set[str],
+    has_patient_zero: bool,
+    has_blast_radius: bool,
+    has_external_ip: bool,
+) -> float:
+    score = 0.0
+    # Evidence breadth: sourcetype diversity (max 0.30)
+    score += min(len(sourcetypes_covered) * 0.075, 0.30)
+    # Kill chain completeness (max 0.35)
+    if total_stages > 0:
+        score += (confirmed_stages / total_stages) * 0.35
+    # Attribution (max 0.20)
+    if has_patient_zero:
+        score += 0.10
+    if has_external_ip:
+        score += 0.10
+    # Blast radius assessed (max 0.15)
+    if has_blast_radius:
+        score += 0.15
+    return round(min(score, 0.95), 3)
+
+_MAX_CONSECUTIVE_ERRORS = 3
+_MAX_SPL_RETRIES = 2
+
+async def _execute_query_with_retry(
+    splunk: SplunkClient,
+    guardrail: SPLGuardrail,
+    spl: str,
+    investigation_id: str,
+) -> tuple[list, str]:
+    """
+    Execute SPL query with guardrail validation and self-correction.
+    Returns (results, final_spl_executed).
+    On failure: LLM rewrites the broken query (max 2 retries).
+    """
+    current_spl = spl.strip()
+    if not current_spl.lower().startswith("search ") and \
+       not current_spl.lower().startswith("index="):
+        current_spl = f"search {current_spl}"
+
+    for attempt in range(_MAX_SPL_RETRIES + 1):
+        validation = guardrail.validate(current_spl)
+        if validation.is_blocked:
+            logger.warning(
+                "[%s] SPL blocked (attempt %d): %s | reason: %s",
+                investigation_id, attempt + 1,
+                current_spl[:60], validation.reason
+            )
+            return [], current_spl
+
+        guardrail.audit(current_spl)
+        splunk.audit_log.append(
+            f"[{datetime.now(timezone.utc).isoformat()}] {current_spl}"
+        )
+
+        try:
+            results = await splunk.run_search(current_spl)
+            if results is not None:
+                logger.info(
+                    "[%s] Query returned %d rows | spl=%s",
+                    investigation_id, len(results), current_spl[:60]
+                )
+                return results, current_spl
+        except Exception as e:
+            logger.warning(
+                "[%s] SPL execution failed (attempt %d): %s | error: %s",
+                investigation_id, attempt + 1, current_spl[:60], e
+            )
+            if attempt < _MAX_SPL_RETRIES:
+                try:
+                    fix_prompt = (
+                        f"This SPL query failed with error: {e}\n\n"
+                        f"Broken query:\n{current_spl}\n\n"
+                        f"Rewrite it to fix the error. Rules:\n"
+                        f"- Must start with: index=botsv3 earliest=0\n"
+                        f"- Must be valid Splunk SPL syntax\n"
+                        f"- Must include: "
+                        f"| eval time=strftime(_time, \"%Y-%m-%d %H:%M:%S\")\n"
+                        f"- Must end with: | sort time | head 20\n"
+                        f"Return ONLY the corrected SPL, nothing else."
+                    )
+                    correction = await _REASONING_LLM.ainvoke([
+                        HumanMessage(content=fix_prompt)
+                    ])
+                    current_spl = correction.content.strip()
+                    logger.info(
+                        "[%s] SPL self-corrected (attempt %d): %s",
+                        investigation_id, attempt + 1, current_spl[:60]
+                    )
+                except Exception as ce:
+                    logger.error(
+                        "[%s] SPL self-correction failed: %s",
+                        investigation_id, ce
+                    )
+                    break
+
+    return [], current_spl
+
+# ---------------------------------------------------------------------------
+# Main ReAct Agent Function
+# ---------------------------------------------------------------------------
 
 async def reconstruction_agent(state: AgentState) -> AgentState:
-    """
-    ReconstructionAgent — LangGraph node.
-
-    Receives TriageAgent output and reconstructs the full attack narrative:
-      - Kill chain stages mapped to MITRE ATT&CK tactics/techniques
-      - Patient zero identified by earliest timestamp in telemetry
-      - Blast radius: all affected IPs and containment priority
-
-    Only runs when classification != UNKNOWN and confidence >= 0.5
-    (routing enforced by investigation_graph.py).
-
-    Args:
-        state: AgentState populated by TriageAgent.
-
-    Returns:
-        Updated AgentState with kill_chain, patient_zero, blast_radius,
-        attack_narrative, and reconstruction_confidence populated.
-    """
     investigation_id = state.get("investigation_id", "unknown")
     classification = state.get("attack_classification", "UNKNOWN")
     trigger = state.get("trigger", "")
@@ -283,268 +388,487 @@ async def reconstruction_agent(state: AgentState) -> AgentState:
     attack_window = state.get("attack_window", {})
 
     logger.info(
-        "[%s] ReconstructionAgent starting | classification=%s",
-        investigation_id,
-        classification,
+        "[%s] ReconstructionAgent starting | classification=%s | "
+        "mode=ReAct | max_iterations=8",
+        investigation_id, classification
     )
 
-    # ── Step 1: Select queries based on classification ───────────────────────
-    queries = RECONSTRUCTION_QUERIES.get(classification, FALLBACK_QUERIES)
-
-    # ── Step 2: Run queries in parallel ──────────────────────────────────────
     splunk = get_splunk_client()
     splunk.audit_log.clear()
+    guardrail = SPLGuardrail()
 
-    async def run_query(spl: str) -> list:
-        try:
-            return await splunk.run_search(spl) or []
-        except Exception as exc:
-            logger.warning(
-                "[%s] Reconstruction query failed: %.60s | error: %s",
-                investigation_id,
-                spl,
-                exc,
-            )
-            return []
+    # ── ReAct loop state ─────────────────────────────────────────────────
+    all_telemetry: dict[str, list] = {}
+    accumulated_stage_names: list[str] = []
+    react_history: list[dict] = []
+    executed_queries: set[str] = set()
+    consecutive_errors: int = 0
+    current_confidence: float = 0.0
+    sourcetypes_seen: set[str] = set()
+    iteration: int = 0
 
-    logger.info(
-        "[%s] Running %d reconstruction queries in parallel",
-        investigation_id,
-        len(queries),
-    )
-
-    query_results: list[list] = await asyncio.gather(
-        *[run_query(q) for q in queries]
-    )
-
-    logger.info(
-        "[%s] Reconstruction telemetry complete | queries=%d",
-        investigation_id,
-        len(queries),
-    )
-
-    # ── Step 3: Build LLM context ─────────────────────────────────────────────
-    reconstruction_sections = ""
-    for i, (query, result) in enumerate(zip(queries, query_results)):
-        reconstruction_sections += (
-            f"\nRECONSTRUCTION QUERY [{i + 1}] "
-            f"({query[:80].strip()}...):\n"
-            f"{json.dumps(result[:20], indent=2)}\n"
+    # ── ReAct Loop ────────────────────────────────────────────────────────
+    while iteration < 8:
+        iteration += 1
+        logger.info(
+            "[%s] ReAct iteration %d/8 | confidence=%.2f | stages=%d",
+            investigation_id, iteration,
+            current_confidence, len(accumulated_stage_names)
         )
 
-    context = f"""
-TRIAGE CONTEXT
-==============
+        # Select queries for this iteration
+        if iteration == 1:
+            queries_this_iter = [
+                q for q in SEED_QUERIES.get(
+                    classification, SEED_QUERIES["UNKNOWN"]
+                )
+                if q not in executed_queries
+            ]
+        else:
+            if react_history:
+                last_obs = react_history[-1].get("observation", {})
+                queries_this_iter = [
+                    q for q in last_obs.get(
+                        "recommended_next_queries", []
+                    )
+                    if q not in executed_queries
+                ][:3]
+            else:
+                queries_this_iter = []
+
+        if not queries_this_iter:
+            logger.info(
+                "[%s] No new queries for iteration %d — terminating",
+                investigation_id, iteration
+            )
+            break
+
+        # Execute queries in parallel
+        query_tasks = [
+            _execute_query_with_retry(
+                splunk, guardrail, q, investigation_id
+            )
+            for q in queries_this_iter
+        ]
+        query_outputs = await asyncio.gather(
+            *query_tasks, return_exceptions=True
+        )
+
+        iteration_results: dict[str, list] = {}
+        iteration_errors = 0
+
+        for q, output in zip(queries_this_iter, query_outputs):
+            executed_queries.add(q)
+            if isinstance(output, Exception):
+                logger.warning(
+                    "[%s] Query failed: %s | error: %s",
+                    investigation_id, q[:60], output
+                )
+                iteration_errors += 1
+                iteration_results[q] = []
+            else:
+                results, final_spl = output
+                iteration_results[final_spl] = results
+                all_telemetry[final_spl] = results
+                for row in results:
+                    if "sourcetype" in row:
+                        sourcetypes_seen.add(row["sourcetype"])
+
+        if iteration_errors == len(queries_this_iter):
+            consecutive_errors += 1
+        else:
+            consecutive_errors = 0
+
+        if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+            logger.error(
+                "[%s] %d consecutive error iterations — aborting loop",
+                investigation_id, consecutive_errors
+            )
+            break
+
+        # Build telemetry summary for reasoning step
+        telemetry_summary = ""
+        for spl_str, results in iteration_results.items():
+            telemetry_summary += (
+                f"\nQUERY: {spl_str[:100]}...\n"
+                f"ROWS RETURNED: {len(results)}\n"
+                f"SAMPLE (first 5 rows):\n"
+                f"{json.dumps(results[:5], indent=2)}\n"
+            )
+
+        reasoning_context = f"""
+INVESTIGATION CONTEXT
+=====================
 Investigation ID: {investigation_id}
-Trigger: {trigger}
 Classification: {classification}
+Trigger: {trigger}
 Triage Summary: {triage_summary}
-Key Indicators: {json.dumps(key_indicators, indent=2)}
 Attack Window: {attack_window.get('start')} to {attack_window.get('end')}
-Peak Hour: {attack_window.get('peak_hour')} ({attack_window.get('peak_count', 0):,} events)
+
+TRIAGE KEY INDICATORS:
+{json.dumps(key_indicators, indent=2)}
+
+TOP SOURCE IPs:
+{json.dumps(top_source_ips[:5], indent=2)}
+
+CURRENT ITERATION: {iteration}/8
+CURRENT CONFIDENCE: {current_confidence:.2f}
+STAGES FOUND SO FAR: {json.dumps(accumulated_stage_names, indent=2)}
+
+QUERIES ALREADY EXECUTED (DO NOT REPEAT):
+{json.dumps(list(executed_queries - set(queries_this_iter)), indent=2)}
+
+TELEMETRY FROM THIS ITERATION:
+{telemetry_summary}
+"""
+
+        try:
+            observation: ReActObservation = await \
+                _REASONING_STRUCTURED.with_config({
+                    "run_name": f"react_reasoning_iter_{iteration}",
+                    "metadata": {
+                        "investigation_id": investigation_id,
+                        "iteration": iteration,
+                    }
+                }).ainvoke([
+                    SystemMessage(content=_REASONING_SYSTEM_PROMPT),
+                    HumanMessage(content=reasoning_context),
+                ])
+
+            # Add newly identified stages
+            for stage_name in observation.new_stages_identified:
+                if stage_name not in accumulated_stage_names:
+                    accumulated_stage_names.append(stage_name)
+
+            react_history.append({
+                "iteration": iteration,
+                "queries": queries_this_iter,
+                "telemetry_rows": {
+                    q: len(r) for q, r in iteration_results.items()
+                },
+                "observation": observation.model_dump(),
+            })
+
+            # Update confidence using deterministic formula
+            confirmed_count = len(accumulated_stage_names)
+            current_confidence = compute_reconstruction_confidence(
+                confirmed_stages=confirmed_count,
+                total_stages=max(confirmed_count, 1),
+                sourcetypes_covered=sourcetypes_seen,
+                has_patient_zero=any(
+                    "Initial Access" in s or "patient" in s.lower()
+                    for s in accumulated_stage_names
+                ),
+                has_blast_radius=len(all_telemetry) > 2,
+                has_external_ip=any(
+                    not any(
+                        ip.get("ip", "").startswith(p)
+                        for p in ("10.", "192.168.", "172.")
+                    )
+                    for ip in top_source_ips
+                ),
+            )
+
+            logger.info(
+                "[%s] Iteration %d | new_stages=%d | "
+                "confidence=%.2f | terminate=%s | gaps=%d",
+                investigation_id, iteration,
+                len(observation.new_stages_identified),
+                current_confidence,
+                observation.should_terminate,
+                len(observation.gaps_remaining),
+            )
+
+            # Check termination conditions
+            if observation.should_terminate:
+                logger.info(
+                    "[%s] ReAct terminating — LLM requested termination",
+                    investigation_id
+                )
+                break
+
+            if current_confidence >= 0.85:
+                logger.info(
+                    "[%s] ReAct terminating — confidence %.2f >= 0.85",
+                    investigation_id, current_confidence
+                )
+                break
+
+            if len(accumulated_stage_names) >= 5:
+                logger.info(
+                    "[%s] ReAct terminating — %d stages identified",
+                    investigation_id, len(accumulated_stage_names)
+                )
+                break
+
+        except Exception as reasoning_exc:
+            logger.error(
+                "[%s] Reasoning step failed at iteration %d: %s",
+                investigation_id, iteration, reasoning_exc
+            )
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                break
+
+    logger.info(
+        "[%s] ReAct loop complete | iterations=%d | confidence=%.2f | "
+        "total_queries=%d | stages_found=%d",
+        investigation_id, iteration, current_confidence,
+        len(executed_queries), len(accumulated_stage_names),
+    )
+
+    # ── Synthesis: single LLM call to produce final structured output ─────
+    full_telemetry_summary = ""
+    for spl_str, results in all_telemetry.items():
+        full_telemetry_summary += (
+            f"\nQUERY: {spl_str[:100]}...\n"
+            f"ROWS: {len(results)}\n"
+            f"{json.dumps(results[:10], indent=2)}\n"
+        )
+
+    react_summary = json.dumps([
+        {
+            "iteration": h["iteration"],
+            "queries_run": len(h["queries"]),
+            "findings": h["observation"].get("findings", ""),
+            "new_stages": h["observation"].get(
+                "new_stages_identified", []
+            ),
+            "confidence": h["observation"].get("current_confidence", 0),
+        }
+        for h in react_history
+    ], indent=2)
+
+    synthesis_context = f"""
+INVESTIGATION COMPLETE — PRODUCE FINAL REPORT
+==============================================
+Investigation ID: {investigation_id}
+Classification: {classification}
+Trigger: {trigger}
+Attack Window: {attack_window.get('start')} to {attack_window.get('end')}
+ReAct Iterations Completed: {iteration}
+Final Confidence: {current_confidence:.2f}
+
+TRIAGE KEY INDICATORS:
+{json.dumps(key_indicators, indent=2)}
 
 TOP SOURCE IPs FROM TRIAGE:
 {json.dumps(top_source_ips, indent=2)}
 
-RECONSTRUCTION TELEMETRY (chronological forensic queries):
-{reconstruction_sections}
+REACT INVESTIGATION HISTORY:
+{react_summary}
 
-Based on all evidence above, reconstruct the full attack kill chain,
-identify patient zero by earliest timestamp, and assess blast radius.
+COMPLETE TELEMETRY EVIDENCE 
+({len(all_telemetry)} queries, 
+{sum(len(r) for r in all_telemetry.values())} total rows):
+{full_telemetry_summary}
+
+Produce the final ReconstructionResult using ONLY evidence from 
+the telemetry above. Do not hallucinate events not in the data.
 """
 
-    messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=context),
-    ]
-
-    # ── Step 4: LLM call ──────────────────────────────────────────────────────
     try:
-        raw: ReconstructionResultRaw = await _LLM_STRUCTURED_RAW.with_config(
-            {
-                "run_name": "reconstruction_llm_call",
+        raw: ReconstructionResultRaw = await \
+            _SYNTHESIS_STRUCTURED.with_config({
+                "run_name": "reconstruction_synthesis",
                 "metadata": {
                     "investigation_id": investigation_id,
-                    "classification": classification,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                },
-            }
-        ).ainvoke(messages)
+                    "iterations_completed": iteration,
+                    "final_confidence": current_confidence,
+                }
+            }).ainvoke([
+                SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
+                HumanMessage(content=synthesis_context),
+            ])
 
-        # ── Step 5: Python post-processing & field injection ──────────────────
-        
-        # Inject missing attack_narrative from kill chain stages if LLM omitted it
-        if not raw.attack_narrative or not raw.attack_narrative.strip():
-            if raw.kill_chain:
-                stages_summary = ", ".join(
-                    f"{s.stage_name} ({s.confidence})" 
-                    for s in raw.kill_chain[:3]
-                )
-                raw.attack_narrative = (
-                    f"{classification} attack reconstructed with "
-                    f"{len(raw.kill_chain)} kill chain stages: {stages_summary}. "
-                    f"Patient zero identified as {raw.patient_zero.ip_address if raw.patient_zero else 'unknown'}. "
-                    f"Containment priority: {raw.blast_radius.containment_priority if raw.blast_radius else 'HIGH'}."
-                )
-            else:
-                raw.attack_narrative = (
-                    f"{classification} attack detected. "
-                    f"Insufficient telemetry to reconstruct full kill chain. "
-                    f"Manual forensic investigation recommended."
-                )
-            logger.info(
-                "[%s] attack_narrative was missing from LLM output — built from kill chain",
-                investigation_id
-            )
-
-        # Inject missing reconstruction_confidence
-        if raw.reconstruction_confidence is None:
-            confirmed_stages = sum(
-                1 for s in raw.kill_chain if s.confidence == "CONFIRMED"
-            )
-            total_stages = len(raw.kill_chain)
-            if total_stages > 0:
-                raw.reconstruction_confidence = min(
-                    0.95,
-                    0.5 + (confirmed_stages / total_stages) * 0.45
-                )
-            else:
-                raw.reconstruction_confidence = 0.3
-            logger.info(
-                "[%s] reconstruction_confidence was missing — computed %.2f from %d/%d confirmed stages",
-                investigation_id, raw.reconstruction_confidence, 
-                confirmed_stages, total_stages
-            )
-
-        # Inject missing patient_zero
-        if raw.patient_zero is None:
-            # Use the first non-RFC1918 IP from top_source_ips if available
-            external_ips = [
-                ip for ip in top_source_ips
-                if not any(
-                    ip.get("ip", "").startswith(prefix)
-                    for prefix in ("10.", "192.168.", "172.16.", "172.31.")
-                )
-            ]
-            if external_ips:
-                raw.patient_zero = PatientZero(
-                    ip_address=external_ips[0]["ip"],
-                    first_seen=attack_window.get("start", "unknown"),
-                    role="External Attacker",
-                    evidence=f"Highest event count external IP from triage telemetry: {external_ips[0]['event_count']} events",
-                    confidence="INFERRED",
-                )
-            else:
-                top_ip = top_source_ips[0] if top_source_ips else {}
-                raw.patient_zero = PatientZero(
-                    ip_address=top_ip.get("ip", "unknown"),
-                    first_seen=attack_window.get("start", "unknown"),
-                    role="Compromised Internal Host",
-                    evidence=f"Highest activity internal IP: {top_ip.get('event_count', 0)} events",
-                    confidence="INFERRED",
-                )
-            logger.info("[%s] patient_zero was missing — injected from triage telemetry", investigation_id)
-
-        # Inject missing blast_radius
-        if raw.blast_radius is None:
-            all_ips = [ip.get("ip", "") for ip in top_source_ips]
-            internal = [
-                ip for ip in all_ips
-                if any(ip.startswith(p) for p in ("10.", "192.168.", "172."))
-            ]
-            external = [ip for ip in all_ips if ip not in internal]
-            raw.blast_radius = BlastRadius(
-                total_affected_ips=len(all_ips),
-                internal_ips_affected=internal,
-                external_ips_observed=external,
-                affected_sourcetypes=["WinEventLog:Security", "stream:http", "stream:dns"],
-                data_at_risk="Assessment incomplete — manual review required",
-                containment_priority="HIGH",
-            )
-            logger.info("[%s] blast_radius was missing — injected from triage telemetry", investigation_id)
-
-        # Now validate into strict model
-        result = ReconstructionResult(
-            kill_chain=raw.kill_chain if raw.kill_chain else [],
-            patient_zero=raw.patient_zero,
-            blast_radius=raw.blast_radius,
-            attack_narrative=raw.attack_narrative,
-            reconstruction_confidence=raw.reconstruction_confidence,
-        )
-
-        # ── Step 6: Handle empty kill_chain gracefully ────────────────────────
-        if not result.kill_chain:
-            result.kill_chain = [
-                KillChainStage(
-                    stage_number=1,
-                    stage_name="Unknown Initial Stage",
-                    mitre_tactic="TA0001",
-                    mitre_technique="T1190 - Exploit Public-Facing Application",
-                    timestamp=attack_window.get("start", "unknown"),
-                    evidence=(
-                        f"Classification: {classification}. "
-                        f"Triage summary: {triage_summary[:200]}. "
-                        f"Full forensic reconstruction requires manual analysis."
-                    ),
-                    confidence="INFERRED",
-                    affected_assets=[ip.get("ip", "") for ip in top_source_ips[:3]],
-                )
-            ]
-            logger.warning(
-                "[%s] kill_chain was empty after LLM call — inserted synthetic INFERRED stage",
-                investigation_id,
-            )
-
-    except Exception as exc:
+    except Exception as synthesis_exc:
         logger.error(
-            "[%s] ReconstructionAgent LLM call failed: %s",
-            investigation_id,
-            exc,
+            "[%s] Synthesis LLM call failed: %s",
+            investigation_id, synthesis_exc
         )
         return {
             **state,
-            "error": f"ReconstructionAgent: LLM call failed — {exc}",
+            "error": f"ReconstructionAgent synthesis failed: {synthesis_exc}",
             "escalate_to_human": True,
-            "spl_audit_log": list(state.get("spl_audit_log", [])) + splunk.audit_log,
+            "spl_audit_log": list(
+                state.get("spl_audit_log", [])
+            ) + splunk.audit_log,
         }
 
-    # ── Step 7: Post-processing guardrails ────────────────────────────────────
-    # Cap reconstruction confidence at 0.95
-    if result.reconstruction_confidence > 0.95:
-        result.reconstruction_confidence = 0.95
-
-    # Force IMMEDIATE containment for confirmed CRITICAL attacks
-    severity = state.get("severity", "")
-    if severity == "CRITICAL" and any(
-        s.confidence == "CONFIRMED" for s in result.kill_chain
-    ):
-        result.blast_radius.containment_priority = "IMMEDIATE"
+    # ── Field injection — gpt-4o-mini drops fields on complex schemas ──────
+    if not raw.attack_narrative or not raw.attack_narrative.strip():
+        stages_summary = ", ".join(
+            f"{s.stage_name} ({s.confidence})"
+            for s in (raw.kill_chain or [])[:3]
+        )
+        pz_ip = raw.patient_zero.ip_address \
+            if raw.patient_zero else "unknown"
+        cp = raw.blast_radius.containment_priority \
+            if raw.blast_radius else "IMMEDIATE"
+        raw.attack_narrative = (
+            f"{classification} attack reconstructed over {iteration} "
+            f"ReAct iterations with {len(raw.kill_chain or [])} kill "
+            f"chain stages: {stages_summary}. "
+            f"Patient zero: {pz_ip}. "
+            f"Containment priority: {cp}."
+        )
         logger.info(
-            "[%s] CRITICAL severity with CONFIRMED stages — "
-            "forcing containment_priority=IMMEDIATE",
-            investigation_id,
+            "[%s] attack_narrative injected from kill chain",
+            investigation_id
         )
 
-    logger.info(
-        "[%s] ReconstructionAgent complete | stages=%d | patient_zero=%s | "
-        "containment=%s | confidence=%.2f",
-        investigation_id,
-        len(result.kill_chain),
-        result.patient_zero.ip_address,
-        result.blast_radius.containment_priority,
-        result.reconstruction_confidence,
+    # Always override confidence with deterministic formula
+    confirmed_final = sum(
+        1 for s in (raw.kill_chain or [])
+        if s.confidence == "CONFIRMED"
+    )
+    raw.reconstruction_confidence = compute_reconstruction_confidence(
+        confirmed_stages=confirmed_final,
+        total_stages=len(raw.kill_chain or []),
+        sourcetypes_covered=sourcetypes_seen,
+        has_patient_zero=raw.patient_zero is not None,
+        has_blast_radius=raw.blast_radius is not None,
+        has_external_ip=any(
+            not any(
+                ip.get("ip", "").startswith(p)
+                for p in ("10.", "192.168.", "172.")
+            )
+            for ip in top_source_ips
+        ),
     )
 
-    # ── Step 6: Update audit log and state ────────────────────────────────────
-    updated_audit = list(state.get("spl_audit_log", [])) + splunk.audit_log
+    if raw.patient_zero is None:
+        external = [
+            ip for ip in top_source_ips
+            if not any(
+                ip.get("ip", "").startswith(p)
+                for p in ("10.", "192.168.", "172.")
+            )
+        ]
+        if external:
+            raw.patient_zero = PatientZero(
+                ip_address=external[0]["ip"],
+                first_seen=attack_window.get("start", "unknown"),
+                role="External Attacker",
+                evidence=(
+                    f"External IP from triage telemetry: "
+                    f"{external[0].get('event_count', 0)} events"
+                ),
+                confidence="INFERRED"
+            )
+        else:
+            top = top_source_ips[0] if top_source_ips else {}
+            raw.patient_zero = PatientZero(
+                ip_address=top.get("ip", "unknown"),
+                first_seen=attack_window.get("start", "unknown"),
+                role="Compromised Internal Host",
+                evidence=(
+                    f"Highest activity internal host: "
+                    f"{top.get('event_count', 0)} events"
+                ),
+                confidence="INFERRED"
+            )
+
+    if raw.blast_radius is None:
+        all_ips = [ip.get("ip", "") for ip in top_source_ips]
+        internal = [
+            ip for ip in all_ips
+            if any(ip.startswith(p) for p in ("10.", "192.168.", "172."))
+        ]
+        external_ips = [ip for ip in all_ips if ip not in internal]
+        raw.blast_radius = BlastRadius(
+            total_affected_ips=len(all_ips),
+            internal_ips_affected=internal,
+            external_ips_observed=external_ips,
+            affected_sourcetypes=list(sourcetypes_seen) or [
+                "WinEventLog:Security", "stream:http", "stream:dns"
+            ],
+            data_at_risk="Assessment incomplete — manual review required",
+            containment_priority="HIGH"
+        )
+
+    if not raw.kill_chain:
+        raw.kill_chain = [
+            KillChainStage(
+                stage_number=1,
+                stage_name="Unknown Initial Stage",
+                mitre_tactic="TA0001",
+                mitre_technique="T1190 - Exploit Public-Facing Application",
+                timestamp=attack_window.get("start", "unknown"),
+                evidence=(
+                    f"Classification: {classification}. "
+                    f"Triage: {triage_summary[:200]}. "
+                    f"Manual analysis required."
+                ),
+                confidence="INFERRED",
+                affected_assets=[
+                    ip.get("ip", "") for ip in top_source_ips[:3]
+                ]
+            )
+        ]
+
+    # Enforce IMMEDIATE for CRITICAL confirmed attacks
+    if (
+        state.get("severity") == "CRITICAL"
+        and any(s.confidence == "CONFIRMED" for s in raw.kill_chain)
+    ):
+        raw.blast_radius.containment_priority = "IMMEDIATE"
+
+    # Enforce severity floor on patient_zero role
+    if raw.patient_zero:
+        pz_ip = raw.patient_zero.ip_address
+        is_internal = any(
+            pz_ip.startswith(p)
+            for p in ("10.", "192.168.", "172.16.", "172.17.",
+                      "172.18.", "172.19.", "172.20.", "172.21.",
+                      "172.22.", "172.23.", "172.24.", "172.25.",
+                      "172.26.", "172.27.", "172.28.", "172.29.",
+                      "172.30.", "172.31.")
+        )
+        if is_internal and raw.patient_zero.role == "External Attacker":
+            raw.patient_zero.role = "Compromised Internal Host"
+            logger.info(
+                "[%s] patient_zero role corrected: RFC1918 IP %s "
+                "cannot be External Attacker",
+                investigation_id, pz_ip
+            )
+
+    # Build final validated result
+    result = ReconstructionResult(
+        kill_chain=raw.kill_chain,
+        patient_zero=raw.patient_zero,
+        blast_radius=raw.blast_radius,
+        attack_narrative=raw.attack_narrative,
+        reconstruction_confidence=raw.reconstruction_confidence,
+    )
+
+    logger.info(
+        "[%s] ReconstructionAgent complete | stages=%d | confirmed=%d | "
+        "patient_zero=%s (%s) | containment=%s | confidence=%.2f | "
+        "iterations=%d | queries=%d",
+        investigation_id,
+        len(result.kill_chain),
+        sum(1 for s in result.kill_chain if s.confidence == "CONFIRMED"),
+        result.patient_zero.ip_address,
+        result.patient_zero.role,
+        result.blast_radius.containment_priority,
+        result.reconstruction_confidence,
+        iteration,
+        len(executed_queries),
+    )
+
+    updated_audit = list(
+        state.get("spl_audit_log", [])
+    ) + splunk.audit_log
 
     return {
         **state,
-        "kill_chain": [stage.model_dump() for stage in result.kill_chain],
+        "kill_chain": [s.model_dump() for s in result.kill_chain],
         "patient_zero": result.patient_zero.model_dump(),
         "blast_radius": result.blast_radius.model_dump(),
         "attack_narrative": result.attack_narrative,
         "reconstruction_confidence": result.reconstruction_confidence,
+        "react_iterations": iteration,
         "spl_audit_log": updated_audit,
         "error": None,
     }

@@ -133,6 +133,9 @@ class AgentState(TypedDict, total=False):
     Populated by ReconstructionAgent.
     """
 
+    react_iterations: int
+    """Number of ReAct iterations completed by ReconstructionAgent."""
+
     # ── Threat intelligence ───────────────────────────────────────────────────
     threat_intel: dict
     """
