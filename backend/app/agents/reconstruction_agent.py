@@ -262,8 +262,21 @@ blast_radius: Every unique IP from all telemetry.
 attack_narrative: 2-3 sentences. Must include: attack type, initial 
 vector with specific evidence, what was compromised, immediate action.
 
-reconstruction_confidence: Set to 0.75 as placeholder — Python will 
-overwrite this with the deterministic formula.
+BOTSV3-SPECIFIC MITRE MAPPINGS — use these exact IDs:
+- AWS metadata 169.254.169.254 queries → TA0006 / T1552.005
+- cmd.exe/WMIC.exe via EventCode 4688 → TA0002 / T1059.003
+- reg.exe registry modification → TA0003 / T1547
+- EventCode 5156/5157 → TA0005 / T1562.004
+- EventCode 1102 log cleared → TA0005 / T1070.001
+- Ransomware file encryption → TA0040 / T1486
+- External HTTP access → TA0001 / T1190
+- EventCode 4673/4672 privilege → TA0004 / T1078
+- SMB lateral movement → TA0008 / T1021.002
+- DNS C2 tunneling → TA0011 / T1071.004
+
+RANSOMWARE MANDATORY: Every ransomware kill chain MUST include 
+a stage with mitre_tactic="TA0040" and 
+mitre_technique="T1486 - Data Encrypted for Impact".
 
 CRITICAL: Only use evidence present in the telemetry provided.
 Do not hallucinate events, IPs, or timestamps not in the data.
