@@ -62,4 +62,4 @@ desktop.ini
 !**/*.py
 
 skills-lock.json
-.agents
+.agents/
