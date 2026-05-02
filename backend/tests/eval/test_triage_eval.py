@@ -12,7 +12,7 @@ from tests.eval.goldens import GOLDENS
 from tests.eval.metrics import task_completion, tool_correctness, faithfulness
 
 import os
-BASE_URL = "http://localhost:8003"
+BASE_URL = "http://localhost:8001"
 RESULTS_PATH = os.path.join(os.path.dirname(__file__), "eval_results.json")
 
 

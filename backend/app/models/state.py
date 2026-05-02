@@ -153,6 +153,12 @@ class AgentState(TypedDict, total=False):
     Populated by TTPAgent (future node).
     """
 
+    rag_context: dict
+    """
+    Consolidated RAG retrieval results (MITRE, CVE, Playbooks, BOTSv3).
+    Populated by SynthesisAgent (future node) — default {}.
+    """
+
     # ── Confidence tracking ───────────────────────────────────────────────────
     confidence_scores: dict[str, float]
     """

@@ -32,6 +32,7 @@ Thumbs.db
 .coverage
 htmlcov/
 .deepeval/
+backend/tests/eval/eval_results*.json
 
 # LangSmith / LangChain
 .langchain/
