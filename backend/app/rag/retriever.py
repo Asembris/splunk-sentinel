@@ -15,6 +15,7 @@ import logging
 import os
 from typing import Any, Optional
 
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -29,20 +30,36 @@ from app.rag.collections import (
     SIMILARITY_THRESHOLD,
 )
 
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
-# Async clients for use inside async agents
-_openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-_qdrant_client = AsyncQdrantClient(
-    url=os.getenv("QDRANT_URL"),
-    api_key=os.getenv("QDRANT_API_KEY"),
-)
+# Lazy-initialised clients — constructed on first use so that
+# load_dotenv() always runs before the API key is read.
+_openai_client: Optional[AsyncOpenAI] = None
+_qdrant_client: Optional[AsyncQdrantClient] = None
+
+
+def _get_openai() -> AsyncOpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _openai_client
+
+
+def _get_qdrant() -> AsyncQdrantClient:
+    global _qdrant_client
+    if _qdrant_client is None:
+        _qdrant_client = AsyncQdrantClient(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY"),
+        )
+    return _qdrant_client
 
 
 async def _embed_query(query: str) -> list[float]:
     """Generate embedding for a search query."""
-    # Note: text-embedding-3-large supports dimensions, but we stick to the model default or EMBEDDING_DIMS
-    response = await _openai_client.embeddings.create(
+    response = await _get_openai().embeddings.create(
         model=EMBEDDING_MODEL,
         input=query,
     )
@@ -63,7 +80,7 @@ async def semantic_search(
     try:
         query_vector = await _embed_query(query)
 
-        results = await _qdrant_client.search(
+        results = await _get_qdrant().search(
             collection_name=collection_name,
             query_vector=query_vector,
             limit=top_k,
@@ -101,7 +118,7 @@ async def retrieve_mitre_technique(technique_id: str) -> Optional[dict]:
     """
     try:
         # First try exact match via filter
-        results = await _qdrant_client.scroll(
+        results = await _get_qdrant().scroll(
             collection_name=MITRE_COLLECTION,
             scroll_filter=Filter(
                 must=[

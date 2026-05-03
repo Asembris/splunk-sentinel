@@ -3,9 +3,14 @@ investigation_graph.py
 ----------------------
 LangGraph StateGraph definition for Splunk Sentinel.
 
-Current graph (Phase 3 — Triage + Reconstruction + Parallel Enrichment):
-  START -> triage_agent -> (conditional) -> reconstruction_agent -> (conditional) -> [threat_intel_agent, ttp_agent] -> END
-                                         \-> END (UNKNOWN / low-confidence / error)
+Current graph (Phase 4 - Triage + Reconstruction + Parallel Enrichment + Synthesis):
+  START -> triage_agent -> (conditional) -> reconstruction_agent -> (conditional)
+                                         -> END (UNKNOWN / low-confidence / error)
+
+  reconstruction_agent -> [threat_intel_agent, ttp_agent] (parallel fan-out)
+  threat_intel_agent ->
+                        synthesis_agent -> END
+  ttp_agent ->
 """
 
 import logging
@@ -14,6 +19,7 @@ from typing import Union, Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.constants import Send
 
+from app.agents.synthesis_agent import synthesis_agent
 from app.agents.threat_intel_agent import threat_intel_agent
 from app.agents.ttp_agent import ttp_agent
 from app.agents.reconstruction_agent import reconstruction_agent
@@ -51,21 +57,21 @@ def _route_after_reconstruction(
     Skip both if reconstruction errored or classification is UNKNOWN.
     """
     investigation_id = state.get("investigation_id", "unknown")
-    
+
     if state.get("error"):
         logger.info(
             "[%s] Routing to END — reconstruction error",
             investigation_id,
         )
         return END
-    
+
     if state.get("attack_classification") == "UNKNOWN":
         logger.info(
             "[%s] Routing to END — UNKNOWN after reconstruction",
             investigation_id,
         )
         return END
-    
+
     logger.info(
         "[%s] Fan-out: routing to threat_intel_agent + ttp_agent "
         "in parallel",
@@ -82,18 +88,19 @@ def _build_graph() -> StateGraph:
 
     # Register all nodes
     graph.add_node("triage_agent", triage_agent)
-    
+
     async def _reconstruction_node(state, config):
         callback = config.get("configurable", {}).get("progress_callback")
         return await reconstruction_agent(state, progress_callback=callback)
-        
+
     graph.add_node("reconstruction_agent", _reconstruction_node)
     graph.add_node("threat_intel_agent", threat_intel_agent)
     graph.add_node("ttp_agent", ttp_agent)
+    graph.add_node("synthesis_agent", synthesis_agent)
 
     # Wire edges
     graph.add_edge(START, "triage_agent")
-    
+
     graph.add_conditional_edges(
         "triage_agent",
         _route_after_triage,
@@ -102,16 +109,19 @@ def _build_graph() -> StateGraph:
             END: END,
         },
     )
-    
+
     graph.add_conditional_edges(
         "reconstruction_agent",
         _route_after_reconstruction,
     )
-    
-    # Both parallel agents route to END for now
-    # SynthesisAgent will be inserted here in next phase
-    graph.add_edge("threat_intel_agent", END)
-    graph.add_edge("ttp_agent", END)
+
+    # Both parallel agents converge into synthesis_agent
+    graph.add_edge("threat_intel_agent", "synthesis_agent")
+    graph.add_edge("ttp_agent", "synthesis_agent")
+
+    # SynthesisAgent routes to END
+    # ReportAgent will be inserted here in next phase
+    graph.add_edge("synthesis_agent", END)
 
     return graph
 
@@ -119,5 +129,5 @@ def _build_graph() -> StateGraph:
 compiled_graph = _build_graph().compile()
 logger.info(
     "Investigation graph compiled "
-    "(Phase 3 — triage + reconstruction + parallel intel)."
+    "(Phase 4 — triage + reconstruction + parallel intel + synthesis)."
 )
