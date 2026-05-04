@@ -473,7 +473,7 @@ async def reconstruction_agent(
 
     logger.info(
         "[%s] ReconstructionAgent starting | classification=%s | "
-        "mode=ReAct | max_iterations=8",
+        "mode=ReAct | max_iterations=3",
         investigation_id, classification
     )
 
@@ -492,10 +492,10 @@ async def reconstruction_agent(
     iteration: int = 0
 
     # ── ReAct Loop ────────────────────────────────────────────────────────
-    while iteration < 8:
+    while iteration < 3:
         iteration += 1
         logger.info(
-            "[%s] ReAct iteration %d/8 | confidence=%.2f | stages=%d",
+            "[%s] ReAct iteration %d/3 | confidence=%.2f | stages=%d",
             investigation_id, iteration,
             current_confidence, len(accumulated_stage_names)
         )
@@ -600,7 +600,7 @@ TRIAGE KEY INDICATORS:
 TOP SOURCE IPs:
 {json.dumps(top_source_ips[:5], indent=2)}
 
-CURRENT ITERATION: {iteration}/8
+CURRENT ITERATION: {iteration}/3
 CURRENT CONFIDENCE: {current_confidence:.2f}
 STAGES FOUND SO FAR: {json.dumps(accumulated_stage_names, indent=2)}
 

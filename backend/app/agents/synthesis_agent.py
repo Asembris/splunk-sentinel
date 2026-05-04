@@ -51,8 +51,19 @@ class RecommendedAction(BaseModel):
     mitre_technique: str
 
 
+class NarrativeSection(BaseModel):
+    executive_summary: str
+    attack_overview: str
+    threat_actor_profile: str
+
+class StructuredSection(BaseModel):
+    key_findings: list[FindingWithConfidence] = Field(min_length=4)
+    recommended_actions: list[RecommendedAction] = Field(min_length=1)
+    mitre_techniques_used: list[str] = Field(default_factory=list)
+    cves_identified: list[str] = Field(default_factory=list)
+    investigation_confidence: float = Field(ge=0.0, le=1.0)
+
 class FinalReportRaw(BaseModel):
-    """Relaxed model for gpt-4o-mini structured output."""
     executive_summary: str = ""
     attack_overview: str = ""
     key_findings: list[FindingWithConfidence] = Field(default_factory=list)
@@ -98,7 +109,7 @@ attack_overview:
 - Connect stages causally: "This led to..." / "Which enabled..."
 
 key_findings:
-- Minimum 3 findings, maximum 8
+- Minimum 4 findings, maximum 8
 - Each finding must have:
   * finding: a specific factual claim (not generic)
   * evidence: the exact data point supporting it
@@ -152,7 +163,8 @@ CITATION RULES:
 # ── LLM setup ─────────────────────────────────────────────────────────────────
 
 _LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_LLM_STRUCTURED = _LLM.with_structured_output(FinalReportRaw)
+_LLM_NARRATIVE = _LLM.with_structured_output(NarrativeSection)
+_LLM_STRUCTURED = _LLM.with_structured_output(StructuredSection)
 
 
 # ── Main agent ────────────────────────────────────────────────────────────────
@@ -223,7 +235,15 @@ async def synthesis_agent(state: AgentState) -> AgentState:
     # ── Build synthesis context ────────────────────────────────────────────
     threat_intel_text = _format_threat_intel(threat_intel)
     ttp_text = _format_ttp_mappings(ttp_mappings)
-    kill_chain_text = json.dumps(kill_chain, indent=2)
+    
+    kill_chain_text = "\n".join([
+        f"Stage {s.get('stage_number', i+1)}: {s.get('stage_name')} "
+        f"[{s.get('mitre_tactic')} / {s.get('mitre_technique')}] "
+        f"Confidence: {s.get('confidence')} | "
+        f"Timestamp: {s.get('timestamp')} | "
+        f"Evidence: {s.get('evidence', '')[:150]}"
+        for i, s in enumerate(kill_chain)
+    ])
 
     synthesis_context = f"""
 INVESTIGATION SYNTHESIS INPUTS
@@ -269,19 +289,33 @@ data not present in the inputs.
 
     # ── LLM call ──────────────────────────────────────────────────────────
     try:
-        raw: FinalReportRaw = await _LLM_STRUCTURED.with_config({
-            "run_name": "synthesis_llm_call",
-            "metadata": {
-                "investigation_id": investigation_id,
-                "classification": classification,
-                "kill_chain_stages": len(kill_chain),
-                "ttp_mappings": len(ttp_mappings),
-                "threat_intel_ips": len(threat_intel),
-            }
-        }).ainvoke([
-            SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
-            HumanMessage(content=synthesis_context),
-        ])
+        narrative, structured = await asyncio.gather(
+            _LLM_NARRATIVE.with_config({
+                "run_name": "synthesis_narrative_call",
+                "metadata": {"investigation_id": investigation_id}
+            }).ainvoke([
+                SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
+                HumanMessage(content=synthesis_context),
+            ]),
+            _LLM_STRUCTURED.with_config({
+                "run_name": "synthesis_structured_call",
+                "metadata": {"investigation_id": investigation_id}
+            }).ainvoke([
+                SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
+                HumanMessage(content=synthesis_context),
+            ]),
+        )
+
+        raw = FinalReportRaw(
+            executive_summary=narrative.executive_summary,
+            attack_overview=narrative.attack_overview,
+            threat_actor_profile=narrative.threat_actor_profile,
+            key_findings=structured.key_findings,
+            recommended_actions=structured.recommended_actions,
+            mitre_techniques_used=structured.mitre_techniques_used,
+            cves_identified=structured.cves_identified,
+            investigation_confidence=structured.investigation_confidence,
+        )
 
     except Exception as exc:
         logger.error(
@@ -374,8 +408,8 @@ def _format_ttp_mappings(ttp_mappings: list) -> str:
         if ttp.get("confidence", 0) > 0:
             lines.append(
                 f"  {ttp.get('technique_id')} — {ttp.get('technique_name')}\n"
-                f"    Detection: {ttp.get('detection_guidance', '')[:200]}\n"
-                f"    Mitigation: {ttp.get('mitigations', '')[:200]}\n"
+                f"    Detection: {ttp.get('detection_guidance', '')[:150]}\n"
+                f"    Mitigation: {ttp.get('mitigations', '')[:150]}\n"
                 f"    CVEs: {[c.get('cve_id') for c in ttp.get('cves', [])]}"
             )
     return "\n".join(lines) if lines else "TTP enrichment had no RAG hits."
@@ -407,7 +441,7 @@ def _format_rag_context(rag_results: dict) -> str:
         for r in rag_results["playbooks"]:
             sections.append(
                 f"  {r.get('title', '')}\n"
-                f"  {r.get('content', '')[:500]}"
+                f"  {r.get('content', '')[:300]}"
             )
 
     if rag_results.get("botsv3"):
@@ -415,7 +449,7 @@ def _format_rag_context(rag_results: dict) -> str:
         for r in rag_results["botsv3"]:
             sections.append(
                 f"  {r.get('title', '')}\n"
-                f"  {r.get('content', '')[:300]}"
+                f"  {r.get('content', '')[:200]}"
             )
 
     return "\n".join(sections) if sections else "No RAG context retrieved."
