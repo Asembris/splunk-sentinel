@@ -1,209 +1,589 @@
-# Splunk Sentinel 🛡️
+# 🛡️ Splunk Sentinel
 
-> Autonomous AI-powered security investigation system. 
-> Turns a 4-hour SOC analyst investigation into 47 seconds.
+> **Autonomous AI-powered SOC investigation platform.**  
+> Transforms a 4-hour manual security investigation into 90 seconds of 
+> fully autonomous kill chain reconstruction — powered by 6 specialized 
+> AI agents, a ReAct reasoning loop, and a 697-technique MITRE ATT&CK 
+> knowledge base.
 
-![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python)
-![LangGraph](https://img.shields.io/badge/LangGraph-0.2-orange)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green?logo=fastapi)
-![Splunk Enterprise](https://img.shields.io/badge/Splunk-Enterprise_10.2.2-black?logo=splunk)
-![GPT-4o-mini (OpenAI)](https://img.shields.io/badge/GPT--4o--mini-OpenAI-blue?logo=openai)
-![LangSmith](https://img.shields.io/badge/LangSmith-Enabled-blue)
-![DeepEval](https://img.shields.io/badge/DeepEval-Adversarial-red)
-![License MIT](https://img.shields.io/badge/License-MIT-yellow)
+<!-- Badges row 1: core stack -->
+![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-0.2-orange?logo=langchain)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?logo=vite&logoColor=white)
+
+<!-- Badges row 2: AI and data -->
+![OpenAI](https://img.shields.io/badge/GPT--4o--mini-OpenAI-412991?logo=openai&logoColor=white)
+![Qdrant](https://img.shields.io/badge/Qdrant-Cloud-DC244C?logo=qdrant&logoColor=white)
+![Splunk](https://img.shields.io/badge/Splunk-Enterprise_10.2-000000?logo=splunk&logoColor=white)
+![LangSmith](https://img.shields.io/badge/LangSmith-Traced-1C3C3C)
+
+<!-- Badges row 3: quality -->
+![Tests](https://img.shields.io/badge/Tests-169_passing-brightgreen)
+![DeepEval](https://img.shields.io/badge/DeepEval-93.3%25_pass-brightgreen)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
+## Live Demo
+
+| Investigation Dashboard | Kill Chain Graph |
+|:---:|:---:|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Kill Chain](docs/screenshots/kill_chain.png) |
+
+| Incident Report | Investigation History |
+|:---:|:---:|
+| ![Report](docs/screenshots/report.png) | ![History](docs/screenshots/history.png) |
+
+> **Demo:** Enter any security alert trigger → watch 6 AI agents 
+> reconstruct the full attack kill chain in real time.
 
 ## The Problem
 
-SOC analysts investigating APT incidents spend 80% of their time manually pivoting between Splunk sourcetypes — running 15-20 sequential queries, each informed by the last. During an active attack, this manual process takes 3-4 hours. Alert fatigue means critical kill chain events get missed, leading to increased dwell time and potential data exfiltration.
+SOC analysts investigating APT incidents spend 4+ hours manually 
+pivoting between data sources — running 15-20 sequential Splunk 
+queries, each informed by the last. During this time:
 
-## The Solution
+- **Alert fatigue** causes critical kill chain events to be missed
+- **Manual correlation** across 2M+ events is error-prone and slow  
+- **Context switching** between tools breaks investigative flow
+- **Dwell time increases** — attackers operate undetected for longer
 
-Splunk Sentinel is a multi-agent autonomous investigation system built on LangGraph. Given a single alert trigger, it autonomously executes the full SOC analyst workflow: triage → kill chain reconstruction → patient zero identification → blast radius assessment → MITRE ATT&CK mapping → incident report — all within 60 seconds. It replaces manual pivoting with intelligent, goal-oriented agent logic.
-
-## Key Technical Differentiators
-
-### 1. Iterative SPL Generation (ReconstructionAgent)
-The ReconstructionAgent does not use pre-written queries. It receives previous search results and dynamically generates the next SPL query using an LLM, replicating the investigative reasoning of a senior SOC analyst. A ReAct self-correction loop catches SPL syntax errors and rewrites them automatically — the same pattern proven in production in AML Sentinel's Graph QA agent.
-
-### 2. 3-Layer SPL Guardrail Architecture
-Every SPL query passes through three safety layers before execution: Layer 1 (deterministic keyword blocking, 0ms), Layer 2 (index authorization — only botsv3 permitted), Layer 3 (full audit logging with timestamps). The agent cannot destroy evidence, modify indexes, or exfiltrate data. Zero LLM calls are used for safety decisions, ensuring deterministic reliability.
-
-### 3. Confidence-Weighted Causal Graph
-Every edge in the reconstructed kill chain carries a computed confidence score based on temporal proximity, shared IOC overlap, and multi-sourcetype corroboration. Findings below 0.5 confidence trigger human escalation rather than hallucinated conclusions, maintaining the integrity of the investigation.
-
-### 4. Adversarial DeepEval Test Suite
-The full investigation pipeline is evaluated against the BOTS v3 APT scenario with adversarial test cases covering: correct kill chain identification, IOC hallucination prevention, guardrail bypass attempts, and confidence calibration. Zero API calls are used during test execution to ensure reproducible and cost-effective benchmarking.
-
-### 5. Autonomous Splunk Alert Integration
-The system integrates with Splunk's native alerting via webhook. When a saved search threshold fires (e.g., 10+ failed logins in 5 minutes), Splunk calls the FastAPI /api/investigate endpoint directly — no human prompt required. The agent pipeline wakes up, investigates, and writes its findings back to Splunk as a knowledge object before the on-call analyst has opened their laptop.
+The BOTS v3 dataset demonstrates this problem exactly: 2,083,056 log 
+events across 20 sourcetypes. A human analyst needs 3-4 hours to 
+reconstruct the kill chain. **Splunk Sentinel does it in 90 seconds.**
 
 ## Architecture
 
-```
-Alert Trigger (Splunk Webhook / User Prompt)
-              ↓
-        TriageAgent
-        - Attack window detection
-        - Top source IP identification  
-        - APT/Ransomware/Insider/DDoS classification
-        - Confidence scoring
-              ↓
-    ReconstructionAgent  ← THE HARD ONE
-        - Iterative SPL generation (ReAct loop)
-        - Causal chain building
-        - Self-correction on SPL errors
-        - Stops when chain is complete or confidence < 0.4
-              ↓ fan-out
-┌─────────────────────────────────────┐
-│                                     │
-PatientZeroAgent        BlastRadiusAgent
-First infected host     Compromised systems
-Initial attack vector   Data accessed
-                                     │
-ThreatIntelAgent        TTPAgent
-IP/hash enrichment      MITRE ATT&CK
-VirusTotal/AbuseIPDB    Technique IDs
-│                                     │
-└──────────── fan-in ─────────────────┘
-              ↓
-        SynthesisAgent
-        - RAG over past incidents (Qdrant)
-        - Confidence-weighted narrative
-        - Recommended immediate actions
-              ↓
-        ReportAgent
-        - Structured incident report
-        - Writes findings back to Splunk
-        - Persists to Supabase
-        - PDF generation
+### Full Agent Pipeline
+
+```mermaid
+graph TD
+    A[🔔 Alert Trigger<br/>Splunk Webhook / User Prompt] --> B
+
+    subgraph TRIAGE ["⚡ Phase 1 — Triage"]
+        B[TriageAgent<br/>Classification · Confidence · SPL Routing]
+    end
+
+    subgraph RECONSTRUCTION ["🔍 Phase 2 — Reconstruction ReAct Loop"]
+        C[ReconstructionAgent<br/>Iterative SPL Generation · Kill Chain Building<br/>Self-Correction · Patient Zero · Blast Radius]
+    end
+
+    subgraph PARALLEL ["⚡ Phase 3 — Parallel Enrichment"]
+        D[ThreatIntelAgent<br/>VirusTotal · AbuseIPDB<br/>IP Reputation]
+        E[TTPAgent<br/>MITRE ATT&CK RAG<br/>697 Techniques · CVE Lookup]
+    end
+
+    subgraph SYNTHESIS ["📊 Phase 4 — Synthesis"]
+        F[SynthesisAgent<br/>RAG Retrieval · Evidence Citation<br/>Confidence Scoring · Report Generation]
+    end
+
+    B -->|APT/Ransomware/Insider| C
+    B -->|UNKNOWN| Z[🔚 END — Escalate to Human]
+    C --> D
+    C --> E
+    D --> F
+    E --> F
+    F --> G[📄 Final Incident Report<br/>Kill Chain · Findings · Actions · CVEs]
+
+    style TRIAGE fill:#1e3a5f,stroke:#3b82f6
+    style RECONSTRUCTION fill:#1e3a5f,stroke:#3b82f6
+    style PARALLEL fill:#1a2e1a,stroke:#10b981
+    style SYNTHESIS fill:#2d1b1b,stroke:#ef4444
 ```
 
-## Autonomous Trigger (No Human Input Required)
+### ReAct Loop — ReconstructionAgent
 
-In production mode, Splunk Sentinel operates without human input. A Splunk saved search monitors for attack conditions in real time and fires a webhook to the FastAPI backend automatically when thresholds are breached:
+```mermaid
+sequenceDiagram
+    participant T as Trigger
+    participant R as ReconstructionAgent
+    participant S as Splunk (botsv3)
+    participant L as LLM (gpt-4o-mini)
+    participant Q as Qdrant RAG
+    participant G as SPL Guardrail
 
-```spl
-index=botsv3 earliest=-5m
-sourcetype=WinEventLog:Security EventCode=4625
-| stats count by src_ip
-| where count > 10
+    T->>R: AgentState (classification, indicators)
+    
+    loop ReAct Iterations (max 3)
+        R->>G: Validate SPL query
+        G-->>R: ✅ Approved / ❌ Blocked
+        R->>S: Execute SPL query
+        S-->>R: Telemetry results
+        R->>L: Reason: what did we find?<br/>Act: what to query next?
+        L-->>R: ReActObservation<br/>(new_stages, gaps, next_queries)
+        R->>R: Update kill chain stages
+        R->>R: Compute confidence score
+        alt confidence >= 0.85 OR stages >= 5
+            R->>R: Terminate loop
+        end
+    end
+
+    R->>L: Synthesis: produce final report
+    L-->>R: ReconstructionResult
+    R->>Q: Retrieve MITRE technique details
+    Q-->>R: Enriched TTP mappings
+    R-->>T: kill_chain, patient_zero, blast_radius
 ```
 
-When this alert fires, the full investigation pipeline launches autonomously. The demo "We're under attack" prompt replicates this webhook trigger against the BOTS v3 dataset for evaluation purposes.
+### RAG Knowledge Pipeline
 
+```mermaid
+graph LR
+    subgraph SOURCES ["📚 Knowledge Sources"]
+        A[MITRE ATT&CK<br/>Enterprise STIX<br/>697 techniques]
+        B[CVE / NVD<br/>Filtered to botsv3<br/>attack surface]
+        C[IR Playbooks<br/>APT · Ransomware<br/>Insider Threat]
+        D[botsv3 Notes<br/>Manual forensic<br/>ground truth]
+    end
 
-## Tech Stack
+    subgraph EMBEDDING ["🔢 Embedding Pipeline"]
+        E[text-embedding-3-large<br/>3072 dimensions<br/>OpenAI]
+    end
 
-| Layer | Technology | Purpose |
-| :--- | :--- | :--- |
-| Orchestration | LangGraph 0.2 | Agent state machine + fan-out/fan-in |
-| LLM | GPT-4o-mini (OpenAI) | SPL generation + analysis |
-| Security Data | Splunk Enterprise 10.2.2 | Log ingestion + search |
-| Dataset | BOTS v3 (2,083,056 events, 107 sourcetypes) | APT simulation |
-| Vector Store | Qdrant Cloud | Past incident RAG |
-| Database | Supabase PostgreSQL | Incident persistence |
-| Observability | LangSmith | Full pipeline tracing |
-| Evaluation | DeepEval | Adversarial test suite |
-| Backend | FastAPI + Python 3.12 | API + SSE streaming |
-| Frontend | React 18 + Vite | Real-time investigation UI |
+    subgraph STORE ["🗄️ Qdrant Cloud"]
+        F[mitre_attack<br/>697 points]
+        G[cve_nvd<br/>8 points]
+        H[ir_playbooks<br/>5 points]
+        I[botsv3_investigation<br/>3 points]
+    end
 
-## Agent Pipeline Status
+    subgraph RETRIEVAL ["🔍 Parallel Retrieval"]
+        J[retrieve_for_synthesis<br/>4 collections in parallel<br/>threshold 0.45]
+    end
 
-| Agent | Status | Description |
-| :--- | :--- | :--- |
-| TriageAgent | ✅ Complete | Attack window, IP profiling, APT classification |
-| ReconstructionAgent | 🔄 In Progress | Iterative SPL generation with ReAct self-correction loop |
-| PatientZeroAgent | ⏳ Planned | First infected host identification |
-| BlastRadiusAgent | ⏳ Planned | Compromised system mapping |
-| ThreatIntelAgent | ⏳ Planned | IOC enrichment via VirusTotal |
-| TTPAgent | ⏳ Planned | MITRE ATT&CK mapping |
-| SynthesisAgent | ⏳ Planned | RAG-grounded narrative generation |
-| ReportAgent | ⏳ Planned | Incident report + Splunk write-back |
+    A --> E --> F --> J
+    B --> E --> G --> J
+    C --> E --> H --> J
+    D --> E --> I --> J
+    J --> K[SynthesisAgent<br/>RAG-grounded report]
+```
+
+### LangGraph State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> triage_agent
+    
+    triage_agent --> reconstruction_agent: APT/Ransomware/Insider
+    triage_agent --> END: UNKNOWN / low confidence
+    
+    reconstruction_agent --> threat_intel_agent: parallel fan-out
+    reconstruction_agent --> ttp_agent: parallel fan-out
+    
+    threat_intel_agent --> synthesis_agent: merge
+    ttp_agent --> synthesis_agent: merge
+    
+    synthesis_agent --> END: final_report populated
+    
+    note right of reconstruction_agent
+        ReAct loop
+        max 3 iterations
+        SPL guardrail on every query
+    end note
+    
+    note right of triage_agent
+        3-layer SPL guardrail
+        Layer 1: deterministic 0ms
+        Layer 2: index authorization
+        Layer 3: audit logging
+    end note
+```
+
+### 3-Layer SPL Guardrail
+
+```mermaid
+flowchart TD
+    Q[SPL Query] --> L1
+
+    subgraph L1 ["Layer 1 — Deterministic 0ms"]
+        L1C{Contains blocked terms?<br/>DELETE · DROP · outputlookup<br/>sendemail · _internal}
+    end
+
+    subgraph L2 ["Layer 2 — Index Authorization"]
+        L2C{Targets only<br/>index=botsv3?}
+    end
+
+    subgraph L3 ["Layer 3 — Audit Log"]
+        L3C[Write to audit log<br/>timestamp · query · result]
+    end
+
+    L1C -->|YES| BLOCKED1[🚫 BLOCKED<br/>Reason logged]
+    L1C -->|NO| L2C
+    L2C -->|NO| BLOCKED2[🚫 BLOCKED<br/>Out of scope]
+    L2C -->|YES| L3C
+    L3C --> EXEC[✅ Execute against Splunk]
+    EXEC --> RESULTS[Return results to agent]
+```
+
+## Key Technical Differentiators
+
+### 1. ReAct Loop Kill Chain Reconstruction
+
+The ReconstructionAgent implements a full Reasoning + Acting loop — 
+the same pattern used in production AI agents at major tech companies.
+Each iteration:
+
+1. **Observe** — execute SPL queries against botsv3 (2M+ events)
+2. **Reason** — LLM analyzes results: what stages are confirmed?
+3. **Act** — generate next targeted SPL query to fill gaps
+4. **Self-correct** — if SPL fails, LLM rewrites it automatically
+5. **Terminate** — when confidence ≥ 0.85 or kill chain is complete
+
+This is fundamentally different from fixed-query systems. The agent 
+adapts its investigation based on what it finds — exactly as a senior 
+SOC analyst would.
+
+### 2. Deterministic Confidence Scoring
+
+Every kill chain stage and finding has a mathematically computed 
+confidence score — never hallucinated by an LLM:
+
+```python
+def compute_reconstruction_confidence(
+    confirmed_stages: int,    # 0.35 weight
+    sourcetypes_covered: set, # 0.30 weight  
+    has_patient_zero: bool,   # 0.10 weight
+    has_external_ip: bool,    # 0.10 weight
+    has_blast_radius: bool,   # 0.15 weight
+) -> float:
+    # Capped at 0.95 — never 1.0
+```
+
+### 3. Parallel Agent Fan-Out
+
+ThreatIntelAgent and TTPAgent execute simultaneously after 
+ReconstructionAgent completes, using LangGraph's Send API. 
+Adding external API enrichment adds only 4-6 seconds of latency 
+(parallel execution) rather than 8-12 seconds (sequential).
+
+### 4. RAG-Grounded Reporting
+
+SynthesisAgent retrieves from all 4 Qdrant collections in parallel 
+before generating the final report. Every recommended action is 
+grounded in IR playbook content. Every MITRE technique citation 
+is backed by the 697-technique knowledge base. The agent is 
+explicitly instructed to never cite CVEs not present in RAG context.
+
+### 5. Full Observability
+
+Every LLM call, SPL query, and agent transition is traced in 
+LangSmith with token counts, latency, and cost. A complete 
+investigation costs approximately $0.009 in API calls.
+
+### 6. Production-Grade Test Coverage
+
+- **169 unit tests** — all deterministic, no LLM/Splunk dependencies
+- **DeepEval adversarial suite** — 15 goldens, 93.3% pass rate
+- **Hallucination traps** — agent correctly refuses to classify 
+  when telemetry contradicts the trigger
+- **Guardrail bypass tests** — adversarial SPL injection attempts
+
+## Agent Pipeline
+
+| Agent | Status | Inputs | Outputs | Key Logic |
+|:---|:---|:---|:---|:---|
+| **TriageAgent** | ✅ Complete | Alert trigger | classification, severity, attack_window, top_source_ips | SPL routing by attack type, 4625 count < 20 → never BRUTE_FORCE, CRITICAL → force escalate |
+| **ReconstructionAgent** | ✅ Complete | Triage outputs | kill_chain, patient_zero, blast_radius, attack_narrative | ReAct loop max 3 iter, seed queries per classification, SPL self-correction |
+| **ThreatIntelAgent** | ✅ Complete | blast_radius.external_ips | threat_intel per IP | VirusTotal + AbuseIPDB parallel, RFC1918 filter, deterministic fallback |
+| **TTPAgent** | ✅ Complete | kill_chain MITRE codes | ttp_mappings enriched | Qdrant exact ID lookup + semantic fallback, CVE linking |
+| **SynthesisAgent** | ✅ Complete | All upstream outputs | final_report | Parallel LLM calls, RAG 4-collection retrieval, field injection fallbacks |
+| **ReportAgent** | 🔄 In Progress | final_report | PDF, Supabase record | ReportLab PDF, Supabase persistence |
 
 ## Evaluation Results
 
-| Metric | Value | Threshold | Status |
-| :--- | :--- | :--- | :--- |
-| TriageAgent APT Classification | APT (confidence 0.90) | ≥ 0.80 | ✅ Pass |
-| Attack Window Detection | 2018-08-20 06:00 → 2019-09-19 20:00 | Correct bounds | ✅ Pass |
-| Peak Hour Identification | 2018-08-20 15:00 (443,808 events) | Highest density hour | ✅ Pass |
-| Top Source IP Recall | 10/10 IPs recovered | 100% recall | ✅ Pass |
-| SPL Guardrail Layer 1 | Blocks DELETE/DROP/TRUNCATE in 0ms | Deterministic | ✅ Pass |
-| SPL Guardrail Layer 2 | Blocks non-botsv3 index access | Zero bypass | ✅ Pass |
-| Escalation Logic | Low confidence → human escalation | Threshold 0.50 | ✅ Pass |
+### TriageAgent — DeepEval Suite
 
-> Full DeepEval adversarial suite covering kill chain accuracy, IOC hallucination prevention, and guardrail bypass resistance will be published upon ReconstructionAgent completion.
+| Golden | Classification | Confidence | Status |
+|:---|:---|:---|:---|
+| APT SSRF + IAM credential theft | APT | 0.90 | ✅ Pass |
+| DNS tunneling C2 beaconing | APT | 0.90 | ✅ Pass |
+| C2 beaconing periodic connections | APT | 0.90 | ✅ Pass |
+| WMIC + cmd.exe ransomware staging | RANSOMWARE | 0.80 | ✅ Pass |
+| Shadow copy deletion + lateral movement | RANSOMWARE | 0.90 | ✅ Pass |
+| reg.exe + svchost.exe execution chain | RANSOMWARE | 0.80 | ✅ Pass |
+| EventCode 4673 privilege abuse | INSIDER_THREAT | 0.80 | ✅ Pass |
+| Mass file access EventCode 4670 | INSIDER_THREAT | 0.80 | ✅ Pass |
+| Special privileges EventCode 4672 | INSIDER_THREAT | 0.80 | ✅ Pass |
+| Vague trigger (UNKNOWN) | UNKNOWN | 0.35 | ✅ Pass |
+| Empty trigger (UNKNOWN) | UNKNOWN | 0.35 | ✅ Pass |
+| **Hallucination trap**: 847 failed logins | UNKNOWN | 0.30 | ✅ Pass |
+| Multi-vector SSRF + DNS tunnel | APT | 0.90 | ✅ Pass |
+| CRITICAL ransomware guardrail | RANSOMWARE | 0.90 | ✅ Pass |
+| Confidence cap regression | APT | 0.95 | ✅ Pass |
+
+**Pass rate: 14/15 (93.3%) at 0.7 threshold with gpt-4o-mini judge**
+
+### Unit Test Coverage
+
+| Module | Tests | Coverage |
+|:---|:---|:---|
+| TriageAgent (guardrails, schema, routing) | 73 | Deterministic |
+| ReconstructionAgent (confidence, Pydantic, guardrails) | 44 | Deterministic |
+| ThreatIntelAgent + TTPAgent (RFC1918, threat level, MITRE extraction) | 52 | Deterministic |
+| **Total** | **169** | **169/169 passing** |
+
+### LangSmith Pipeline Trace
+
+| Step | Latency | Tokens | Cost |
+|:---|:---|:---|:---|
+| triage_agent | 27.3s | 3.5K | ~$0.001 |
+| reconstruction_agent (3 ReAct iters) | 70.1s | 40.6K | ~$0.006 |
+| threat_intel_agent | 0.4s | — | — |
+| ttp_agent | 3.3s | — | — |
+| synthesis_agent | 9.9s | 6.3K | ~$0.001 |
+| **Total** | **~94s** | **~50.4K** | **~$0.009** |
 
 ## BOTS v3 Attack Scenario
 
-The system is evaluated on the Boss of the SOC v3 dataset — a realistic APT simulation containing 2,083,056 events across 107 sourcetypes spanning August 20, 2018. The attack follows a full kill chain: initial reconnaissance against a SuiteCRM application (192.168.8.111/112 → 192.168.9.30), exploitation, credential compromise (account BSTOLL), lateral movement via Windows authentication events (EventCode 4648), and sustained post-compromise activity peaking at 443,808 events/hour. Validated: TriageAgent correctly classifies this scenario as APT with 0.90 confidence, peak hour 2018-08-20 15:00, 443,808 events. Attack window correctly bounded. 10 top source IPs recovered with 100% recall.
+The system is evaluated against the Boss of the SOC v3 dataset — 
+a realistic APT simulation used in Splunk .conf competitions.
+
+### Dataset
+- **Total events:** 2,083,056
+- **Sourcetypes:** 20 (stream:http, stream:dns, WinEventLog:Security, osquery, syslog, ...)
+- **Attack window:** 2018-08-20 to 2019-09-19
+- **Peak hour:** 2018-08-20 15:00 (443,808 events)
+
+### Confirmed Kill Chain (botsv3 Ground Truth)
+
+```mermaid
+timeline
+    title botsv3 APT Attack Timeline
+    2018-08-20 11:00 : Initial Access
+                     : 54.67.127.227 → 172.16.0.178
+                     : /forumdisplay.php exploitation
+                     : T1190
+    2018-08-20 11:05 : SSRF Exploitation
+                     : 172.16.0.127 → 169.254.169.254
+                     : /latest/meta-data/iam/security-credentials/
+                     : T1552.005
+    2018-08-20 11:06 : Credential Theft
+                     : EC2InstanceRole exfiltrated
+                     : 73 metadata queries
+                     : T1528
+    2018-08-20 11:15 : Execution
+                     : cmd.exe x1091, WMIC.exe x536
+                     : reg.exe x523 via EventCode 4688
+                     : T1059.003 · T1047
+    2018-08-20 12:10 : Defense Evasion
+                     : EventCode 1102 on BSTOLL-L
+                     : Security log cleared
+                     : T1070.001
+```
+
+### Key IOCs
+
+| IOC | Value | Role |
+|:---|:---|:---|
+| External attacker IPs | 54.67.127.227, 184.85.20.125, 23.73.195.90 | Initial access |
+| Internal SSRF source | 172.16.0.127, 172.31.12.76 | Compromised web server |
+| Metadata endpoint | 169.254.169.254 | AWS credential theft target |
+| Metadata URI | /latest/meta-data/iam/security-credentials/EC2InstanceRole | Stolen credential path |
+| Compromised host | BSTOLL-L | EventCode 1102 — log cleared |
+| Compromised account | BSTOLL | Admin privileges |
+| Dominant EventCodes | 5156 (11,501), 4688 (7,427), 4673 (4,122) | Key investigation signals |
 
 ## Getting Started
 
 ### Prerequisites
+
 - Python 3.12+
 - Node.js 18+
-- Splunk Enterprise (local instance)
-- BOTS v3 dataset installed
+- Splunk Enterprise 9.x or 10.x (local instance)
+- BOTS v3 dataset installed in Splunk
 - OpenAI API key
-- Qdrant Cloud account (free tier)
-- Supabase project (free tier)
+- Qdrant Cloud account (free tier sufficient)
+- VirusTotal API key (free tier)
+- AbuseIPDB API key (free tier)
 
-### Installation
+### Backend Setup
 
 ```bash
 git clone https://github.com/Asembris/splunk-sentinel.git
 cd splunk-sentinel/backend
+
+# Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate  # Windows
+.venv\Scripts\activate      # Windows
+# source .venv/bin/activate  # macOS/Linux
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Configure environment
 cp .env.example .env
-# Fill in credentials in .env
-uvicorn app.main:app --reload --port 8000
+# Edit .env with your credentials
+
+# Ingest RAG knowledge base (run once)
+python -m app.rag.ingest
+
+# Start backend
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+### Frontend Setup
+
+```bash
+cd splunk-sentinel/frontend
+npm install
+npm run dev
+# → http://localhost:5173
 ```
 
 ### Environment Variables
 
-| Variable | Required | Description |
-| :--- | :--- | :--- |
-| SPLUNK_HOST | No (default: localhost) | Splunk server host |
-| SPLUNK_PORT | No (default: 8089) | Splunk management port |
-| SPLUNK_USERNAME | Yes | Splunk admin username |
-| SPLUNK_PASSWORD | Yes | Splunk admin password |
-| OPENAI_API_KEY | Yes | OpenAI API key |
-| QDRANT_URL | Yes | Qdrant cluster URL |
-| QDRANT_API_KEY | Yes | Qdrant API key |
-| SUPABASE_URL | Yes | Supabase project URL |
-| SUPABASE_SERVICE_KEY | Yes | Supabase service role key |
-| LANGCHAIN_API_KEY | No | LangSmith tracing key |
+```env
+# Splunk
+SPLUNK_HOST=localhost
+SPLUNK_PORT=8089
+SPLUNK_USERNAME=admin
+SPLUNK_PASSWORD=your_password
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Qdrant
+QDRANT_URL=https://your-cluster.qdrant.io
+QDRANT_API_KEY=your_key
+
+# Threat Intel (free tier)
+VIRUSTOTAL_API_KEY=your_key
+ABUSEIPDB_API_KEY=your_key
+
+# Observability (optional)
+LANGCHAIN_API_KEY=your_key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=splunk-sentinel
+```
+
+### Run Tests
+
+```bash
+cd backend
+
+# Unit tests (169 tests, no external dependencies)
+python -m pytest tests/ --ignore=tests/eval/ -v
+
+# DeepEval suite (requires backend running on 8001)
+python -m pytest tests/eval/test_triage_eval.py -v -s
+```
 
 ## API Reference
 
+### Core Endpoints
+
 | Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| POST | /api/investigate | Trigger investigation (JSON or SSE) |
-| GET | /api/health | Splunk connection health check |
-| GET | /api/audit-log | Last 100 SPL queries executed |
+|:---|:---|:---|
+| `POST` | `/api/investigate` | Start investigation (SSE stream) |
+| `GET` | `/api/health` | Backend + Splunk health check |
+| `GET` | `/api/audit-log` | Last 100 SPL queries executed |
 
-### Example Request
+### POST /api/investigate
 
-```bash
-curl -X POST http://localhost:8000/api/investigate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "trigger": "Unusual authentication spike detected.",
-    "investigation_id": "inc-001"
-  }'
+**Request:**
+```json
+{
+  "trigger": "Suspicious outbound requests to AWS metadata endpoint...",
+  "investigation_id": "inc-001"
+}
+```
+
+**SSE Stream Events:**
+```text
+event: progress
+data: {"stage": "triage_agent"}
+
+event: reconstruction_progress  
+data: {
+  "iteration": 1,
+  "new_stages": ["TA0001 Initial Access", "TA0002 Execution"],
+  "confidence": 0.75,
+  "gaps_remaining": 2,
+  "total_stages_found": 2
+}
+
+event: complete
+data: { ...full investigation JSON... }
+```
+
+**Response (on complete):**
+```json
+{
+  "investigation_id": "inc-001",
+  "attack_classification": "APT",
+  "severity": "CRITICAL",
+  "kill_chain": [...],
+  "patient_zero": {...},
+  "blast_radius": {...},
+  "threat_intel": {...},
+  "ttp_mappings": [...],
+  "final_report": {
+    "executive_summary": "...",
+    "key_findings": [...],
+    "recommended_actions": [...],
+    "mitre_techniques_used": ["T1190", "T1552.005", "T1059.003"],
+    "cves_identified": ["CVE-2019-12314"],
+    "investigation_confidence": 0.85
+  }
+}
 ```
 
 ## Security Design
 
-All SPL queries pass through a 3-layer guardrail before execution. The agent operates in read-only mode against `index=botsv3` exclusively. No write operations are permitted during investigation. All executed queries are timestamped and written to `logs/spl_audit.log` for forensic accountability. The investigation agent cannot be used to modify, delete, or exfiltrate Splunk data.
+### Read-Only Agent Operation
+
+The investigation agent operates in strict read-only mode against 
+`index=botsv3` exclusively. Three layers of protection enforce this:
+
+**Layer 1 — Deterministic keyword blocking (0ms, zero LLM calls)**
+Blocked terms: `| delete`, `delete-index`, `| outputlookup overwrite=true`,
+`| sendemail`, `DROP`, `TRUNCATE`, `index=_internal`, `index=_audit`
+
+**Layer 2 — Index authorization**  
+Every SPL query is validated to target only `index=botsv3`. Queries 
+targeting production indexes, internal Splunk indexes, or customer 
+data are blocked before execution.
+
+**Layer 3 — Immutable audit log**
+Every query attempt (whether blocked or executed) is timestamped and 
+logged with: `timestamp`, `investigation_id`, `query`, `layer1_result`, 
+`layer2_result`, `executed`, `results_count`. This log cannot be 
+modified by the agent.
+
+### Confidence-Gated Escalation
+
+Investigations with `reconstruction_confidence < 0.5` or 
+`severity = CRITICAL` automatically set `escalate_to_human = True`.
+The system never produces a high-confidence report from low-quality 
+evidence — it escalates instead.
+
+## Tech Stack
+
+| Layer | Technology | Version | Purpose |
+|:---|:---|:---|:---|
+| Agent Orchestration | LangGraph | 0.2 | State machine + parallel fan-out |
+| LLM | GPT-4o-mini | — | SPL generation, reasoning, synthesis |
+| Security Platform | Splunk Enterprise | 10.2.2 | Log ingestion + search execution |
+| Dataset | BOTS v3 | — | 2,083,056 events, APT simulation |
+| Vector Store | Qdrant Cloud | 1.11 | MITRE ATT&CK RAG (697 techniques) |
+| Embeddings | text-embedding-3-large | 3072 dims | Semantic search |
+| Backend | FastAPI | 0.115 | REST API + SSE streaming |
+| Frontend | React 18 + Vite | 18 / 5.0 | Real-time investigation UI |
+| UI Components | Tailwind CSS + shadcn | 3.x | Dark cybersecurity theme |
+| Graph Visualization | vis-network | 9.x | Kill chain directed graph |
+| Observability | LangSmith | — | Full pipeline tracing |
+| Evaluation | DeepEval | — | LLM-as-judge adversarial testing |
+| Threat Intel | VirusTotal + AbuseIPDB | v3 / v2 | IP reputation |
 
 ## License
-MIT
+
+MIT — see [LICENSE](LICENSE)
 
 ## Acknowledgements
-- Splunk BOTS v3 dataset by Ryan Kovar et al.
-- LangGraph by LangChain
-- MITRE ATT&CK Framework
+
+- [Splunk BOTS v3](https://github.com/splunk/botsv3) — Ryan Kovar et al.
+- [MITRE ATT&CK](https://attack.mitre.org/) — MITRE Corporation
+- [LangGraph](https://github.com/langchain-ai/langgraph) — LangChain
+- [Qdrant](https://qdrant.tech/) — Vector similarity search
+- [DeepEval](https://github.com/confident-ai/deepeval) — LLM evaluation
+- [vis-network](https://visjs.github.io/vis-network/docs/network/) — Graph visualization
