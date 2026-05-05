@@ -34,6 +34,16 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Per-collection similarity thresholds.
+# Small collections (< 10 points) use lower thresholds or return all.
+# Large collections use stricter thresholds to avoid noise.
+COLLECTION_THRESHOLDS = {
+    MITRE_COLLECTION:    0.45,  # 697 points — dense embeddings, 0.45 appropriate
+    CVE_COLLECTION:      0.40,  # 8 points — return most results, topic-specific
+    PLAYBOOK_COLLECTION: 0.35,  # 5 points — always return relevant playbooks
+    BOTSV3_COLLECTION:   0.30,  # 3 points — always return, highly specific
+}
+
 # Lazy-initialised clients — constructed on first use so that
 # load_dotenv() always runs before the API key is read.
 _openai_client: Optional[AsyncOpenAI] = None
@@ -70,13 +80,19 @@ async def semantic_search(
     collection_name: str,
     query: str,
     top_k: int = DEFAULT_TOP_K,
-    threshold: float = SIMILARITY_THRESHOLD,
+    threshold: float = None,        # None = use per-collection default
     payload_filter: Optional[Filter] = None,
 ) -> list[dict[str, Any]]:
     """
     Semantic search on a Qdrant collection.
     Returns list of results with score and payload.
     """
+    # Use per-collection threshold if not explicitly provided
+    if threshold is None:
+        threshold = COLLECTION_THRESHOLDS.get(
+            collection_name, SIMILARITY_THRESHOLD
+        )
+    
     try:
         query_vector = await _embed_query(query)
 
@@ -102,6 +118,46 @@ async def semantic_search(
             "Semantic search failed on %s: %s", collection_name, e
         )
         return []
+
+
+async def semantic_search_with_fallback(
+    collection_name: str,
+    query: str,
+    top_k: int = DEFAULT_TOP_K,
+) -> list[dict[str, Any]]:
+    """
+    For small collections, fall back to returning all points
+    if semantic search returns nothing.
+    """
+    results = await semantic_search(collection_name, query, top_k)
+    
+    # Fallback for small collections: if no results, return all
+    SMALL_COLLECTIONS = {CVE_COLLECTION, PLAYBOOK_COLLECTION, BOTSV3_COLLECTION}
+    if not results and collection_name in SMALL_COLLECTIONS:
+        logger.info(
+            "No semantic matches in %s — falling back to full scroll",
+            collection_name
+        )
+        try:
+            scroll_results, _ = await _qdrant_client.scroll(
+                collection_name=collection_name,
+                limit=top_k,
+                with_payload=True,
+            )
+            return [
+                {
+                    "score": 0.0,
+                    "collection": collection_name,
+                    **point.payload,
+                }
+                for point in scroll_results
+            ]
+        except Exception as e:
+            logger.error(
+                "Fallback scroll failed on %s: %s", collection_name, e
+            )
+    
+    return results
 
 
 async def retrieve_mitre_technique(technique_id: str) -> Optional[dict]:
@@ -213,9 +269,9 @@ async def retrieve_for_synthesis(
     mitre_results, cve_results, playbook_results, botsv3_results = (
         await asyncio.gather(
             semantic_search(MITRE_COLLECTION, mitre_query, top_k=5),
-            semantic_search(CVE_COLLECTION, cve_query, top_k=3),
-            semantic_search(PLAYBOOK_COLLECTION, playbook_query, top_k=2),
-            semantic_search(BOTSV3_COLLECTION, botsv3_query, top_k=3),
+            semantic_search_with_fallback(CVE_COLLECTION, cve_query, top_k=3),
+            semantic_search_with_fallback(PLAYBOOK_COLLECTION, playbook_query, top_k=2),
+            semantic_search_with_fallback(BOTSV3_COLLECTION, botsv3_query, top_k=3),
         )
     )
 

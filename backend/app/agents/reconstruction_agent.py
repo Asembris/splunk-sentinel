@@ -386,6 +386,8 @@ async def _execute_query_with_retry(
     guardrail: SPLGuardrail,
     spl: str,
     investigation_id: str,
+    iteration: int = 0,
+    progress_callback=None,
 ) -> tuple[list, str]:
     """
     Execute SPL query with guardrail validation and self-correction.
@@ -405,15 +407,43 @@ async def _execute_query_with_retry(
                 investigation_id, attempt + 1,
                 current_spl[:60], validation.reason
             )
+            audit_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "spl": current_spl,
+                "correction_attempts": attempt,
+                "original_spl": spl.strip(),
+                "was_corrected": attempt > 0,
+                "correction_reason": str(e) if 'e' in locals() and attempt > 0 else None,
+                "blocked": True,
+                "block_reason": validation.reason,
+                "executed": False,
+                "rows_returned": 0,
+            }
+            splunk.audit_log.append(json.dumps(audit_entry))
             return [], current_spl
 
         guardrail.audit(current_spl)
-        splunk.audit_log.append(
-            f"[{datetime.now(timezone.utc).isoformat()}] {current_spl}"
-        )
+        
+        # We will append the audit log entry after execution to capture rows_returned
+        # and execution status.
 
         try:
             results = await splunk.run_search(current_spl)
+            
+            audit_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "spl": current_spl,
+                "correction_attempts": attempt,
+                "original_spl": spl.strip(),
+                "was_corrected": attempt > 0,
+                "correction_reason": str(e) if 'e' in locals() and attempt > 0 else None,
+                "blocked": False,
+                "block_reason": None,
+                "executed": True,
+                "rows_returned": len(results) if results else 0,
+            }
+            splunk.audit_log.append(json.dumps(audit_entry))
+            
             if results is not None:
                 logger.info(
                     "[%s] Query returned %d rows | spl=%s",
@@ -446,6 +476,15 @@ async def _execute_query_with_retry(
                         "[%s] SPL self-corrected (attempt %d): %s",
                         investigation_id, attempt + 1, current_spl[:60]
                     )
+                    
+                    if progress_callback:
+                        await progress_callback({
+                            "event": "spl_correction",
+                            "iteration": iteration,
+                            "original_spl": spl.strip()[:80],
+                            "correction_attempt": attempt + 1,
+                            "error": str(e)[:100],
+                        })
                 except Exception as ce:
                     logger.error(
                         "[%s] SPL self-correction failed: %s",
@@ -530,7 +569,7 @@ async def reconstruction_agent(
         # Execute queries in parallel
         query_tasks = [
             _execute_query_with_retry(
-                splunk, guardrail, q, investigation_id
+                splunk, guardrail, q, investigation_id, iteration, progress_callback
             )
             for q in queries_this_iter
         ]

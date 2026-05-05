@@ -93,8 +93,7 @@ class SplunkClient:
 
         Layer 1 — Deterministic keyword block (zero LLM calls)
         Layer 2 — Index protection (only botsv3 permitted)
-        Layer 3 — Audit logging (timestamps query in logs/spl_audit.log
-                  AND appends to self.audit_log)
+        Layer 3 — Audit logging (timestamps query in logs/spl_audit.log)
 
         Raises:
             ValueError: with a prefixed, human-readable message if any layer
@@ -102,11 +101,6 @@ class SplunkClient:
         """
         # Delegate to standalone module (raises ValueError on block)
         spl_guardrail.check(spl)
-
-        # Also append to in-memory audit log for this investigation session
-        timestamp = datetime.now(timezone.utc).isoformat()
-        entry = f"[{timestamp}] {spl}"
-        self.audit_log.append(entry)
 
     def _run_oneshot(
         self,
