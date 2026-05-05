@@ -89,7 +89,7 @@ function reducer(state, action) {
     }
 
     case 'RECONSTRUCTION_PROGRESS': {
-      const { iteration, new_stages, confidence, gaps_remaining } = action.data
+      const { iteration, new_stages, confidence, gaps_remaining, evidence } = action.data
 
       // Build new kill chain nodes from stage names
       const newStages = (new_stages || []).map((stageName, i) => ({
@@ -97,6 +97,7 @@ function reducer(state, action) {
         label: stageName,
         iteration,
         confidence: confidence,
+        evidence: evidence?.[stageName] || evidence?.[i] || null,
         discovered_at: new Date().toISOString(),
       }))
 
@@ -123,11 +124,22 @@ function reducer(state, action) {
       }
     }
 
-    case 'COMPLETE':
+    case 'COMPLETE': {
+      // Backfill evidence/details from final report if missing
+      const finalStages = action.data?.final_report?.key_findings || []
+      const enrichedStages = state.killChainStages.map(stage => {
+        const finding = finalStages.find(f => 
+          f.finding.toLowerCase().includes(stage.label.toLowerCase()) ||
+          stage.label.toLowerCase().includes(f.finding.toLowerCase())
+        )
+        return finding ? { ...stage, evidence: finding.evidence || stage.evidence } : stage
+      })
+
       return {
         ...state,
         status: 'complete',
         result: action.data,
+        killChainStages: enrichedStages,
         agentStatuses: Object.fromEntries(
           Object.keys(state.agentStatuses).map(k => [k, 'complete'])
         ),
@@ -137,6 +149,7 @@ function reducer(state, action) {
           message: `Investigation complete · confidence ${((action.data?.final_report?.investigation_confidence || 0) * 100).toFixed(0)}%`,
         }],
       }
+    }
 
     case 'ERROR':
       return {

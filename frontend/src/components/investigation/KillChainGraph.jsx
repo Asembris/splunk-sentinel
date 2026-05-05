@@ -35,33 +35,38 @@ function getNodeColor(stageName) {
 const VIS_OPTIONS = {
   nodes: {
     shape: 'box',
-    margin: { top: 10, bottom: 10, left: 14, right: 14 },
-    font: { color: '#f9fafb', size: 13, face: 'Inter, system-ui' },
+    margin: { top: 12, bottom: 12, left: 16, right: 16 },
+    font: { color: '#f9fafb', size: 12, face: 'Inter, system-ui', bold: { color: '#ffffff' } },
     borderWidth: 2,
-    shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 8 },
+    borderWidthSelected: 3,
+    shadow: { enabled: true, color: 'rgba(0,0,0,0.6)', size: 10, x: 2, y: 2 },
+    widthConstraint: { minimum: 140, maximum: 200 },
   },
   edges: {
-    arrows: { to: { enabled: true, scaleFactor: 0.8 } },
-    color: { color: '#374151', highlight: '#3b82f6' },
-    smooth: { type: 'cubicBezier', forceDirection: 'horizontal' },
-    font: { color: '#6b7280', size: 11 },
+    arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+    color: { color: '#374151', highlight: '#3b82f6', hover: '#3b82f6' },
+    smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.5 },
     width: 2,
+    selectionWidth: 3,
   },
   layout: {
     hierarchical: {
       enabled: true,
       direction: 'LR',
       sortMethod: 'directed',
-      nodeSpacing: 140,
-      levelSeparation: 200,
+      nodeSpacing: 120,
+      levelSeparation: 180,
+      blockShifting: true,
+      edgeMinimization: true,
     },
   },
   physics: { enabled: false },
   interaction: {
     hover: true,
-    tooltipDelay: 200,
+    tooltipDelay: 100,
     zoomView: true,
     dragView: true,
+    navigationButtons: false,
   },
 }
 
@@ -107,13 +112,37 @@ export default function KillChainGraph() {
       nodesRef.current.add({
         id: nodeId,
         label: stage.label.replace(/\s*[-–]\s*/g, '\n'),
+        title: `
+          <div style="
+            background:#111827;
+            border:1px solid #374151;
+            border-radius:8px;
+            padding:10px 14px;
+            font-family:monospace;
+            font-size:12px;
+            max-width:280px;
+            color:#f9fafb;
+          ">
+            <div style="color:#3b82f6;font-weight:bold;margin-bottom:6px;">
+              ${stage.label}
+            </div>
+            <div style="color:#6b7280;font-size:11px;">
+              Iteration: ${stage.iteration} · 
+              Confidence: ${Math.round(stage.confidence * 100)}%
+            </div>
+            ${stage.evidence ? `
+              <div style="margin-top:6px;color:#d1d5db;font-size:11px;border-top:1px solid #374151;padding-top:6px;">
+                ${stage.evidence.slice(0, 150)}
+              </div>
+            ` : ''}
+          </div>
+        `,
         color: {
-          background: color + '33', // 20% opacity background
+          background: color + '33',
           border: color,
           highlight: { background: color + '66', border: color },
           hover: { background: color + '55', border: color },
         },
-        title: `Discovered in iteration ${stage.iteration}`,
         level: totalOldCount + i,
       })
 
@@ -131,11 +160,12 @@ export default function KillChainGraph() {
     // Fit graph after adding nodes (debounced to avoid jank)
     const timer = setTimeout(() => {
       if (networkRef.current) {
-        networkRef.current.fit({ 
-          animation: { duration: 1000, easingFunction: 'easeInOutQuad' } 
+        networkRef.current.fit({
+          animation: { duration: 600, easingFunction: 'easeInOutQuad' },
+          padding: 40,
         })
       }
-    }, 200)
+    }, 150)
 
     return () => clearTimeout(timer)
   }, [state.killChainStages])
@@ -144,7 +174,7 @@ export default function KillChainGraph() {
   const isIdle = state.status === 'idle'
 
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl overflow-hidden relative shadow-lg" style={{ height: '420px' }}>
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl overflow-hidden relative shadow-lg" style={{ height: '460px' }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-sentinel-border bg-sentinel-surface/50 backdrop-blur-sm z-10 relative">
         <h3 className="text-sm font-semibold text-sentinel-muted uppercase tracking-wider">
           Kill Chain Reconstruction
@@ -154,7 +184,7 @@ export default function KillChainGraph() {
         </span>
       </div>
 
-      <div ref={containerRef} className="w-full h-full absolute inset-0 pt-10" />
+      <div ref={containerRef} className="w-full h-full absolute inset-0 pt-10" style={{ height: '415px' }} />
 
       {/* Empty state overlay */}
       {(isEmpty || isIdle) && (
