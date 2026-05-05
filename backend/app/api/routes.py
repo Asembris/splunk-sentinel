@@ -203,6 +203,11 @@ async def investigate(request: Request, body: InvestigateRequest):
         return EventSourceResponse(
             _stream_investigation(initial_state),
             media_type="text/event-stream",
+            ping=15,
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            }
         )
 
     # Non-streaming path: await full graph execution
