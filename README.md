@@ -349,23 +349,23 @@ a realistic APT simulation used in Splunk .conf competitions.
 ```mermaid
 timeline
     title botsv3 APT Attack Timeline
-    2018-08-20 11:00 : Initial Access
-                     : 54.67.127.227 → 172.16.0.178
+    "2018-08-20 11:00" : Initial Access
+                     : "54.67.127.227 → 172.16.0.178"
                      : /forumdisplay.php exploitation
                      : T1190
-    2018-08-20 11:05 : SSRF Exploitation
-                     : 172.16.0.127 → 169.254.169.254
+    "2018-08-20 11:05" : SSRF Exploitation
+                     : "172.16.0.127 → 169.254.169.254"
                      : /latest/meta-data/iam/security-credentials/
                      : T1552.005
-    2018-08-20 11:06 : Credential Theft
+    "2018-08-20 11:06" : Credential Theft
                      : EC2InstanceRole exfiltrated
                      : 73 metadata queries
                      : T1528
-    2018-08-20 11:15 : Execution
+    "2018-08-20 11:15" : Execution
                      : cmd.exe x1091, WMIC.exe x536
-                     : reg.exe x523 via EventCode 4688
-                     : T1059.003 · T1047
-    2018-08-20 12:10 : Defense Evasion
+                     : "reg.exe x523 via EventCode 4688"
+                     : "T1059.003 · T1047"
+    "2018-08-20 12:10" : Defense Evasion
                      : EventCode 1102 on BSTOLL-L
                      : Security log cleared
                      : T1070.001
