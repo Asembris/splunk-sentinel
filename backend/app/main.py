@@ -146,6 +146,8 @@ def create_app() -> FastAPI:
 
     # ── Router ────────────────────────────────────────────────────────────────
     app.include_router(router)
+    from app.api.webhook import router as webhook_router
+    app.include_router(webhook_router)
 
     # ── Global exception handler ─────────────────────────────────────────────
     @app.exception_handler(Exception)
