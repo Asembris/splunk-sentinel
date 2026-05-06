@@ -6,16 +6,20 @@ import KillChainGraph from '../components/investigation/KillChainGraph'
 import EventFeed from '../components/investigation/EventFeed'
 import ConfidenceChart from '../components/investigation/ConfidenceChart'
 
+let lastRedirectedId = null;
+
 export default function DashboardPage() {
   const { state } = useInvestigation()
   const navigate = useNavigate()
 
-  // Redirect to report when complete
+  // Redirect to report when complete (ONLY ONCE per investigation)
   useEffect(() => {
-    if (state.status === 'complete' && state.result) {
-      setTimeout(() => navigate('/report'), 1500)
+    if (state.status === 'complete' && state.result && lastRedirectedId !== state.investigationId) {
+      lastRedirectedId = state.investigationId;
+      const timer = setTimeout(() => navigate('/report'), 1500);
+      return () => clearTimeout(timer);
     }
-  }, [state.status, state.result, navigate])
+  }, [state.status, state.result, navigate, state.investigationId])
 
   if (state.status === 'idle') {
     return (
