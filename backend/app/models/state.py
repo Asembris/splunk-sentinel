@@ -174,6 +174,15 @@ class AgentState(TypedDict, total=False):
     Populated by ReportAgent (future node).
     """
 
+    report_pdf_path: str
+    """Path to generated PDF."""
+
+    supabase_record_id: str
+    """Supabase UUID."""
+
+    splunk_notable_event_id: str
+    """Splunk write-back ID."""
+
     # ── Escalation flag ───────────────────────────────────────────────────────
     escalate_to_human: bool
     """

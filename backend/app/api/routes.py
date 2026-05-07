@@ -19,13 +19,17 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.graph.investigation_graph import compiled_graph
 from app.models.state import AgentState
 from app.tools.splunk_tools import SplunkClient
+from app.services.supabase_client import (
+    update_feedback, 
+    get_investigation_history
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,13 @@ class HealthResponse(BaseModel):
     status: str
     splunk_connected: bool
     splunk_version: str
+
+
+class FeedbackRequest(BaseModel):
+    """Body for POST /api/investigations/{id}/feedback."""
+
+    rating: str = Field(..., description="'helpful' | 'unhelpful' | 'needs_tuning'")
+    notes: str = Field("", description="Optional analyst notes.")
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +205,9 @@ async def investigate(request: Request, body: InvestigateRequest):
         "confidence_scores": {},
         "final_report": {},
         "escalate_to_human": False,
+        "report_pdf_path": "",
+        "supabase_record_id": "",
+        "splunk_notable_event_id": "",
         "error": None,
         "spl_audit_log": [],
     }
@@ -317,3 +331,48 @@ async def get_audit_log():
         ) from exc
 
     return {"lines": last_100, "total_lines": len(all_lines)}
+
+
+# ---------------------------------------------------------------------------
+# Investigation Persistence & Reporting
+# ---------------------------------------------------------------------------
+
+
+@router.get("/investigations/history", summary="Get investigation history")
+async def history():
+    """
+    Fetch investigation history from Supabase.
+    """
+    data = await get_investigation_history(limit=50)
+    return {"investigations": data}
+
+
+@router.post("/investigations/{investigation_id}/feedback", summary="Submit analyst feedback")
+async def feedback(investigation_id: str, body: FeedbackRequest):
+    """
+    Submit qualitative feedback for a completed investigation.
+    """
+    success = await update_feedback(
+        investigation_id=investigation_id,
+        rating=body.rating,
+        notes=body.notes
+    )
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update feedback")
+    return {"status": "ok"}
+
+
+@router.get("/investigations/{investigation_id}/report/pdf", summary="Download PDF report")
+async def download_report(investigation_id: str):
+    """
+    Download the generated PDF report for an investigation.
+    """
+    pdf_path = Path("reports") / f"{investigation_id}.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="Report PDF not found")
+    
+    return FileResponse(
+        path=pdf_path,
+        filename=f"sentinel_report_{investigation_id}.pdf",
+        media_type="application/pdf"
+    )

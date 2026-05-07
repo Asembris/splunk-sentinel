@@ -32,7 +32,7 @@ Thumbs.db
 .coverage
 htmlcov/
 .deepeval/
-backend/tests/eval/eval_results*.json
+backend/tests/eval/*.json
 
 # LangSmith / LangChain
 .langchain/
@@ -55,6 +55,9 @@ secrets.json
 
 # OS
 desktop.ini
+
+# Reports
+backend/reports/*.pdf
 
 # Do NOT ignore important project files
 !requirements.txt

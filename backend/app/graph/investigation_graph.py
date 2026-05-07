@@ -24,6 +24,7 @@ from app.agents.threat_intel_agent import threat_intel_agent
 from app.agents.ttp_agent import ttp_agent
 from app.agents.reconstruction_agent import reconstruction_agent
 from app.agents.triage_agent import triage_agent
+from app.agents.report_agent import report_agent
 from app.models.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,7 @@ def _build_graph() -> StateGraph:
     graph.add_node("threat_intel_agent", threat_intel_agent)
     graph.add_node("ttp_agent", ttp_agent)
     graph.add_node("synthesis_agent", synthesis_agent)
+    graph.add_node("report_agent", report_agent)
 
     # Wire edges
     graph.add_edge(START, "triage_agent")
@@ -119,9 +121,9 @@ def _build_graph() -> StateGraph:
     graph.add_edge("threat_intel_agent", "synthesis_agent")
     graph.add_edge("ttp_agent", "synthesis_agent")
 
-    # SynthesisAgent routes to END
-    # ReportAgent will be inserted here in next phase
-    graph.add_edge("synthesis_agent", END)
+    # SynthesisAgent routes to report_agent
+    graph.add_edge("synthesis_agent", "report_agent")
+    graph.add_edge("report_agent", END)
 
     return graph
 

@@ -235,6 +235,9 @@ async def run_investigation_from_webhook(
         "rag_context": {},
         "final_report": {},
         "confidence_scores": {},
+        "report_pdf_path": "",
+        "supabase_record_id": "",
+        "splunk_notable_event_id": "",
     }
 
     try:

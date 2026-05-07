@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Configuration constants
 # ---------------------------------------------------------------------------
 
-PERMITTED_INDEX = "botsv3"
+PERMITTED_INDEXES = ["botsv3", "sentinel_findings", "summary"]
 
 BLOCKED_KEYWORDS: list[str] = [
     "| delete",
@@ -68,7 +68,7 @@ def _layer2_index_check(spl: str) -> str | None:
     Return the first non-permitted index name found in *spl*, or None.
 
     Uses a regex to extract all index= values and rejects any that are
-    not the permitted botsv3 index.
+    not in the permitted list.
     """
     index_matches = re.findall(r'index\s*=\s*([^\s|]+)', spl, re.IGNORECASE)
 
@@ -78,7 +78,7 @@ def _layer2_index_check(spl: str) -> str | None:
 
     for idx in index_matches:
         idx_clean = idx.strip().strip('"').strip("'")
-        if idx_clean.lower() != PERMITTED_INDEX.lower():
+        if idx_clean.lower() not in [i.lower() for i in PERMITTED_INDEXES]:
             return idx_clean
     return None
 
@@ -128,7 +128,7 @@ def check(spl: str) -> None:
     if unauthorized_index is not None:
         msg = (
             f"BLOCKED - Layer 2: SPL targets unauthorized index: '{unauthorized_index}'. "
-            f"Only index={PERMITTED_INDEX} is permitted."
+            f"Permitted indexes: {', '.join(PERMITTED_INDEXES)}."
         )
         logger.warning(
             "SPL guardrail Layer 2 triggered | index=%r | spl=%r",
@@ -175,7 +175,7 @@ def get_blocked_reason(spl: str) -> str | None:
     if unauthorized_index is not None:
         return (
             f"Layer 2 block — unauthorized index: '{unauthorized_index}' "
-            f"(only '{PERMITTED_INDEX}' is permitted)"
+            f"(Permitted: {', '.join(PERMITTED_INDEXES)})"
         )
 
     return None
