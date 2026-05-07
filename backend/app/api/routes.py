@@ -27,8 +27,9 @@ from app.graph.investigation_graph import compiled_graph
 from app.models.state import AgentState
 from app.tools.splunk_tools import SplunkClient
 from app.services.supabase_client import (
-    update_feedback, 
-    get_investigation_history
+    update_feedback,
+    get_investigation_history,
+    get_investigation_details
 )
 
 logger = logging.getLogger(__name__)
@@ -345,6 +346,31 @@ async def history():
     """
     data = await get_investigation_history(limit=50)
     return {"investigations": data}
+
+
+@router.get("/investigations/{investigation_id}", summary="Get investigation details")
+async def get_investigation(investigation_id: str):
+    """
+    Fetch a single investigation's full state from Supabase.
+    """
+    data = await get_investigation_details(investigation_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    
+    # Map Supabase record back to AgentState-like structure for the frontend
+    # The frontend expects state.result.final_report
+    return {
+        "investigation_id": data.get("investigation_id"),
+        "attack_classification": data.get("classification"),
+        "classification_confidence": data.get("confidence"),
+        "severity": data.get("severity"),
+        "trigger": data.get("trigger_text"),
+        "kill_chain": [{} for _ in range(data.get("kill_chain_stages", 0))],
+        "final_report": data.get("report_json"),
+        "report_pdf_path": data.get("pdf_path"),
+        "splunk_notable_event_id": data.get("splunk_notable_id"),
+        "escalate_to_human": data.get("escalate_to_human"),
+    }
 
 
 @router.post("/investigations/{investigation_id}/feedback", summary="Submit analyst feedback")

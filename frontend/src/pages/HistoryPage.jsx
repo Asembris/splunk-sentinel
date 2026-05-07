@@ -191,9 +191,7 @@ export default function HistoryPage() {
   }, [])
 
   const handleCardClick = (investigation) => {
-    // Navigate to report page — future: pass investigation data
-    // For now navigate to report if available
-    navigate('/report')
+    navigate(`/report/${investigation.investigation_id}`)
   }
 
   // Stats derived from loaded data

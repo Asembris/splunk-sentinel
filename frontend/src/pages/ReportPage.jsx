@@ -1,6 +1,10 @@
-import { useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useInvestigation } from '../store/InvestigationContext'
-import { Download, ArrowLeft, FileJson, Printer, Share2 } from 'lucide-react'
+import { 
+  Download, ArrowLeft, FileJson, Printer, 
+  Share2, Loader2, AlertCircle 
+} from 'lucide-react'
 import ExecutiveSummary from '../components/report/ExecutiveSummary'
 import FindingsGrid from '../components/report/FindingsGrid'
 import MitreTable from '../components/report/MitreTable'
@@ -9,18 +13,78 @@ import RecommendedActions from '../components/report/RecommendedActions'
 import CveList from '../components/report/CveList'
 
 export default function ReportPage() {
+  const { id } = useParams()
   const { state } = useInvestigation()
   const navigate = useNavigate()
-  const report = state.result?.final_report
+  
+  const [historicalData, setHistoricalData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  // Use state.result if available, otherwise use historicalData
+  const activeResult = state.result || historicalData
+  const report = activeResult?.final_report
+
+  useEffect(() => {
+    // If we have an ID in the URL and no live state, fetch from backend
+    if (id && !state.result) {
+      const fetchHistoricalReport = async () => {
+        setLoading(true)
+        setError(null)
+        try {
+          const res = await fetch(`/api/investigations/${id}`)
+          if (!res.ok) {
+            if (res.status === 404) throw new Error('Investigation not found')
+            throw new Error('Failed to fetch historical report')
+          }
+          const data = await res.json()
+          setHistoricalData(data)
+        } catch (err) {
+          console.error('Report fetch error:', err)
+          setError(err.message)
+        } finally {
+          setLoading(false)
+        }
+      }
+      fetchHistoricalReport()
+    }
+  }, [id, state.result])
 
   const handleExportJson = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.result, null, 2));
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeResult, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href",     dataStr);
-    downloadAnchorNode.setAttribute("download", `sentinel-report-${state.investigationId}.json`);
+    downloadAnchorNode.setAttribute("download", `sentinel-report-${id || state.investigationId}.json`);
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-57px)]">
+        <Loader2 className="w-10 h-10 text-sentinel-accent animate-spin mb-4" />
+        <p className="text-sentinel-muted animate-pulse">Retrieving historical report...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-57px)]">
+        <div className="bg-red-500/10 border border-red-500/20 p-8 rounded-2xl text-center max-w-md">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Report Error</h2>
+          <p className="text-sentinel-muted mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/history')}
+            className="px-6 py-2 bg-sentinel-surface border border-sentinel-border hover:border-red-500/50 text-white rounded-lg transition-all"
+          >
+            Return to History
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!report) {
@@ -108,9 +172,9 @@ export default function ReportPage() {
         <RecommendedActions actions={report.recommended_actions || []} />
         <MitreTable
           techniques={report.mitre_techniques_used || []}
-          ttpMappings={state.result?.ttp_mappings || []}
+          ttpMappings={activeResult?.ttp_mappings || []}
         />
-        <ThreatIntelCards threatIntel={state.result?.threat_intel || {}} />
+        <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
         <CveList cves={report.cves_identified || []} />
         
         <div className="pt-8 text-center border-t border-sentinel-border opacity-30">

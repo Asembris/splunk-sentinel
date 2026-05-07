@@ -130,3 +130,26 @@ async def get_investigation_history(limit: int = 20) -> list[dict]:
             "[SUPABASE] History retrieval failed | error=%s", str(e)
         )
         return []
+
+
+async def get_investigation_details(investigation_id: str) -> Optional[dict]:
+    """
+    Retrieve full investigation details from Supabase.
+    """
+    try:
+        client = get_supabase_client()
+        response = (
+            client.table("investigations")
+            .select("*")
+            .eq("investigation_id", investigation_id)
+            .single()
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        logger.error(
+            "[SUPABASE] Detail retrieval failed | id=%s | error=%s", 
+            investigation_id, 
+            str(e)
+        )
+        return None

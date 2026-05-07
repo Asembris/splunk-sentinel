@@ -15,7 +15,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<InvestigatePage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/report" element={<ReportPage />} />
+            <Route path="/report/:id?" element={<ReportPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
