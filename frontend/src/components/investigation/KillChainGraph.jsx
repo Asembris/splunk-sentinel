@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Network } from 'vis-network'
 import { DataSet } from 'vis-data'
 import { useInvestigation } from '../../store/InvestigationContext'
@@ -72,6 +72,7 @@ const VIS_OPTIONS = {
 
 export default function KillChainGraph() {
   const { state } = useInvestigation()
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef(null)
   const networkRef = useRef(null)
   const nodesRef = useRef(new DataSet([]))
@@ -85,14 +86,34 @@ export default function KillChainGraph() {
     networkRef.current = new Network(
       containerRef.current,
       { nodes: nodesRef.current, edges: edgesRef.current },
-      VIS_OPTIONS
+      {
+        ...VIS_OPTIONS,
+        layout: {
+          ...VIS_OPTIONS.layout,
+          hierarchical: {
+            ...VIS_OPTIONS.layout.hierarchical,
+            nodeSpacing: isFullscreen ? 200 : 140,
+            levelSeparation: isFullscreen ? 250 : 180,
+          }
+        }
+      }
     )
 
+    // Handle container resize
+    const handleResize = () => {
+      if (networkRef.current) {
+        networkRef.current.redraw()
+        networkRef.current.fit()
+      }
+    }
+    window.addEventListener('resize', handleResize)
+
     return () => {
+      window.removeEventListener('resize', handleResize)
       networkRef.current?.destroy()
       networkRef.current = null
     }
-  }, [])
+  }, [isFullscreen]) // Re-init on fullscreen toggle to apply new spacing
 
   // Add nodes as stages are discovered
   useEffect(() => {
@@ -154,47 +175,74 @@ export default function KillChainGraph() {
           to: nodeId,
         })
       }
-
     })
 
-    // Fit graph after adding nodes (debounced to avoid jank)
     const timer = setTimeout(() => {
       if (networkRef.current) {
         networkRef.current.fit({
           animation: { duration: 600, easingFunction: 'easeInOutQuad' },
-          padding: 40,
+          padding: isFullscreen ? 80 : 40,
         })
       }
     }, 150)
 
     return () => clearTimeout(timer)
-  }, [state.killChainStages])
+  }, [state.killChainStages, isFullscreen])
 
   const isEmpty = state.killChainStages.length === 0
   const isIdle = state.status === 'idle'
 
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl overflow-hidden relative shadow-lg" style={{ height: '460px' }}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-sentinel-border bg-sentinel-surface/50 backdrop-blur-sm z-10 relative">
-        <h3 className="text-sm font-semibold text-sentinel-muted uppercase tracking-wider">
-          Kill Chain Reconstruction
-        </h3>
-        <span className="text-xs text-sentinel-muted font-mono">
-          {state.killChainStages.length} nodes
-        </span>
+    <div className={`
+      bg-sentinel-surface border border-sentinel-border rounded-xl overflow-hidden transition-all duration-300 shadow-2xl
+      ${isFullscreen ? 'fixed inset-0 z-[100] rounded-none m-0' : 'relative'}
+    `} style={{ height: isFullscreen ? '100vh' : '520px' }}>
+      
+      <div className="flex items-center justify-between px-6 py-4 border-b border-sentinel-border bg-sentinel-surface/50 backdrop-blur-md z-10 relative">
+        <div className="flex items-center gap-3">
+          <div className={`w-2 h-2 rounded-full ${isIdle ? 'bg-sentinel-muted' : 'bg-sentinel-success animate-pulse'}`} />
+          <h3 className="text-xs font-bold text-sentinel-muted uppercase tracking-[0.2em]">
+            Kill Chain Reconstruction
+          </h3>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <span className="text-[10px] text-sentinel-muted font-mono bg-sentinel-bg px-2 py-1 rounded border border-sentinel-border">
+            {state.killChainStages.length} NODES DISCOVERED
+          </span>
+          <button 
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-2 hover:bg-sentinel-bg rounded-lg transition-colors group"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? (
+              <svg className="w-4 h-4 text-sentinel-muted group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 text-sentinel-muted group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
 
-      <div ref={containerRef} className="w-full h-full absolute inset-0 pt-10" style={{ height: '415px' }} />
+      <div 
+        ref={containerRef} 
+        className="w-full h-full absolute inset-0 pt-14 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px]" 
+        style={{ height: '100%' }} 
+      />
 
       {/* Empty state overlay */}
       {(isEmpty || isIdle) && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-sentinel-bg/40 backdrop-blur-[2px]">
           <div className="text-center">
-            <div className="w-12 h-12 border-2 border-sentinel-border rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-              <span className="text-sentinel-muted text-xl">⬡</span>
+            <div className="w-16 h-16 border border-sentinel-accent/30 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse bg-sentinel-accent/5">
+              <span className="text-sentinel-accent text-2xl font-light">⬢</span>
             </div>
-            <p className="text-sentinel-muted text-sm px-10">
-              {isIdle ? 'Start an investigation to see the kill chain' : 'Reconstructing attack lifecycle...'}
+            <p className="text-sentinel-muted text-xs uppercase tracking-widest px-10">
+              {isIdle ? 'Waiting for Investigation' : 'Reconstructing attack kill chain...'}
             </p>
           </div>
         </div>

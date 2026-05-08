@@ -9,6 +9,14 @@ const AGENTS = [
   { key: 'synthesis_agent', label: 'Synthesis Agent', description: 'Report generation' },
 ]
 
+const AGENT_MODES = {
+  triage_agent:         { mode: 'FAST', icon: '⚡', color: 'text-amber-400' },
+  reconstruction_agent: { mode: 'DEEP', icon: '🔍', color: 'text-blue-400' },
+  threat_intel_agent:   { mode: 'FAST', icon: '⚡', color: 'text-amber-400' },
+  ttp_agent:            { mode: 'FAST', icon: '⚡', color: 'text-amber-400' },
+  synthesis_agent:      { mode: 'DEEP', icon: '🔍', color: 'text-blue-400' },
+}
+
 const STATUS_CONFIG = {
   waiting:  { icon: Circle,      color: 'text-sentinel-muted',   bg: 'bg-sentinel-border' },
   running:  { icon: Loader,      color: 'text-sentinel-accent',  bg: 'bg-blue-900/30' },
@@ -36,7 +44,7 @@ export default function AgentStatusPanel() {
           return (
             <div
               key={key}
-              className={`flex items-center gap-3 p-3 rounded-lg transition-all ${bg} ${
+              className={`flex items-center gap-3 p-3 rounded-lg transition-all relative group ${bg} ${
                 status !== 'waiting' ? 'animate-fade-in' : ''
               }`}
             >
@@ -45,8 +53,8 @@ export default function AgentStatusPanel() {
                   isRunning ? 'animate-spin' : ''
                 }`}
               />
-              <div className="min-w-0 flex-1">
-                <div className={`text-sm font-medium ${
+              <div className="min-w-0 flex-1 pr-12">
+                <div className={`text-sm font-medium truncate ${
                   status === 'waiting' ? 'text-sentinel-muted' : 'text-white'
                 }`}>
                   {label}
@@ -55,8 +63,17 @@ export default function AgentStatusPanel() {
                   {description}
                 </div>
               </div>
+
+              {/* Mode Badge - Absolute Positioned */}
+              {AGENT_MODES[key] && (
+                <div className={`absolute top-2 right-2 text-[9px] font-bold flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-sentinel-surface/80 backdrop-blur-sm border border-sentinel-border/50 shadow-sm ${AGENT_MODES[key].color}`}>
+                  {AGENT_MODES[key].icon} {AGENT_MODES[key].mode}
+                </div>
+              )}
+
+              {/* Triage Classification */}
               {status === 'complete' && key === 'triage_agent' && classification && (
-                <span className="text-[10px] font-mono text-sentinel-accent border border-blue-900 px-1.5 py-0.5 rounded uppercase">
+                <span className="absolute bottom-2 right-2 text-[9px] font-mono text-sentinel-accent border border-blue-900/50 px-1 py-0.5 rounded uppercase bg-blue-900/10">
                   {classification}
                 </span>
               )}

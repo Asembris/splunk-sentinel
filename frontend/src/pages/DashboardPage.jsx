@@ -66,12 +66,12 @@ export default function DashboardPage() {
       {/* Main grid */}
       <div className="grid grid-cols-12 gap-5">
         {/* Left: Agent status */}
-        <div className="col-span-12 lg:col-span-2">
+        <div className="col-span-12 lg:col-span-3">
           <AgentStatusPanel />
         </div>
 
         {/* Center: Kill chain graph */}
-        <div className="col-span-12 lg:col-span-7">
+        <div className="col-span-12 lg:col-span-6">
           <KillChainGraph />
         </div>
 
