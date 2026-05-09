@@ -22,6 +22,7 @@
 <!-- Badges row 3: quality -->
 ![Tests](https://img.shields.io/badge/Tests-169_passing-brightgreen)
 ![DeepEval](https://img.shields.io/badge/DeepEval-93.3%25_pass-brightgreen)
+![HitL](https://img.shields.io/badge/Human--in--the--Loop-Feedback-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## Live Demo
@@ -77,18 +78,24 @@ graph TD
         F[SynthesisAgent<br/>RAG Retrieval · Evidence Citation<br/>Confidence Scoring · Report Generation]
     end
 
+    subgraph REPORTING ["📋 Phase 5 — Reporting"]
+        RA[ReportAgent<br/>PDF · Supabase · Splunk Write-back<br/>4-Tier Confidence Ladder]
+    end
+
     B -->|APT/Ransomware/Insider| C
     B -->|UNKNOWN| Z[🔚 END — Escalate to Human]
     C --> D
     C --> E
     D --> F
     E --> F
-    F --> G[📄 Final Incident Report<br/>Kill Chain · Findings · Actions · CVEs]
+    F --> RA[ReportAgent<br/>PDF Generation · Supabase · Splunk Write-back]
+    RA --> G[📄 Complete Investigation Package<br/>PDF Report · Notable Event · Analyst Feedback]
 
     style TRIAGE fill:#1e3a5f,stroke:#3b82f6
     style RECONSTRUCTION fill:#1e3a5f,stroke:#3b82f6
     style PARALLEL fill:#1a2e1a,stroke:#10b981
     style SYNTHESIS fill:#2d1b1b,stroke:#ef4444
+    style REPORTING fill:#1a1a2e,stroke:#8b5cf6
 ```
 
 ### ReAct Loop — ReconstructionAgent
@@ -141,10 +148,10 @@ graph LR
     end
 
     subgraph STORE ["🗄️ Qdrant Cloud"]
-        F[mitre_attack<br/>697 points]
-        G[cve_nvd<br/>8 points]
-        H[ir_playbooks<br/>5 points]
-        I[botsv3_investigation<br/>3 points]
+        F[mitre_attack<br/>697 techniques]
+        G[cve_nvd<br/>botsv3 attack surface]
+        H[ir_playbooks<br/>APT · Ransomware · Insider]
+        I[botsv3_investigation<br/>forensic ground truth]
     end
 
     subgraph RETRIEVAL ["🔍 Parallel Retrieval"]
@@ -173,7 +180,15 @@ stateDiagram-v2
     threat_intel_agent --> synthesis_agent: merge
     ttp_agent --> synthesis_agent: merge
     
-    synthesis_agent --> END: final_report populated
+    synthesis_agent --> report_agent: final_report populated
+    report_agent --> END: PDF · Supabase · Splunk write-back
+    
+    note right of report_agent
+        ReportLab PDF generation
+        Supabase persistence
+        Splunk notable event write-back
+        4-tier confidence ladder
+    end note
     
     note right of reconstruction_agent
         ReAct loop
@@ -278,6 +293,50 @@ investigation costs approximately $0.009 in API calls.
   when telemetry contradicts the trigger
 - **Guardrail bypass tests** — adversarial SPL injection attempts
 
+### 7. Closed-Loop Autonomous SOC Integration
+
+ReportAgent closes the complete autonomous investigation loop:
+
+1. **PDF Generation** — ReportLab produces a structured incident 
+   report with kill chain timeline, MITRE ATT&CK mapping, key 
+   findings, recommended actions, and the full SPL audit log
+2. **Supabase Persistence** — every investigation is persisted 
+   permanently, enabling cross-session history and analyst feedback
+3. **Splunk Write-back** — investigation findings are written back 
+   to Splunk as notable events in `index=sentinel_findings`, 
+   completing the detection → investigation → response loop
+4. **4-Tier Confidence Ladder** — actions are gated by confidence:
+   - `≥ 0.90` → AUTO_EXECUTE (notable event + containment SPL)
+   - `0.70–0.89` → ANALYST_REVIEW (human review recommended)
+   - `0.60–0.70` → MONITOR (watch for escalation)
+   - `< 0.60` → ESCALATE_TO_HUMAN (manual investigation required)
+5. **Analyst Feedback Loop** — analysts rate each investigation 
+   (Correct / Partial / Incorrect) with notes, building a ground 
+   truth dataset for confidence formula calibration
+
+### 8. Tamper-Evident Hash-Chained Audit Log
+
+Every SPL query executed by any agent is recorded in a 
+cryptographically chained audit log:
+
+```python
+entry_hash = SHA-256(prev_hash + canonical_entry_json)
+```
+
+Each entry's hash depends on all previous entries — modifying, 
+deleting, or inserting any entry breaks the chain from that 
+point forward. The integrity of any investigation's audit trail 
+can be verified via:
+
+```
+GET /api/audit-log/verify/{investigation_id}
+→ {"valid": true, "total_entries": 16, "chain_intact": true}
+```
+
+No other agent framework in the AI security space provides
+cryptographic integrity guarantees on the audit log — documented
+in FINDINGS.md.
+
 ## Agent Pipeline
 
 | Agent | Status | Inputs | Outputs | Key Logic |
@@ -287,7 +346,7 @@ investigation costs approximately $0.009 in API calls.
 | **ThreatIntelAgent** | ✅ Complete | blast_radius.external_ips | threat_intel per IP | VirusTotal + AbuseIPDB parallel, RFC1918 filter, deterministic fallback |
 | **TTPAgent** | ✅ Complete | kill_chain MITRE codes | ttp_mappings enriched | Qdrant exact ID lookup + semantic fallback, CVE linking |
 | **SynthesisAgent** | ✅ Complete | All upstream outputs | final_report | Parallel LLM calls, RAG 4-collection retrieval, field injection fallbacks |
-| **ReportAgent** | 🔄 In Progress | final_report | PDF, Supabase record | ReportLab PDF, Supabase persistence |
+| **ReportAgent** | ✅ Complete | final_report | PDF report, Supabase record, Splunk notable event | ReportLab PDF generation, Supabase persistence, Splunk write-back via SDK, 4-tier confidence ladder |
 
 ## Evaluation Results
 
@@ -331,7 +390,8 @@ investigation costs approximately $0.009 in API calls.
 | threat_intel_agent | 0.4s | — | — |
 | ttp_agent | 3.3s | — | — |
 | synthesis_agent | 9.9s | 6.3K | ~$0.001 |
-| **Total** | **~94s** | **~50.4K** | **~$0.009** |
+| report_agent | ~5s | — | — |
+| **Total** | **~99s** | **~50.4K** | **~$0.009** |
 
 ## BOTS v3 Attack Scenario
 
@@ -469,6 +529,45 @@ python -m pytest tests/ --ignore=tests/eval/ -v
 python -m pytest tests/eval/test_triage_eval.py -v -s
 ```
 
+## Splunk Integration
+
+### Autonomous Alert Webhook
+
+Configure Splunk to automatically trigger investigations when
+saved search thresholds are breached:
+
+1. **Settings → Searches, Reports, and Alerts → New Alert**
+2. Set your detection SPL query
+3. Alert action: **Webhook → URL:** `http://localhost:8001/api/webhook/splunk`
+4. Save
+
+When the alert fires, Splunk POSTs the alert payload to Sentinel.
+The full 6-agent pipeline runs autonomously. No human input required.
+
+**Example saved search (botsv3):**
+```spl
+index=botsv3 earliest=0 sourcetype=stream:http dest_ip=169.254.169.254
+| stats count by src_ip
+| where count > 5
+```
+
+Saved search configured: **"Sentinel - AWS Metadata Access Detected"**
+
+### Splunk Write-back
+
+After every investigation, Sentinel writes findings back to Splunk:
+
+```spl
+index=sentinel_findings earliest=0
+| table investigation_id, classification, severity,
+        confidence_pct, confidence_tier, kill_chain_summary,
+        patient_zero_ip, containment_priority
+| sort -_time
+```
+
+This creates a complete closed loop:
+**Splunk detects → Sentinel investigates → Splunk receives findings**
+
 ## API Reference
 
 ### Core Endpoints
@@ -476,8 +575,13 @@ python -m pytest tests/eval/test_triage_eval.py -v -s
 | Method | Endpoint | Description |
 |:---|:---|:---|
 | `POST` | `/api/investigate` | Start investigation (SSE stream) |
+| `POST` | `/api/webhook/splunk` | Autonomous Splunk alert webhook |
 | `GET` | `/api/health` | Backend + Splunk health check |
-| `GET` | `/api/audit-log` | Last 100 SPL queries executed |
+| `GET` | `/api/investigations/history` | Persistent investigation history |
+| `POST` | `/api/investigations/{id}/feedback` | Analyst HITL feedback |
+| `GET` | `/api/investigations/{id}/report/pdf` | Download PDF report |
+| `GET` | `/api/audit-log/verify/{id}` | Verify hash chain integrity |
+| `GET` | `/api/audit-log/verify-latest` | Verify most recent investigation |
 
 ### POST /api/investigate
 
@@ -557,6 +661,36 @@ Investigations with `reconstruction_confidence < 0.5` or
 `severity = CRITICAL` automatically set `escalate_to_human = True`.
 The system never produces a high-confidence report from low-quality 
 evidence — it escalates instead.
+
+### Hash-Chained Audit Log
+
+Every SPL query attempt — whether blocked or executed — is 
+recorded as a tamper-evident entry in a SHA-256 hash chain. 
+Each entry contains:
+
+- `prev_hash` — hash of the previous entry (genesis: `"0"*64`)
+- `entry_hash` — SHA-256 of `prev_hash + canonical(entry content)`
+- `correction_attempts` — number of LLM self-correction rewrites
+- `was_corrected` — whether the query was rewritten before execution
+- `rows_returned` — result count for executed queries
+
+Modifying any entry invalidates all subsequent hashes, making 
+tampering immediately detectable. The `GET /api/audit-log/verify` 
+endpoint provides real-time chain integrity verification.
+
+### Splunk Notable Event Write-back
+
+When an investigation completes, ReportAgent writes a structured 
+notable event to `index=sentinel_findings` via the Splunk Python 
+SDK. The event includes the full kill chain summary, confidence 
+tier, patient zero, and immediate recommended actions — making 
+Sentinel findings searchable in Splunk alongside native alerts:
+
+```spl
+index=sentinel_findings sourcetype="sentinel:investigation"
+| table investigation_id, classification, confidence_tier,
+        kill_chain_summary, patient_zero_ip, severity
+```
 
 ## Tech Stack
 
