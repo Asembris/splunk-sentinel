@@ -12,6 +12,161 @@ import ThreatIntelCards from '../components/report/ThreatIntelCards'
 import RecommendedActions from '../components/report/RecommendedActions'
 import CveList from '../components/report/CveList'
 
+function FeedbackCard({
+  feedbackRating,
+  setFeedbackRating,
+  feedbackNotes,
+  setFeedbackNotes,
+  feedbackStatus,
+  onSubmit,
+}) {
+  const RATINGS = [
+    {
+      key: 'correct',
+      label: 'Correct',
+      icon: '✓',
+      activeClass: 'border-green-500 bg-green-500/10 text-green-400',
+      inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-green-500/50',
+    },
+    {
+      key: 'partial',
+      label: 'Partial',
+      icon: '~',
+      activeClass: 'border-amber-500 bg-amber-500/10 text-amber-400',
+      inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-amber-500/50',
+    },
+    {
+      key: 'incorrect',
+      label: 'Incorrect',
+      icon: '✗',
+      activeClass: 'border-red-500 bg-red-500/10 text-red-400',
+      inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-red-500/50',
+    },
+  ]
+
+  if (feedbackStatus === 'submitted') {
+    return (
+      <div className="bg-sentinel-surface border border-green-500/30 
+                      rounded-xl p-6 mt-6">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-green-500/20 rounded-full 
+                          flex items-center justify-center flex-shrink-0">
+            <span className="text-green-400 font-bold">✓</span>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-green-400">
+              Feedback submitted
+            </p>
+            <p className="text-xs text-sentinel-muted mt-0.5">
+              Thank you. This investigation has been rated and 
+              saved to the evaluation dataset.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-sentinel-surface border border-sentinel-border 
+                    rounded-xl p-6 mt-6">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-1.5 h-4 bg-sentinel-accent rounded-full" />
+        <h3 className="text-sm font-semibold text-sentinel-muted 
+                       uppercase tracking-wider">
+          Analyst Feedback
+        </h3>
+        <span className="text-xs text-sentinel-muted opacity-50 ml-1">
+          — contributes to evaluation dataset
+        </span>
+      </div>
+
+      <p className="text-xs text-sentinel-muted mb-4">
+        Was this autonomous investigation accurate? Your rating 
+        is stored in Supabase and used to calibrate future 
+        confidence scores.
+      </p>
+
+      {/* Rating buttons */}
+      <div className="flex items-center gap-3 mb-4">
+        {RATINGS.map((rating) => (
+          <button
+            key={rating.key}
+            onClick={() => setFeedbackRating(rating.key)}
+            disabled={feedbackStatus === 'submitting'}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg 
+                        border text-sm font-medium transition-all
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                        ${feedbackRating === rating.key
+                          ? rating.activeClass
+                          : rating.inactiveClass
+                        }`}
+          >
+            <span className="font-bold">{rating.icon}</span>
+            {rating.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Notes input — only shown when rating selected */}
+      {feedbackRating && (
+        <div className="mb-4">
+          <textarea
+            value={feedbackNotes}
+            onChange={(e) => setFeedbackNotes(e.target.value)}
+            placeholder="Optional: describe what was correct or incorrect (e.g. 'Patient zero IP was wrong — actual source was 54.67.127.227')"
+            disabled={feedbackStatus === 'submitting'}
+            rows={3}
+            className="w-full bg-sentinel-bg border border-sentinel-border 
+                       rounded-lg px-3 py-2 text-sm text-white 
+                       placeholder:text-sentinel-muted/50
+                       focus:outline-none focus:border-sentinel-accent
+                       resize-none disabled:opacity-50
+                       transition-colors"
+          />
+          <p className="text-xs text-sentinel-muted mt-1 opacity-60">
+            Your notes help build the ground truth evaluation dataset
+          </p>
+        </div>
+      )}
+
+      {/* Submit button */}
+      <div className="flex items-center justify-between">
+        <div>
+          {feedbackStatus === 'error' && (
+            <p className="text-xs text-red-400">
+              Failed to submit feedback. Please try again.
+            </p>
+          )}
+        </div>
+        <button
+          onClick={onSubmit}
+          disabled={!feedbackRating || feedbackStatus === 'submitting'}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg 
+                      text-sm font-medium transition-all
+                      ${!feedbackRating || feedbackStatus === 'submitting'
+                        ? 'bg-sentinel-surface border border-sentinel-border opacity-40 cursor-not-allowed'
+                        : 'bg-sentinel-accent hover:bg-blue-500 text-white cursor-pointer'
+                      }`}
+        >
+          {feedbackStatus === 'submitting' ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 
+                              border-t-white rounded-full animate-spin" />
+              Submitting...
+            </>
+          ) : (
+            <>
+              Submit Feedback
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function ReportPage() {
   const { id } = useParams()
   const { state } = useInvestigation()
@@ -22,6 +177,11 @@ export default function ReportPage() {
   const [error, setError] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState(null)
+  
+  const [feedbackRating, setFeedbackRating] = useState(null)
+  const [feedbackNotes, setFeedbackNotes] = useState('')
+  const [feedbackStatus, setFeedbackStatus] = useState('idle')
+  // idle | submitting | submitted | error
 
   // Use state.result if available, otherwise use historicalData
   const activeResult = state.result || historicalData
@@ -64,8 +224,9 @@ export default function ReportPage() {
 
   const handleDownloadPdf = async () => {
     const investigationId =
-      report.investigation_id ||
-      state.result?.investigation_id
+      activeResult?.investigation_id ||
+      id ||
+      state.investigationId
 
     if (!investigationId) {
       console.error('No investigation ID available for PDF download')
@@ -112,6 +273,54 @@ export default function ReportPage() {
       setTimeout(() => {
         setPdfLoading(false)
       }, delay)
+    }
+  }
+
+  const handleSubmitFeedback = async () => {
+    if (!feedbackRating) return
+
+    const investigationId =
+      activeResult?.investigation_id ||
+      id ||
+      state.investigationId
+
+    if (!investigationId) return
+
+    const startTime = Date.now()
+    setFeedbackStatus('submitting')
+
+    try {
+      const response = await fetch(
+        `/api/investigations/${investigationId}/feedback`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rating: feedbackRating,
+            notes: feedbackNotes,
+          }),
+        }
+      )
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json()
+
+      // Artificial delay to ensure spinner is visible for UX
+      const duration = Date.now() - startTime
+      const minDelay = 1000
+      if (duration < minDelay) {
+        await new Promise((resolve) => setTimeout(resolve, minDelay - duration))
+      }
+
+      if (data.status === 'ok' || data.status === 'saved') {
+        setFeedbackStatus('submitted')
+      } else {
+        throw new Error('Feedback save failed')
+      }
+    } catch (err) {
+      console.error('Feedback error:', err)
+      setFeedbackStatus('error')
+      setTimeout(() => setFeedbackStatus('idle'), 3000)
     }
   }
 
@@ -253,6 +462,16 @@ export default function ReportPage() {
         />
         <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
         <CveList cves={report.cves_identified || []} />
+        
+        {/* Analyst Feedback */}
+        <FeedbackCard
+          feedbackRating={feedbackRating}
+          setFeedbackRating={setFeedbackRating}
+          feedbackNotes={feedbackNotes}
+          setFeedbackNotes={setFeedbackNotes}
+          feedbackStatus={feedbackStatus}
+          onSubmit={handleSubmitFeedback}
+        />
         
         <div className="pt-8 text-center border-t border-sentinel-border opacity-30">
           <p className="text-[10px] text-sentinel-muted uppercase tracking-[0.2em]">
