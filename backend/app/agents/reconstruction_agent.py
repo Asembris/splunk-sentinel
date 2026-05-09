@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.models.state import AgentState
 from app.tools.splunk_tools import get_splunk_client, SplunkClient
 from app.guardrails.spl_guardrail import SPLGuardrail
+from app.utils.audit_chain import append_chained_entry
 
 logger = logging.getLogger(__name__)
 
@@ -433,7 +434,7 @@ async def _execute_query_with_retry(
                 "executed": False,
                 "rows_returned": 0,
             }
-            splunk.audit_log.append(json.dumps(audit_entry))
+            append_chained_entry(splunk.audit_log, audit_entry)
             return [], current_spl
 
         guardrail.audit(current_spl)
@@ -456,7 +457,7 @@ async def _execute_query_with_retry(
                 "executed": True,
                 "rows_returned": len(results) if results else 0,
             }
-            splunk.audit_log.append(json.dumps(audit_entry))
+            append_chained_entry(splunk.audit_log, audit_entry)
             
             if results is not None:
                 logger.info(
@@ -532,6 +533,7 @@ async def reconstruction_agent(
 
     splunk = get_splunk_client()
     splunk.audit_log.clear()
+    splunk.audit_log.extend(state.get("spl_audit_log", []))
     guardrail = SPLGuardrail()
 
     # ── ReAct loop state ─────────────────────────────────────────────────
@@ -991,9 +993,7 @@ the telemetry above. Do not hallucinate events not in the data.
         len(executed_queries),
     )
 
-    updated_audit = list(
-        state.get("spl_audit_log", [])
-    ) + splunk.audit_log
+    updated_audit = list(splunk.audit_log)
 
     return {
         **state,

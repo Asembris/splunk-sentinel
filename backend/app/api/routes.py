@@ -31,6 +31,7 @@ from app.services.supabase_client import (
     get_investigation_history,
     get_investigation_details
 )
+from app.utils.audit_chain import verify_chain
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,39 @@ async def get_audit_log():
     return {"lines": last_100, "total_lines": len(all_lines)}
 
 
+@router.get("/audit-log/verify-latest", summary="Verify the latest SPL audit chain")
+async def verify_latest_audit_chain():
+    """
+    Verify the integrity of the hash-chained SPL audit log for the most recent investigation.
+    """
+    history = await get_investigation_history(limit=1)
+    if not history:
+        raise HTTPException(status_code=404, detail="No investigations found")
+    
+    latest_id = history[0].get("investigation_id")
+    data = await get_investigation_details(latest_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Investigation details not found")
+    
+    audit_log = data.get("report_json", {}).get("spl_audit_log", [])
+    result = verify_chain(audit_log)
+    return {**result, "investigation_id": latest_id}
+
+
+@router.get("/audit-log/verify/{investigation_id}", summary="Verify the SPL audit chain")
+async def verify_audit_chain(investigation_id: str):
+    """
+    Verify the integrity of the hash-chained SPL audit log for a specific investigation.
+    """
+    data = await get_investigation_details(investigation_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    
+    audit_log = data.get("report_json", {}).get("spl_audit_log", [])
+    result = verify_chain(audit_log)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Investigation Persistence & Reporting
 # ---------------------------------------------------------------------------
@@ -370,6 +404,7 @@ async def get_investigation(investigation_id: str):
         "report_pdf_path": data.get("pdf_path"),
         "splunk_notable_event_id": data.get("splunk_notable_id"),
         "escalate_to_human": data.get("escalate_to_human"),
+        "spl_audit_log": data.get("spl_audit_log", []),
     }
 
 

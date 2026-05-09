@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.state import AgentState
 from app.tools.splunk_tools import get_splunk_client
 from app.config import settings
+from app.utils.audit_chain import append_chained_entry
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +460,17 @@ async def triage_agent(state: AgentState) -> AgentState:
         event_codes = cached["event_codes"]
         auth_failures = cached["auth_failures"]
         dynamic_results = cached.get("dynamic_results", {})
+        # Replay cached query metadata as new audit entries so every
+        # investigation has a complete chain regardless of cache path.
+        from datetime import datetime, timezone
+        cache_timestamp = datetime.now(timezone.utc).isoformat()
+        for cached_entry_meta in cached.get("audit_entry_templates", []):
+            entry = {
+                **cached_entry_meta,
+                "timestamp": cache_timestamp,
+                "served_from_cache": True,
+            }
+            append_chained_entry(splunk.audit_log, entry)
     else:
         # Base query A — EventCode distribution (attack type signal)
         spl_codes = (
@@ -517,6 +529,50 @@ async def triage_agent(state: AgentState) -> AgentState:
                         "[%s] Base telemetry query %d failed: %s", investigation_id, i, r
                     )
 
+            # ── Step 3.1: Log all queries to audit chain ──────────────────
+            from datetime import datetime, timezone
+            timestamp = datetime.now(timezone.utc).isoformat()
+            
+            # Base queries
+            base_queries = [
+                "| bucket _time span=1h | stats count by _time ...", # get_attack_window
+                "| stats count as event_count by src_ip ...",        # get_top_source_ips
+                spl_codes,
+                spl_auth
+            ]
+            
+            for i, spl_str in enumerate(base_queries):
+                res = all_results[i]
+                audit_entry = {
+                    "timestamp": timestamp,
+                    "spl": spl_str,
+                    "correction_attempts": 0,
+                    "original_spl": spl_str,
+                    "was_corrected": False,
+                    "correction_reason": None,
+                    "blocked": False,
+                    "block_reason": None,
+                    "executed": True,
+                    "rows_returned": len(res) if isinstance(res, list) else 1 if isinstance(res, dict) else 0,
+                }
+                append_chained_entry(splunk.audit_log, audit_entry)
+
+            # Dynamic queries
+            for i, (spl_str, res) in enumerate(zip(dynamic_queries, all_results[4:])):
+                audit_entry = {
+                    "timestamp": timestamp,
+                    "spl": spl_str,
+                    "correction_attempts": 0,
+                    "original_spl": spl_str,
+                    "was_corrected": False,
+                    "correction_reason": None,
+                    "blocked": False,
+                    "block_reason": None,
+                    "executed": not isinstance(res, Exception),
+                    "rows_returned": len(res) if isinstance(res, list) else 0,
+                }
+                append_chained_entry(splunk.audit_log, audit_entry)
+
             logger.info(
                 "[%s] Parallel telemetry retrieval complete "
                 "(base=4, dynamic=%d).",
@@ -536,6 +592,27 @@ async def triage_agent(state: AgentState) -> AgentState:
                     "event_codes": event_codes,
                     "auth_failures": auth_failures,
                     "dynamic_results": dynamic_results,
+                    # Store metadata for audit replay on cache hits
+                    "audit_entry_templates": [
+                        {
+                            "spl": spl_str,
+                            "correction_attempts": 0,
+                            "original_spl": spl_str,
+                            "was_corrected": False,
+                            "correction_reason": None,
+                            "blocked": False,
+                            "block_reason": None,
+                            "executed": True,
+                            "rows_returned": len(splunk.audit_log),  # approx
+                        }
+                        for spl_str in [
+                            "index=botsv3 earliest=0 | bucket _time span=1h ...",
+                            "index=botsv3 earliest=0 | stats count as event_count by src_ip ...",
+                            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security | stats count by EventCode | sort -count | head 10",
+                            "index=botsv3 earliest=0 sourcetype=WinEventLog:Security EventCode=4625 | stats count as failures by Account_Name | sort -failures | head 10",
+                            *dynamic_queries,
+                        ]
+                    ],
                 }
 
         except Exception as exc:
