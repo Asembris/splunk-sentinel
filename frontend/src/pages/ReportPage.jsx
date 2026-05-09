@@ -167,6 +167,179 @@ function FeedbackCard({
   )
 }
 
+function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
+  if (!auditChain) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5 
+                      bg-sentinel-surface border border-sentinel-border 
+                      rounded-lg text-xs text-sentinel-muted">
+        <div className="w-3 h-3 border border-sentinel-muted 
+                        border-t-transparent rounded-full animate-spin" />
+        Verifying audit chain...
+      </div>
+    )
+  }
+
+  if (auditChain.error) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5
+                      bg-sentinel-surface border border-sentinel-border
+                      rounded-lg text-xs text-sentinel-muted">
+        ◌ Audit verification unavailable
+      </div>
+    )
+  }
+
+  const isValid = auditChain.valid === true
+
+  let totalEntries = auditChain.total_entries || 0
+  if (!totalEntries && auditChain.details) {
+    const match = auditChain.details.match(/verified (\d+) entries/i)
+    if (match) {
+      totalEntries = parseInt(match[1], 10)
+    } else if (auditChain.details.includes('empty')) {
+      totalEntries = 0
+    } else if (splAuditLog && Array.isArray(splAuditLog)) {
+      totalEntries = splAuditLog.length
+    }
+  }
+
+  let brokenIndex = auditChain.first_broken_index
+  if (brokenIndex === undefined && auditChain.details && !isValid) {
+    const match = auditChain.details.match(/Entry (\d+)/i)
+    if (match) brokenIndex = match[1]
+  }
+
+  // Parse last 5 entries from spl_audit_log if available
+  const recentEntries = []
+  if (splAuditLog && Array.isArray(splAuditLog)) {
+    const last5 = splAuditLog.slice(-5)
+    for (const entry of last5) {
+      try {
+        const parsed = typeof entry === 'string'
+          ? JSON.parse(entry)
+          : entry
+        recentEntries.push(parsed)
+      } catch {
+        // skip unparseable entries
+      }
+    }
+  }
+
+  return (
+    <div className="relative" data-audit-badge>
+      <button
+        onClick={onToggle}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+                    text-xs font-medium transition-all border
+                    ${isValid
+                      ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20'
+                      : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                    }`}
+      >
+        <span>{isValid ? '🔒' : '⚠️'}</span>
+        <span>
+          {isValid
+            ? `Audit Chain Verified · ${totalEntries} entries`
+            : `Chain Integrity Failure · Entry ${brokenIndex} modified`
+          }
+        </span>
+        <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
+          ▾
+        </span>
+      </button>
+
+      {/* Expanded dropdown */}
+      {expanded && (
+        <div className="absolute right-0 top-full mt-2 z-50
+                        bg-sentinel-surface border border-sentinel-border
+                        rounded-xl shadow-2xl p-4 w-96">
+
+          {/* Chain summary */}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-sentinel-muted uppercase tracking-wider">
+              Hash Chain Integrity
+            </span>
+            <span className={`text-xs font-bold ${
+              isValid ? 'text-green-400' : 'text-red-400'
+            }`}>
+              {isValid ? '✓ INTACT' : '✗ BROKEN'}
+            </span>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {[
+              { label: 'Entries', value: totalEntries },
+              { label: 'Status', value: isValid ? 'Valid' : 'Invalid' },
+              { label: 'Algorithm', value: 'SHA-256' },
+            ].map(stat => (
+              <div key={stat.label}
+                   className="bg-sentinel-bg rounded-lg p-2 text-center">
+                <div className="text-xs font-bold text-white">
+                  {stat.value}
+                </div>
+                <div className="text-xs text-sentinel-muted">
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Details */}
+          <p className="text-xs text-sentinel-muted mb-3 leading-relaxed break-all">
+            {auditChain.details}
+          </p>
+
+          {/* Recent entries */}
+          {recentEntries.length > 0 && (
+            <>
+              <div className="text-xs font-semibold text-sentinel-muted 
+                              uppercase tracking-wider mb-2">
+                Recent SPL Entries
+              </div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {recentEntries.map((entry, i) => (
+                  <div key={i}
+                       className="bg-sentinel-bg rounded-lg p-2 font-mono">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-bold ${
+                        entry.was_corrected
+                          ? 'text-amber-400'
+                          : 'text-green-400'
+                      }`}>
+                        {entry.was_corrected ? '⟳ corrected' : '✓ clean'}
+                      </span>
+                      <span className="text-xs text-sentinel-muted">
+                        {entry.rows_returned ?? '?'} rows
+                      </span>
+                    </div>
+                    <div className="text-xs text-sentinel-muted truncate">
+                      {entry.spl?.slice(0, 60)}...
+                    </div>
+                    {entry.entry_hash && (
+                      <div className="text-xs text-sentinel-muted/40 mt-1">
+                        #{entry.entry_hash.slice(0, 16)}...
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Verification timestamp */}
+          <p className="text-xs text-sentinel-muted/40 mt-3 text-right">
+            Verified {auditChain.verified_at
+              ? new Date(auditChain.verified_at).toLocaleTimeString()
+              : 'just now'}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ReportPage() {
   const { id } = useParams()
   const { state } = useInvestigation()
@@ -182,6 +355,10 @@ export default function ReportPage() {
   const [feedbackNotes, setFeedbackNotes] = useState('')
   const [feedbackStatus, setFeedbackStatus] = useState('idle')
   // idle | submitting | submitted | error
+
+  const [auditChain, setAuditChain] = useState(null)
+  // null = loading, object = result
+  const [auditExpanded, setAuditExpanded] = useState(false)
 
   // Use state.result if available, otherwise use historicalData
   const activeResult = state.result || historicalData
@@ -211,6 +388,45 @@ export default function ReportPage() {
       fetchHistoricalReport()
     }
   }, [id, state.result])
+
+  useEffect(() => {
+    const verifyChain = async () => {
+      try {
+        const investigationId =
+          report?.investigation_id ||
+          state.result?.investigation_id
+
+        if (!investigationId) return
+
+        // Try investigation-specific endpoint first
+        // Fall back to verify-latest
+        const url = investigationId
+          ? `/api/audit-log/verify/${investigationId}`
+          : `/api/audit-log/verify-latest`
+
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        setAuditChain(data)
+      } catch (err) {
+        console.error('Audit chain verification failed:', err)
+        setAuditChain({ valid: false, error: err.message })
+      }
+    }
+
+    verifyChain()
+  }, [report?.investigation_id, state.result?.investigation_id])
+
+  useEffect(() => {
+    if (!auditExpanded) return
+    const handleClick = (e) => {
+      if (!e.target.closest('[data-audit-badge]')) {
+        setAuditExpanded(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [auditExpanded])
 
   const handleExportJson = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeResult, null, 2));
@@ -394,6 +610,13 @@ export default function ReportPage() {
             <span className="text-[10px] font-mono text-sentinel-accent bg-blue-900/20 border border-blue-900 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
               {report.classification}
             </span>
+            
+            <AuditChainBadge
+              auditChain={auditChain}
+              expanded={auditExpanded}
+              onToggle={() => setAuditExpanded(prev => !prev)}
+              splAuditLog={activeResult?.spl_audit_log || []}
+            />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Automated Investigation Report</h1>
           <p className="text-xs text-sentinel-muted font-mono mt-1 flex items-center gap-2">
