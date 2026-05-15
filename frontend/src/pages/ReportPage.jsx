@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react'
 import { useInvestigation } from '../store/InvestigationContext'
 import { 
   Download, ArrowLeft, FileJson, Printer, 
-  Share2, Loader2, AlertCircle, FileText 
+  Share2, Loader2, AlertCircle, FileText,
+  Zap
 } from 'lucide-react'
 import ExecutiveSummary from '../components/report/ExecutiveSummary'
 import FindingsGrid from '../components/report/FindingsGrid'
@@ -720,6 +721,72 @@ export default function ReportPage() {
               {Math.round((report.investigation_confidence || 0) * 100)}%
             </div>
             <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">confidence</div>
+            
+            {/* SLO Status Pill */}
+            {report.slo_report && (
+              <div className="mt-4 flex justify-end group/slo relative">
+                <div 
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border cursor-help transition-all
+                    ${report.slo_report.overall_slo_status === 'ALL_MET' 
+                      ? 'bg-green-500/5 border-green-500/20 text-green-400/80 hover:border-green-500/40' 
+                      : 'bg-red-500/5 border-red-500/20 text-red-400/80 hover:border-red-500/40'
+                    }`}
+                  title="System Performance Compliance"
+                >
+                  <Zap className={`w-2.5 h-2.5 ${
+                    report.slo_report.overall_slo_status === 'ALL_MET' ? 'text-green-400' : 'text-red-400'
+                  }`} />
+                  <span className="text-[10px] font-bold font-mono tracking-tight">
+                    SLO: {report.slo_report.overall_slo_status === 'ALL_MET' ? 'PASS' : 'BREACH'}
+                  </span>
+                </div>
+
+                {/* Refined Glassmorphism Tooltip */}
+                <div className="absolute top-full right-0 mt-3 w-52 p-4 
+                                bg-sentinel-surface/95 backdrop-blur-xl 
+                                border border-sentinel-border rounded-xl 
+                                shadow-[0_20px_50px_rgba(0,0,0,0.5)] opacity-0 translate-y-1 
+                                pointer-events-none group-hover/slo:opacity-100 
+                                group-hover/slo:translate-y-0 transition-all duration-200 z-50">
+                  <div className="flex items-center gap-2 mb-3 border-b border-sentinel-border pb-2">
+                    <Zap className="w-3 h-3 text-sentinel-accent" />
+                    <p className="text-[10px] font-bold text-white uppercase tracking-wider">
+                      Performance Metrics
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2.5">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-sentinel-muted">Wall-clock Time</span>
+                      <span className={`font-mono ${report.slo_report.slo_1_time?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
+                        {report.slo_report.slo_1_time?.actual_seconds}s <span className="opacity-40">/ {report.slo_report.slo_1_time?.budget_seconds}s</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-sentinel-muted">Token Budget</span>
+                      <span className={`font-mono ${report.slo_report.slo_2_tokens?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
+                        {Math.round(report.slo_report.slo_2_tokens?.actual_tokens / 1000)}k <span className="opacity-40">/ {Math.round(report.slo_report.slo_2_tokens?.budget_tokens / 1000)}k</span>
+                      </span>
+                    </div>
+
+                    {report.slo_report.slo_breaches?.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-sentinel-border/50">
+                        <div className="flex items-start gap-1.5">
+                          <AlertCircle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
+                          <p className="text-[9px] text-red-400/90 leading-relaxed italic">
+                            {report.slo_report.slo_breaches[0]}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 pt-2 text-[8px] text-sentinel-muted italic border-t border-sentinel-border/30 text-right">
+                    Verified by SLO Engine v1.2
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button

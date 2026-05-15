@@ -166,6 +166,7 @@ def generate_pdf(state: dict) -> str:
         ["Containment Priority", blast_radius.get(
             "containment_priority", "UNKNOWN"
         )],
+        ["SLO Compliance", f"{state.get('slo_report', {}).get('overall_slo_status', 'UNKNOWN')} ({state.get('slo_report', {}).get('slo_1_time', {}).get('actual_seconds', 0)}s)"],
     ]
 
     meta_table = Table(meta_data, colWidths=[50 * mm, 120 * mm])
