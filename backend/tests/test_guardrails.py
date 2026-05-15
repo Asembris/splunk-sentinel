@@ -1,5 +1,4 @@
-import pytest
-from app.guardrails.spl_guardrail import SPLGuardrail
+from app.guardrails.spl_guardrail import SPLGuardrail, validate_spl
 
 class TestLayer1KeywordBlocking:
     """Layer 1: Dangerous command keyword blocking"""
@@ -7,7 +6,7 @@ class TestLayer1KeywordBlocking:
     def test_blocks_delete_command(self, guardrail):
         result = guardrail.validate("index=botsv3 | delete")
         assert result.is_blocked is True
-        assert "delete" in result.reason.lower()
+        assert "dangerous_keyword" in result.reason.lower()
 
     def test_blocks_truncate_command(self, guardrail):
         result = guardrail.validate("index=botsv3 | truncate")
@@ -94,3 +93,111 @@ class TestLayer3AuditLogging:
     def test_blocked_query_is_not_audited(self, guardrail):
         guardrail.validate("index=botsv3 | delete")
         assert len(guardrail.audit_entries) == 0
+
+
+# ── Bypass Vector Tests ──────────────────────────────────────────────
+
+class TestSubsearchBypassBlocked:
+    def test_subsearch_search_syntax_blocked(self):
+        """[search index=_internal] must be blocked at Layer 1"""
+        spl = (
+            "index=botsv3 earliest=0 "
+            "[search index=_internal | head 1 | fields host] "
+            "| stats count by host"
+        )
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+        assert result.layer == 1
+        assert "SUBSEARCH" in result.reason
+
+    def test_subsearch_pipe_syntax_blocked(self):
+        """[| inputlookup ...] subsearch variant must be blocked"""
+        spl = (
+            "index=botsv3 earliest=0 "
+            "[| inputlookup users.csv | fields username] "
+            "| stats count"
+        )
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+        assert result.layer == 1
+
+
+class TestMacroBypassBlocked:
+    def test_backtick_macro_blocked(self):
+        """`my_macro` syntax must be blocked at Layer 1"""
+        spl = "index=botsv3 earliest=0 `malicious_macro` | stats count"
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+        assert result.layer == 1
+        assert "MACRO" in result.reason
+
+    def test_empty_macro_blocked(self):
+        """Even empty backtick macro must be blocked"""
+        spl = "index=botsv3 earliest=0 `` | stats count"
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+        assert result.layer == 1
+
+
+class TestInOperatorBypassBlocked:
+    def test_in_operator_with_internal_blocked(self):
+        """index IN (botsv3, _internal) must be blocked at Layer 2"""
+        spl = (
+            "index IN (botsv3, _internal) earliest=0 "
+            "| stats count by sourcetype"
+        )
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+
+    def test_in_operator_botsv3_only_passes(self):
+        """index IN (botsv3) with only botsv3 must pass"""
+        spl = (
+            "index IN (botsv3) earliest=0 "
+            "| stats count by sourcetype"
+        )
+        result = validate_spl(spl)
+        assert result.is_blocked is False
+
+
+class TestRestAndInputlookupBlocked:
+    def test_rest_command_blocked(self):
+        """| rest /services/... must be blocked at Layer 1"""
+        spl = "| rest /services/authentication/users | table username"
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+        assert result.layer == 1
+
+    def test_inputlookup_blocked(self):
+        """| inputlookup must be blocked at Layer 1"""
+        spl = "| inputlookup users.csv | table username, password_hash"
+        result = validate_spl(spl)
+        assert result.is_blocked is True
+        assert result.layer == 1
+
+
+class TestLegitimateQueriesStillPass:
+    def test_standard_apt_query_passes(self):
+        """Standard APT investigation query must still pass"""
+        spl = (
+            "index=botsv3 earliest=0 sourcetype=stream:http "
+            "dest_ip=169.254.169.254 "
+            "| stats count by src_ip, uri_path "
+            "| sort -count | head 20"
+        )
+        result = validate_spl(spl)
+        assert result.is_blocked is False
+
+    def test_sentinel_findings_write_passes(self):
+        """sentinel_findings index must still be permitted"""
+        spl = (
+            "index=sentinel_findings earliest=0 "
+            "| stats count by classification"
+        )
+        result = validate_spl(spl)
+        assert result.is_blocked is False
+
+    def test_case_insensitive_internal_blocked(self):
+        """INDEX=_INTERNAL (uppercase) must still be blocked"""
+        spl = "INDEX=_INTERNAL earliest=0 | stats count"
+        result = validate_spl(spl)
+        assert result.is_blocked is True
