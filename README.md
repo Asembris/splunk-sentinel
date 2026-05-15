@@ -306,7 +306,7 @@ ReportAgent closes the complete autonomous investigation loop:
    to Splunk as notable events in `index=sentinel_findings`, 
    completing the detection → investigation → response loop
 4. **4-Tier Confidence Ladder** — actions are gated by confidence:
-   - `≥ 0.90` → AUTO_EXECUTE (notable event + containment SPL)
+   - `≥ 0.90` → AUTO_ESCALATE (notable event + containment SPL)
    - `0.70–0.89` → ANALYST_REVIEW (human review recommended)
    - `0.60–0.70` → MONITOR (watch for escalation)
    - `< 0.60` → ESCALATE_TO_HUMAN (manual investigation required)

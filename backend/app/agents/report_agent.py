@@ -52,7 +52,7 @@ def _build_splunk_notable_event(state: AgentState) -> dict:
 
     # Tier-based severity mapping
     tier_severity = {
-        "AUTO_EXECUTE": "critical",
+        "AUTO_ESCALATE": "critical",
         "ANALYST_REVIEW": "high",
         "MONITOR": "medium",
         "ESCALATE_TO_HUMAN": "low",

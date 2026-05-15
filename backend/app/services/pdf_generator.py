@@ -41,7 +41,7 @@ SEVERITY_COLORS = {
 }
 
 CONFIDENCE_TIER_COLORS = {
-    "AUTO_EXECUTE": DANGER_RED,
+    "AUTO_ESCALATE": DANGER_RED,
     "ANALYST_REVIEW": WARNING_AMBER,
     "MONITOR": ACCENT_BLUE,
     "ESCALATE_TO_HUMAN": MUTED_GRAY,
@@ -50,7 +50,7 @@ CONFIDENCE_TIER_COLORS = {
 
 def get_confidence_tier(confidence: float) -> str:
     if confidence >= 0.90:
-        return "AUTO_EXECUTE"
+        return "AUTO_ESCALATE"
     elif confidence >= 0.70:
         return "ANALYST_REVIEW"
     elif confidence >= 0.60:
