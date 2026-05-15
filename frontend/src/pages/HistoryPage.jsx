@@ -166,6 +166,9 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastRefreshed, setLastRefreshed] = useState(null)
+  const [activeFilter, setActiveFilter] = useState('ALL')
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
 
   const fetchHistory = async () => {
     setLoading(true)
@@ -192,6 +195,31 @@ export default function HistoryPage() {
 
   const handleCardClick = (investigation) => {
     navigate(`/report/${investigation.investigation_id}`)
+  }
+
+  // Apply filter
+  const filteredInvestigations = investigations.filter(inv => {
+    if (activeFilter === 'ALL') return true
+    if (activeFilter === 'APT') return inv.classification === 'APT'
+    if (activeFilter === 'INSIDER_THREAT') return (
+      inv.classification === 'INSIDER_THREAT'
+    )
+    return true
+  })
+
+  // Apply pagination
+  const totalPages = Math.ceil(
+    filteredInvestigations.length / ITEMS_PER_PAGE
+  )
+  const paginatedInvestigations = filteredInvestigations.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
+  )
+
+  // Reset to page 1 when filter changes
+  const handleFilterChange = (filter) => {
+    setActiveFilter(filter)
+    setCurrentPage(1)
   }
 
   // Stats derived from loaded data
@@ -275,6 +303,51 @@ export default function HistoryPage() {
         </div>
       )}
 
+      {/* Filter tabs */}
+      {!loading && !error && investigations.length > 0 && (
+        <div className="flex items-center gap-1 mb-4 
+                        bg-sentinel-surface border border-sentinel-border 
+                        rounded-xl p-1 w-fit">
+          {[
+            { key: 'ALL', label: 'All', count: investigations.length },
+            {
+              key: 'APT',
+              label: 'APT',
+              count: investigations.filter(
+                i => i.classification === 'APT'
+              ).length,
+            },
+            {
+              key: 'INSIDER_THREAT',
+              label: 'Insider Threat',
+              count: investigations.filter(
+                i => i.classification === 'INSIDER_THREAT'
+              ).length,
+            },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => handleFilterChange(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 
+                          rounded-lg text-sm font-medium transition-all
+                          ${activeFilter === tab.key
+                            ? 'bg-sentinel-accent text-white'
+                            : 'text-sentinel-muted hover:text-white'
+                          }`}
+            >
+              {tab.label}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full
+                                ${activeFilter === tab.key
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-sentinel-border text-sentinel-muted'
+                                }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Loading state */}
       {loading && (
         <div className="flex items-center justify-center py-20">
@@ -323,10 +396,10 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Investigation cards */}
-      {!loading && !error && investigations.length > 0 && (
+      {/* Investigation cards — use paginatedInvestigations */}
+      {!loading && !error && paginatedInvestigations.length > 0 && (
         <div className="space-y-3">
-          {investigations.map((investigation) => (
+          {paginatedInvestigations.map((investigation) => (
             <InvestigationCard
               key={investigation.investigation_id}
               investigation={investigation}
@@ -334,6 +407,111 @@ export default function HistoryPage() {
             />
           ))}
         </div>
+      )}
+
+      {/* Empty filtered state */}
+      {!loading && !error && filteredInvestigations.length === 0 
+       && investigations.length > 0 && (
+        <div className="text-center py-12">
+          <p className="text-sentinel-muted text-sm">
+            No investigations match this filter
+          </p>
+          <button
+            onClick={() => handleFilterChange('ALL')}
+            className="mt-2 text-xs text-sentinel-accent 
+                       hover:underline"
+          >
+            Show all
+          </button>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && !error && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 
+                        pt-4 border-t border-sentinel-border">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className={`flex items-center gap-1.5 px-3 py-1.5 
+                        rounded-lg text-sm transition-all border
+                        ${currentPage === 1
+                          ? 'border-sentinel-border text-sentinel-muted opacity-40 cursor-not-allowed'
+                          : 'border-sentinel-border text-sentinel-muted hover:border-sentinel-accent hover:text-white'
+                        }`}
+          >
+            ← Previous
+          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Page number pills */}
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(page => (
+                page === 1 ||
+                page === totalPages ||
+                Math.abs(page - currentPage) <= 1
+              ))
+              .reduce((acc, page, idx, arr) => {
+                if (idx > 0 && page - arr[idx - 1] > 1) {
+                  acc.push('...')
+                }
+                acc.push(page)
+                return acc
+              }, [])
+              .map((item, idx) => (
+                item === '...'
+                  ? (
+                    <span key={`ellipsis-${idx}`}
+                          className="text-sentinel-muted text-sm px-1">
+                      ...
+                    </span>
+                  )
+                  : (
+                    <button
+                      key={item}
+                      onClick={() => setCurrentPage(item)}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium 
+                                  transition-all
+                                  ${currentPage === item
+                                    ? 'bg-sentinel-accent text-white'
+                                    : 'text-sentinel-muted hover:text-white'
+                                  }`}
+                    >
+                      {item}
+                    </button>
+                  )
+              ))
+            }
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(
+              p => Math.min(totalPages, p + 1)
+            )}
+            disabled={currentPage === totalPages}
+            className={`flex items-center gap-1.5 px-3 py-1.5 
+                        rounded-lg text-sm transition-all border
+                        ${currentPage === totalPages
+                          ? 'border-sentinel-border text-sentinel-muted opacity-40 cursor-not-allowed'
+                          : 'border-sentinel-border text-sentinel-muted hover:border-sentinel-accent hover:text-white'
+                        }`}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
+      {/* Page info */}
+      {!loading && !error && filteredInvestigations.length > 0 && (
+        <p className="text-center text-xs text-sentinel-muted 
+                      opacity-40 mt-3">
+          Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}–
+          {Math.min(
+            currentPage * ITEMS_PER_PAGE,
+            filteredInvestigations.length
+          )} of {filteredInvestigations.length}
+          {activeFilter !== 'ALL' ? ' filtered' : ''} investigations
+        </p>
       )}
 
       {/* Supabase note */}
