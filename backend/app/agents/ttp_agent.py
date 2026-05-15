@@ -117,7 +117,7 @@ async def enrich_technique(technique_id: str, stage_name: str) -> dict:
         }
 
 
-async def ttp_agent(state: AgentState) -> AgentState:
+async def ttp_agent(state: AgentState, config=None) -> AgentState:
     """
     TTPAgent: enriches kill chain MITRE mappings via Qdrant RAG.
     Runs in parallel with ThreatIntelAgent after ReconstructionAgent.

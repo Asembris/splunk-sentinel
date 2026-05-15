@@ -212,6 +212,8 @@ async def investigate(request: Request, body: InvestigateRequest):
         "splunk_notable_event_id": "",
         "error": None,
         "spl_audit_log": [],
+        "slo_report": {},
+        "slo_breaches": [],
     }
 
     accept_header = request.headers.get("Accept", "")
@@ -246,13 +248,14 @@ async def investigate(request: Request, body: InvestigateRequest):
 
     logger.info(
         "Investigation complete | id=%s | classification=%s | "
-        "confidence=%.2f | stages=%d | patient_zero=%s | containment=%s",
+        "confidence=%.2f | stages=%d | patient_zero=%s | containment=%s | slo=%s",
         final_state.get("investigation_id"),
         final_state.get("attack_classification"),
         final_state.get("classification_confidence", 0.0),
         len(final_state.get("kill_chain", [])),
         final_state.get("patient_zero", {}).get("ip_address", "N/A"),
         final_state.get("blast_radius", {}).get("containment_priority", "N/A"),
+        final_state.get("slo_report", {}).get("overall_slo_status", "N/A"),
     )
     return JSONResponse(content=final_state)
 
@@ -437,3 +440,121 @@ async def download_report(investigation_id: str):
         filename=f"sentinel_report_{investigation_id}.pdf",
         media_type="application/pdf"
     )
+
+
+@router.get("/slo/status")
+async def get_slo_status() -> dict:
+    """
+    Aggregate SLO compliance across recent investigations.
+    Reads from Supabase investigations table.
+    Shows what percentage of investigations met each SLO.
+    """
+    from app.services.supabase_client import get_supabase_client
+    from datetime import datetime, timezone
+
+    try:
+        client = get_supabase_client()
+        response = (
+            client.table("investigations")
+            .select("report_json")
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+
+        records = response.data or []
+        total = len(records)
+
+        if total == 0:
+            return {
+                "investigations_analyzed": 0,
+                "message": "No investigations found",
+            }
+
+        # Extract SLO reports from report_json
+        slo_reports = []
+        for record in records:
+            report_json = record.get("report_json", {})
+            slo = report_json.get("slo_report", {})
+            if slo:
+                slo_reports.append(slo)
+
+        if not slo_reports:
+            return {
+                "investigations_analyzed": total,
+                "message": (
+                    "No SLO reports found — "
+                    "investigations may predate SLO enforcement"
+                ),
+            }
+
+        # Calculate compliance rates
+        def pct(met_count: int, total: int) -> str:
+            return f"{round(met_count / total * 100)}%"
+
+        time_met = sum(
+            1 for s in slo_reports
+            if s.get("slo_1_time", {}).get("met", False)
+        )
+        token_met = sum(
+            1 for s in slo_reports
+            if s.get("slo_2_tokens", {}).get("met", False)
+        )
+        confidence_met = sum(
+            1 for s in slo_reports
+            if s.get("slo_3_confidence", {}).get("met", False)
+        )
+        all_met = sum(
+            1 for s in slo_reports
+            if s.get("overall_slo_status") == "ALL_MET"
+        )
+
+        n = len(slo_reports)
+
+        # Average actual times
+        avg_time = round(
+            sum(
+                s.get("slo_1_time", {}).get("actual_seconds", 0)
+                for s in slo_reports
+            ) / n,
+            1,
+        )
+        avg_tokens = round(
+            sum(
+                s.get("slo_2_tokens", {}).get("actual_tokens", 0)
+                for s in slo_reports
+            ) / n,
+        )
+        avg_confidence = round(
+            sum(
+                s.get("slo_3_confidence", {}).get("actual", 0)
+                for s in slo_reports
+            ) / n,
+            3,
+        )
+
+        return {
+            "investigations_analyzed": n,
+            "slo_1_time_compliance": pct(time_met, n),
+            "slo_2_token_compliance": pct(token_met, n),
+            "slo_3_confidence_compliance": pct(confidence_met, n),
+            "overall_compliance": pct(all_met, n),
+            "averages": {
+                "investigation_time_seconds": avg_time,
+                "reconstruction_tokens": avg_tokens,
+                "final_confidence": avg_confidence,
+            },
+            "budgets": {
+                "time_budget_seconds": 120,
+                "token_budget": 45000,
+                "confidence_floor": 0.50,
+            },
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except Exception as e:
+        logger.error("SLO status endpoint failed | error=%s", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"SLO status retrieval failed: {str(e)}",
+        )

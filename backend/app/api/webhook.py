@@ -238,6 +238,8 @@ async def run_investigation_from_webhook(
         "report_pdf_path": "",
         "supabase_record_id": "",
         "splunk_notable_event_id": "",
+        "slo_report": {},
+        "slo_breaches": [],
     }
 
     try:

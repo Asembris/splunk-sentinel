@@ -67,3 +67,4 @@ backend/reports/*.pdf
 
 skills-lock.json
 .agents/
+backend/scratch/

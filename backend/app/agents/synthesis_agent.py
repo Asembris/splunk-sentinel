@@ -169,7 +169,7 @@ _LLM_STRUCTURED = _LLM.with_structured_output(StructuredSection)
 
 # ── Main agent ────────────────────────────────────────────────────────────────
 
-async def synthesis_agent(state: AgentState) -> AgentState:
+async def synthesis_agent(state: AgentState, config=None) -> AgentState:
     """
     SynthesisAgent: converges all upstream agent outputs into a structured
     final_report with RAG-grounded recommendations.

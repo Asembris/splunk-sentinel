@@ -15,6 +15,7 @@ from app.models.state import AgentState
 from app.services.pdf_generator import generate_pdf, get_confidence_tier
 from app.services.supabase_client import persist_investigation
 from app.tools.splunk_tools import SplunkClient
+from app.services.slo_engine import get_monitor, cleanup_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -93,55 +94,63 @@ def _build_splunk_notable_event(state: AgentState) -> dict:
     }
 
 
-async def report_agent(state: AgentState) -> AgentState:
+async def report_agent(state: AgentState, config=None) -> AgentState:
     """
     Final pipeline node. Generates PDF, persists to Supabase,
     writes notable event to Splunk.
     """
     investigation_id = state.get("investigation_id", "unknown")
-    logger.info(
-        "[%s] ReportAgent starting", investigation_id
-    )
+    logger.info("[%s] ReportAgent starting", investigation_id)
 
     updates = {}
 
-    # ── STEP 1: Generate PDF ─────────────────────────────────────────
+    # ── STEP 1: Generate SLO Compliance Report ───────────────────────
     try:
-        pdf_path = generate_pdf(state)
-        updates["report_pdf_path"] = pdf_path
+        final_confidence = (
+            float(state.get("final_report", {}).get("investigation_confidence", 0.0))
+            or float(state.get("reconstruction_confidence", 0.0))
+            or float(state.get("classification_confidence", 0.0))
+        )
+        slo_monitor = get_monitor(investigation_id)
+        slo_report = slo_monitor.generate_report(final_confidence)
+        updates["slo_report"] = slo_report
+        updates["slo_breaches"] = slo_report.get("slo_breaches", [])
         logger.info(
-            "[%s] PDF generated | path=%s",
-            investigation_id, pdf_path
+            "[%s] SLO report | status=%s | breaches=%d",
+            investigation_id,
+            slo_report.get("overall_slo_status"),
+            slo_report.get("breaches_count", 0),
         )
     except Exception as e:
-        logger.error(
-            "[%s] PDF generation failed | error=%s",
-            investigation_id, str(e)
-        )
+        logger.error("[%s] SLO report generation failed | error=%s", investigation_id, str(e))
+        updates["slo_report"] = {}
+        updates["slo_breaches"] = []
+
+    # ── STEP 2: Generate PDF ─────────────────────────────────────────
+    try:
+        # Pass updates into generate_pdf so it has SLO data if needed
+        pdf_path = generate_pdf({**state, **updates})
+        updates["report_pdf_path"] = pdf_path
+        logger.info("[%s] PDF generated | path=%s", investigation_id, pdf_path)
+    except Exception as e:
+        logger.error("[%s] PDF generation failed | error=%s", investigation_id, str(e))
         updates["report_pdf_path"] = ""
 
-    # ── STEP 2: Persist to Supabase ──────────────────────────────────
+    # ── STEP 3: Persist to Supabase ──────────────────────────────────
     try:
-        state_with_pdf = {**state, **updates}
-        record_id = await persist_investigation(state_with_pdf)
+        state_with_updates = {**state, **updates}
+        record_id = await persist_investigation(state_with_updates)
         updates["supabase_record_id"] = record_id or ""
-        logger.info(
-            "[%s] Supabase record created | record_id=%s",
-            investigation_id, record_id
-        )
+        logger.info("[%s] Supabase record created | record_id=%s", investigation_id, record_id)
     except Exception as e:
-        logger.error(
-            "[%s] Supabase persistence failed | error=%s",
-            investigation_id, str(e)
-        )
+        logger.error("[%s] Supabase persistence failed | error=%s", investigation_id, str(e))
         updates["supabase_record_id"] = ""
 
-    # ── STEP 3: Write Notable Event to Splunk ────────────────────────
+    # ── STEP 4: Write Notable Event to Splunk ────────────────────────
     try:
         splunk = SplunkClient()
-        notable_payload = _build_splunk_notable_event(state)
+        notable_payload = _build_splunk_notable_event({**state, **updates})
 
-        # Use Splunk SDK index.submit() to write the event
         idx = splunk.service.indexes["sentinel_findings"]
         idx.submit(
             json.dumps(notable_payload["event"]),
@@ -149,31 +158,15 @@ async def report_agent(state: AgentState) -> AgentState:
             host="splunk-sentinel",
         )
 
-        notable_id = (
-            f"sentinel-{investigation_id}-"
-            f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-        )
+        notable_id = f"sentinel-{investigation_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
         updates["splunk_notable_event_id"] = notable_id
-
-        confidence = (
-            float(state.get("final_report", {}).get("investigation_confidence", 0.0))
-            or float(state.get("reconstruction_confidence", 0.0))
-            or float(state.get("classification_confidence", 0.0))
-        )
-        tier = get_confidence_tier(confidence)
-
-        logger.info(
-            "[%s] Splunk notable event written | "
-            "index=sentinel_findings | tier=%s | confidence=%.2f",
-            investigation_id, tier, confidence
-        )
-
+        logger.info("[%s] Splunk notable event written", investigation_id)
     except Exception as e:
-        logger.error(
-            "[%s] Splunk write-back failed | error=%s",
-            investigation_id, str(e)
-        )
+        logger.error("[%s] Splunk write-back failed | error=%s", investigation_id, str(e))
         updates["splunk_notable_event_id"] = ""
+
+    # ── FINAL: Cleanup ───────────────────────────────────────────────
+    cleanup_monitor(investigation_id)
 
     logger.info(
         "[%s] ReportAgent complete | pdf=%s | supabase=%s | splunk=%s",
@@ -182,5 +175,9 @@ async def report_agent(state: AgentState) -> AgentState:
         "✓" if updates.get("supabase_record_id") else "✗",
         "✓" if updates.get("splunk_notable_event_id") else "✗",
     )
+
+    # Ensure we return at least one key to avoid LangGraph InvalidUpdateError
+    if not updates:
+        return {"slo_breaches": []}
 
     return updates

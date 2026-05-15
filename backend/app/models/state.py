@@ -213,3 +213,6 @@ class AgentState(TypedDict, total=False):
     Chronological list of every SPL query executed during the investigation,
     including timestamps.  Used for compliance, debugging, and transparency.
     """
+
+    slo_report: dict          # SLO compliance report from slo_engine
+    slo_breaches: list        # List of SLO breach messages

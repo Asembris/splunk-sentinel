@@ -400,7 +400,7 @@ def apply_escalation_guardrail(result: TriageResult) -> TriageResult:
     run_type="chain",
     tags=["triage", "splunk-sentinel"],
 )
-async def triage_agent(state: AgentState) -> AgentState:
+async def triage_agent(state: AgentState, config=None) -> AgentState:
     """
     LangGraph node — TriageAgent.
 

@@ -25,6 +25,7 @@ from app.models.state import AgentState
 from app.tools.splunk_tools import get_splunk_client, SplunkClient
 from app.guardrails.spl_guardrail import SPLGuardrail
 from app.utils.audit_chain import append_chained_entry
+from app.services.slo_engine import get_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -464,6 +465,13 @@ async def _execute_query_with_retry(
                     "[%s] Query returned %d rows | spl=%s",
                     investigation_id, len(results), current_spl[:60]
                 )
+                
+                # After LLM call — estimate token usage
+                # Use a conservative estimate: 1 token ≈ 4 characters
+                estimated_tokens = len(str(results)) // 4
+                slo_monitor = get_monitor(investigation_id)
+                slo_monitor.add_tokens(estimated_tokens)
+
                 return results, current_spl
         except Exception as e:
             logger.warning(
@@ -554,6 +562,18 @@ async def reconstruction_agent(
             investigation_id, iteration,
             current_confidence, len(accumulated_stage_names)
         )
+
+        # SLO enforcement: check time and token budgets
+        # before starting this iteration
+        slo_monitor = get_monitor(investigation_id)
+        if iteration > 1 and slo_monitor.should_terminate_react():
+            logger.info(
+                "[%s] SLO enforcement: terminating ReAct at "
+                "iteration %d — budget constraint",
+                investigation_id,
+                iteration,
+            )
+            break
 
         # Select queries for this iteration
         if iteration == 1:
@@ -975,8 +995,19 @@ the telemetry above. Do not hallucinate events not in the data.
         patient_zero=raw.patient_zero,
         blast_radius=raw.blast_radius,
         attack_narrative=raw.attack_narrative,
-        reconstruction_confidence=raw.reconstruction_confidence,
+        reconstruction_confidence=round(min(raw.reconstruction_confidence, 0.95), 3),
     )
+
+    # SLO 3: confidence floor check
+    slo_monitor = get_monitor(investigation_id)
+    if not slo_monitor.check_confidence_floor(
+        result.reconstruction_confidence
+    ):
+        logger.warning(
+            "[%s] SLO: confidence floor breach — "
+            "forcing escalate_to_human",
+            investigation_id,
+        )
 
     logger.info(
         "[%s] ReconstructionAgent complete | stages=%d | confirmed=%d | "

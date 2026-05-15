@@ -58,9 +58,11 @@ async def persist_investigation(state: dict) -> Optional[str]:
             "analyst_rating": None,
         }
         
-        # Inject spl_audit_log into report_json to avoid schema migrations
+        # Inject audit log and SLO report into report_json to avoid schema migrations
         if "spl_audit_log" in state:
             record["report_json"]["spl_audit_log"] = state["spl_audit_log"]
+        if "slo_report" in state:
+            record["report_json"]["slo_report"] = state["slo_report"]
 
         response = (
             client.table("investigations")

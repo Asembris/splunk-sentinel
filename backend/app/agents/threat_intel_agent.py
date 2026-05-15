@@ -264,7 +264,7 @@ async def enrich_ip(ip: str, client: httpx.AsyncClient) -> dict:
     }
 
 
-async def threat_intel_agent(state: AgentState) -> AgentState:
+async def threat_intel_agent(state: AgentState, config=None) -> AgentState:
     """
     ThreatIntelAgent: enriches external IPs with reputation data.
     Runs in parallel with TTPAgent after ReconstructionAgent.
