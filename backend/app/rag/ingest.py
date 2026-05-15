@@ -38,6 +38,9 @@ from app.rag.collections import (
     MITRE_COLLECTION,
     PLAYBOOK_COLLECTION,
 )
+from app.rag.data.cve_expanded import EXPANDED_CVES
+from app.rag.data.playbooks_expanded import EXPANDED_PLAYBOOKS
+from app.rag.data.botsv3_expanded import EXPANDED_BOTSV3_NOTES
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -328,6 +331,8 @@ def generate_cve_chunks() -> list[dict]:
         },
     ]
 
+    cves.extend(EXPANDED_CVES)
+
     # Build chunk text for each CVE
     for cve in cves:
         cve["chunk_text"] = (
@@ -575,6 +580,8 @@ INDICATORS
         },
     ]
 
+    playbooks.extend(EXPANDED_PLAYBOOKS)
+
     # Add chunk_text for embedding
     for pb in playbooks:
         pb["chunk_text"] = (
@@ -740,6 +747,8 @@ The attack originated from an external threat actor who:
         },
     ]
 
+    notes.extend(EXPANDED_BOTSV3_NOTES)
+
     for note in notes:
         note["chunk_text"] = (
             f"botsv3 Investigation Note: {note['title']}\n\n"
@@ -887,11 +896,7 @@ def ingest_cve_collection() -> None:
     create_collection_if_not_exists(CVE_COLLECTION)
 
     count = qdrant_client.count(CVE_COLLECTION).count
-    if count > 0:
-        logger.info(
-            "CVE collection already has %d points — skipping", count
-        )
-        return
+    logger.info("CVE collection currently has %d points", count)
 
     cves = generate_cve_chunks()
     upsert_chunks(CVE_COLLECTION, cves, id_field="cve_id")
@@ -904,11 +909,7 @@ def ingest_playbook_collection() -> None:
     create_collection_if_not_exists(PLAYBOOK_COLLECTION)
 
     count = qdrant_client.count(PLAYBOOK_COLLECTION).count
-    if count > 0:
-        logger.info(
-            "Playbook collection already has %d points — skipping", count
-        )
-        return
+    logger.info("Playbook collection currently has %d points", count)
 
     playbooks = generate_ir_playbooks()
     upsert_chunks(PLAYBOOK_COLLECTION, playbooks, id_field="id")
@@ -924,11 +925,7 @@ def ingest_botsv3_collection() -> None:
     create_collection_if_not_exists(BOTSV3_COLLECTION)
 
     count = qdrant_client.count(BOTSV3_COLLECTION).count
-    if count > 0:
-        logger.info(
-            "botsv3 collection already has %d points — skipping", count
-        )
-        return
+    logger.info("botsv3 collection currently has %d points", count)
 
     notes = generate_botsv3_notes()
     upsert_chunks(BOTSV3_COLLECTION, notes, id_field="id")
