@@ -26,6 +26,7 @@ from app.tools.splunk_tools import get_splunk_client, SplunkClient
 from app.guardrails.spl_guardrail import SPLGuardrail
 from app.utils.audit_chain import append_chained_entry
 from app.services.slo_engine import get_monitor
+from app.services.telemetry_sanitizer import sanitize_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -553,6 +554,8 @@ async def reconstruction_agent(
     current_confidence: float = 0.0
     sourcetypes_seen: set[str] = set()
     iteration: int = 0
+    total_injections: int = state.get("prompt_injection_attempts", 0)
+    sanitization_log: list = list(state.get("sanitization_log", []))
 
     # ── ReAct Loop ────────────────────────────────────────────────────────
     while iteration < 3:
@@ -626,15 +629,23 @@ async def reconstruction_agent(
                 iteration_errors += 1
                 iteration_results[q] = []
             else:
-                results, final_spl = output
-                iteration_results[final_spl] = results
-                all_telemetry[final_spl] = results
+                raw_results, final_spl = output
+                
+                # ── Telemetry Sanitization (Indirect Prompt Injection Defense) ──
+                sanitized_results, inj_count, inj_log = sanitize_telemetry(
+                    raw_results, investigation_id
+                )
+                total_injections += inj_count
+                sanitization_log.extend(inj_log)
+
+                iteration_results[final_spl] = sanitized_results
+                all_telemetry[final_spl] = sanitized_results
 
                 # Infer sourcetypes from SPL string (primary method)
                 sourcetypes_seen.update(_infer_sourcetypes_from_spl(final_spl))
 
                 # Also check result rows (secondary method)
-                for row in results:
+                for row in sanitized_results:
                     if "sourcetype" in row:
                         sourcetypes_seen.add(row["sourcetype"])
 
@@ -868,6 +879,8 @@ the telemetry above. Do not hallucinate events not in the data.
             "spl_audit_log": list(
                 state.get("spl_audit_log", [])
             ) + splunk.audit_log,
+            "prompt_injection_attempts": total_injections,
+            "sanitization_log": sanitization_log,
         }
 
     # ── Field injection — gpt-4o-mini drops fields on complex schemas ──────
@@ -1035,5 +1048,7 @@ the telemetry above. Do not hallucinate events not in the data.
         "reconstruction_confidence": result.reconstruction_confidence,
         "react_iterations": iteration,
         "spl_audit_log": updated_audit,
+        "prompt_injection_attempts": total_injections,
+        "sanitization_log": sanitization_log,
         "error": None,
     }

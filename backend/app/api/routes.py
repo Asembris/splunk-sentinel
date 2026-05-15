@@ -214,6 +214,8 @@ async def investigate(request: Request, body: InvestigateRequest):
         "spl_audit_log": [],
         "slo_report": {},
         "slo_breaches": [],
+        "prompt_injection_attempts": 0,
+        "sanitization_log": [],
     }
 
     accept_header = request.headers.get("Accept", "")

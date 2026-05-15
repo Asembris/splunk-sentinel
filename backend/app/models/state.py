@@ -216,3 +216,6 @@ class AgentState(TypedDict, total=False):
 
     slo_report: dict          # SLO compliance report from slo_engine
     slo_breaches: list        # List of SLO breach messages
+
+    prompt_injection_attempts: int   # count of injection patterns found
+    sanitization_log: list           # detailed sanitization event log

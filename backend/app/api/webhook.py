@@ -240,6 +240,8 @@ async def run_investigation_from_webhook(
         "splunk_notable_event_id": "",
         "slo_report": {},
         "slo_breaches": [],
+        "prompt_injection_attempts": 0,
+        "sanitization_log": [],
     }
 
     try:
