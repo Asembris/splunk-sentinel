@@ -216,6 +216,7 @@ async def investigate(request: Request, body: InvestigateRequest):
         "slo_breaches": [],
         "prompt_injection_attempts": 0,
         "sanitization_log": [],
+        "counterfactual_reasoning": {},
     }
 
     accept_header = request.headers.get("Accept", "")

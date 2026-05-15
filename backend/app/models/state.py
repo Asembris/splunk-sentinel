@@ -219,3 +219,5 @@ class AgentState(TypedDict, total=False):
 
     prompt_injection_attempts: int   # count of injection patterns found
     sanitization_log: list           # detailed sanitization event log
+
+    counterfactual_reasoning: dict  # why alternatives were ruled out

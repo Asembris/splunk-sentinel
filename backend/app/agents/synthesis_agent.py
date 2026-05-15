@@ -167,6 +167,123 @@ _LLM_NARRATIVE = _LLM.with_structured_output(NarrativeSection)
 _LLM_STRUCTURED = _LLM.with_structured_output(StructuredSection)
 
 
+# ── Counterfactual reasoning helpers ──────────────────────────────────────────
+
+def _get_alternative_classifications(
+    classification: str,
+) -> list[str]:
+    """
+    Returns the alternative classifications that were
+    NOT selected, for counterfactual reasoning.
+    """
+    all_classifications = [
+        "APT",
+        "RANSOMWARE", 
+        "INSIDER_THREAT",
+        "BRUTE_FORCE",
+    ]
+    return [c for c in all_classifications if c != classification]
+
+
+async def _generate_counterfactual_reasoning(
+    classification: str,
+    kill_chain: list,
+    key_indicators: list,
+    triage_summary: str,
+    attack_narrative: str,
+    llm,
+) -> dict:
+    """
+    Generate counterfactual reasoning explaining why
+    alternative classifications were ruled out.
+
+    Uses the confirmed kill chain and key indicators
+    as evidence for what IS present, then reasons about
+    what is ABSENT for each alternative.
+    """
+    alternatives = _get_alternative_classifications(classification)
+
+    if not alternatives:
+        return {}
+
+    # Build kill chain summary for context
+    kill_chain_summary = " → ".join([
+        f"{s.get('stage_name', '')} ({s.get('mitre_technique', '')})"
+        for s in kill_chain
+    ]) if kill_chain else "No stages confirmed"
+
+    # Format indicators
+    indicators_text = "\n".join(
+        f"- {ind}" for ind in key_indicators
+    ) if key_indicators else "No specific indicators"
+
+    prompt = f"""You are a senior forensic analyst explaining an 
+automated investigation result to a SOC team.
+
+The attack was classified as: {classification}
+Confidence: Based on confirmed kill chain stages and telemetry.
+
+Confirmed kill chain: {kill_chain_summary}
+
+Key indicators present in the telemetry:
+{indicators_text}
+
+Triage summary: {triage_summary}
+
+For each alternative classification below, explain specifically 
+what evidence is ABSENT from the telemetry that would be required 
+to make that classification. Be specific — cite EventCodes, 
+sourcetypes, process names, IP patterns, or behavioral indicators 
+that are missing. Keep each explanation to 2-3 sentences maximum.
+
+Alternative classifications to rule out: {', '.join(alternatives)}
+
+Respond in this exact JSON format:
+{{
+  "alternatives_ruled_out": [
+    {{
+      "classification": "CLASSIFICATION_NAME",
+      "reason": "2-3 sentence explanation of what is absent",
+      "missing_indicators": ["specific indicator 1", "specific indicator 2"]
+    }}
+  ]
+}}
+
+Only respond with valid JSON. No preamble or explanation outside JSON."""
+
+    try:
+        from langchain_core.messages import HumanMessage
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        
+        import json
+        # Clean response text
+        text = response.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        text = text.strip()
+        
+        parsed = json.loads(text)
+        
+        return {
+            "confirmed_classification": classification,
+            "alternatives_ruled_out": parsed.get(
+                "alternatives_ruled_out", []
+            ),
+        }
+
+    except Exception as e:
+        logger.error(
+            "Counterfactual reasoning failed | error=%s", str(e)
+        )
+        return {
+            "confirmed_classification": classification,
+            "alternatives_ruled_out": [],
+            "error": str(e),
+        }
+
+
 # ── Main agent ────────────────────────────────────────────────────────────────
 
 async def synthesis_agent(state: AgentState, config=None) -> AgentState:
@@ -334,6 +451,31 @@ data not present in the inputs.
         ttp_mappings, reconstruction_confidence
     )
 
+    # Generate counterfactual reasoning
+    # Explains why alternative classifications were ruled out
+    counterfactual = {}
+    try:
+        counterfactual = await _generate_counterfactual_reasoning(
+            classification=state.get("attack_classification", "UNKNOWN"),
+            kill_chain=state.get("kill_chain", []),
+            key_indicators=state.get("key_indicators", []),
+            triage_summary=state.get("triage_summary", ""),
+            attack_narrative=state.get("attack_narrative", ""),
+            llm=_LLM,
+        )
+        logger.info(
+            "[%s] Counterfactual reasoning generated | "
+            "alternatives=%d",
+            investigation_id,
+            len(counterfactual.get("alternatives_ruled_out", [])),
+        )
+    except Exception as e:
+        logger.error(
+            "[%s] Counterfactual reasoning failed | error=%s",
+            investigation_id,
+            str(e),
+        )
+
     # ── Build final_report dict ────────────────────────────────────────────
     final_report = {
         "investigation_id": investigation_id,
@@ -357,6 +499,7 @@ data not present in the inputs.
             "playbook_chunks": len(rag_results.get("playbooks", [])),
             "botsv3_chunks": len(rag_results.get("botsv3", [])),
         },
+        "counterfactual_reasoning": counterfactual,
     }
 
     logger.info(
@@ -373,6 +516,7 @@ data not present in the inputs.
     return {
         **state,
         "final_report": final_report,
+        "counterfactual_reasoning": counterfactual,
         "rag_context": rag_results,
         "error": None,
     }

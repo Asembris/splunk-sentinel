@@ -167,6 +167,95 @@ function FeedbackCard({
   )
 }
 
+const CLASSIFICATION_COLORS = {
+  APT:            'text-red-400 border-red-500/30 bg-red-500/5',
+  RANSOMWARE:     'text-orange-400 border-orange-500/30 bg-orange-500/5',
+  INSIDER_THREAT: 'text-purple-400 border-purple-500/30 bg-purple-500/5',
+  BRUTE_FORCE:    'text-amber-400 border-amber-500/30 bg-amber-500/5',
+  UNKNOWN:        'text-gray-400 border-gray-500/30 bg-gray-500/5',
+}
+
+function CounterfactualCard({ counterfactual, confirmedClassification }) {
+  if (
+    !counterfactual ||
+    !counterfactual.alternatives_ruled_out ||
+    counterfactual.alternatives_ruled_out.length === 0
+  ) {
+    return null
+  }
+
+  return (
+    <div className="bg-sentinel-surface border border-sentinel-border
+                    rounded-xl p-6 mt-6">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-1.5 h-4 bg-sentinel-accent rounded-full" />
+        <h3 className="text-sm font-semibold text-sentinel-muted
+                       uppercase tracking-wider">
+          Why This Classification?
+        </h3>
+      </div>
+
+      {/* Confirmed */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs text-sentinel-muted">Confirmed:</span>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded
+                          border ${
+                            CLASSIFICATION_COLORS[confirmedClassification]
+                            || CLASSIFICATION_COLORS.UNKNOWN
+                          }`}>
+          ✓ {confirmedClassification}
+        </span>
+      </div>
+
+      {/* Ruled out alternatives */}
+      <div className="space-y-3">
+        {counterfactual.alternatives_ruled_out.map((alt, i) => (
+          <div
+            key={i}
+            className="border border-sentinel-border rounded-lg p-4
+                       bg-sentinel-bg"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`text-xs font-bold px-2 py-0.5 
+                                rounded border ${
+                                  CLASSIFICATION_COLORS[alt.classification]
+                                  || CLASSIFICATION_COLORS.UNKNOWN
+                                }`}>
+                ✗ Not {alt.classification}
+              </span>
+            </div>
+
+            <p className="text-xs text-sentinel-muted leading-relaxed mb-2">
+              {alt.reason}
+            </p>
+
+            {alt.missing_indicators &&
+             alt.missing_indicators.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                <span className="text-xs text-sentinel-muted/60 mr-1">
+                  Missing:
+                </span>
+                {alt.missing_indicators.map((ind, j) => (
+                  <span
+                    key={j}
+                    className="text-xs font-mono px-1.5 py-0.5
+                               bg-sentinel-surface border
+                               border-sentinel-border rounded
+                               text-sentinel-muted/80"
+                  >
+                    {ind}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
   if (!auditChain) {
     return (
@@ -686,6 +775,14 @@ export default function ReportPage() {
         <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
         <CveList cves={report.cves_identified || []} />
         
+        {/* Counterfactual Reasoning */}
+        {report?.counterfactual_reasoning && (
+          <CounterfactualCard
+            counterfactual={report.counterfactual_reasoning}
+            confirmedClassification={report.classification}
+          />
+        )}
+
         {/* Analyst Feedback */}
         <FeedbackCard
           feedbackRating={feedbackRating}
