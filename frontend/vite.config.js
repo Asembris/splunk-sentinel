@@ -11,5 +11,29 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('vis-network') || id.includes('vis-data')) {
+              return 'vendor-vis'
+            }
+            if (id.includes('recharts')) {
+              return 'vendor-recharts'
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons'
+            }
+            if (id.includes('react')) {
+              return 'vendor-react'
+            }
+            return 'vendor'
+          }
+        }
+      }
+    }
   }
 })
