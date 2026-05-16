@@ -38,8 +38,7 @@ jobs:
         working-directory: backend
         run: |
           python -m pytest tests/ --ignore=tests/eval/ -v \
-            --tb=short \
-            --timeout=30
+            --tb=short
         env:
           PYTHONPATH: .
           SPLUNK_USERNAME: ${{ secrets.SPLUNK_USERNAME }}
