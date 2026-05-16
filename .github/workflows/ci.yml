@@ -42,6 +42,16 @@ jobs:
             --timeout=30
         env:
           PYTHONPATH: .
+          SPLUNK_USERNAME: ${{ secrets.SPLUNK_USERNAME }}
+          SPLUNK_PASSWORD: ${{ secrets.SPLUNK_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SPLUNK_HOST: localhost
+          SPLUNK_PORT: "8089"
+          QDRANT_URL: https://dummy.qdrant.io
+          QDRANT_API_KEY: dummy-qdrant-key
+          VIRUSTOTAL_API_KEY: dummy-vt-key
+          ABUSEIPDB_API_KEY: dummy-abuse-key
+          LANGCHAIN_TRACING_V2: "false"
 
       - name: Upload test results on failure
         if: failure()
