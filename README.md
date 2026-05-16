@@ -20,7 +20,7 @@
 ![LangSmith](https://img.shields.io/badge/LangSmith-Traced-1C3C3C)
 
 <!-- Badges row 3: quality -->
-![Tests](https://img.shields.io/badge/Tests-169_passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-186_passing-brightgreen)
 ![DeepEval](https://img.shields.io/badge/DeepEval-93.3%25_pass-brightgreen)
 ![HitL](https://img.shields.io/badge/Human--in--the--Loop-Feedback-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
