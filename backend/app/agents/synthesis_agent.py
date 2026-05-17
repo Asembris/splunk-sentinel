@@ -72,6 +72,7 @@ class FinalReportRaw(BaseModel):
     cves_identified: list[str] = Field(default_factory=list)
     threat_actor_profile: str = ""
     investigation_confidence: float = 0.0
+    containment_plan: dict = Field(default_factory=dict)
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -157,6 +158,22 @@ CITATION RULES:
 - When using CVE data: cite the CVE ID
 - Do NOT make claims about specific CVEs unless they appear in
   the provided RAG context
+
+CONTAINMENT PLAN GENERATION:
+You must also generate a 3-phase containment plan in the 'containment_plan' field.
+Phases:
+1. PHASE 1 (Short-term/Immediate): Tactical blocks (IPs, accounts).
+2. PHASE 2 (Mid-term): Endpoint isolation, process kills.
+3. PHASE 3 (Long-term): Hardening, credential rotation.
+
+Each action must have:
+- type: one of BLOCK_IP, ISOLATE_HOST, KILL_PROCESS, REVOKE_CREDENTIALS
+- target: the specific entity (IP, Hostname, etc.)
+- title: clear short title
+- description: rationale
+- is_irreversible: boolean
+
+Only include actions for entities confirmed as malicious in the kill chain or blast radius.
 """
 
 
@@ -513,13 +530,132 @@ data not present in the inputs.
         raw.investigation_confidence,
     )
 
+    # Generate containment plan via specialized helper
+    containment_plan = {}
+    try:
+        containment_plan = await _generate_containment_plan(
+            investigation_id=investigation_id,
+            blast_radius=blast_radius,
+            kill_chain=kill_chain,
+            classification=classification,
+            llm=_LLM
+        )
+    except Exception as e:
+        logger.error("[%s] Containment plan generation failed: %s", investigation_id, e)
+
     return {
         **state,
-        "final_report": final_report,
+        "final_report": {**final_report, "containment_plan": containment_plan},
+        "containment_plan": containment_plan,
         "counterfactual_reasoning": counterfactual,
         "rag_context": rag_results,
         "error": None,
     }
+
+
+async def _generate_containment_plan(investigation_id: str, blast_radius: dict, kill_chain: list, classification: str, llm) -> dict:
+    """
+    Generate a structured containment plan using the LLM.
+    """
+    from app.services.containment_templates import render_template
+    from app.models.containment import ContainmentActionType, ContainmentAction, ContainmentPhase, ContainmentPlan, ContainmentStatus
+    import uuid
+
+    prompt = f"""Generate a 3-phase containment plan for a {classification} investigation.
+Blast Radius: {json.dumps(blast_radius)}
+Kill Chain: {json.dumps(kill_chain[:5])}
+
+You MUST generate exactly 3 phases with these exact names:
+- "Phase 1: IMMEDIATE (Execute now)"
+- "Phase 2: SHORT TERM (Within 24 hours)"
+- "Phase 3: REMEDIATION (Within 72 hours)"
+
+For each action, you MUST ONLY choose one of these exact action types:
+- BLOCK_IP
+- ISOLATE_HOST
+- KILL_PROCESS
+- REVOKE_CREDENTIALS
+
+CRITICAL: Do NOT invent or use any other action type under any circumstances. If an action does not map to one of these 4 types, do NOT include it.
+
+Return a JSON object matching this structure:
+{{
+  "phases": [
+    {{
+      "name": "Phase 1: IMMEDIATE (Execute now)",
+      "description": "Immediate blocks...",
+      "actions": [
+        {{
+          "type": "BLOCK_IP | ISOLATE_HOST | KILL_PROCESS | REVOKE_CREDENTIALS",
+          "target": "the entity",
+          "title": "Action Title",
+          "description": "Why...",
+          "is_irreversible": false
+        }}
+      ]
+    }},
+    {{
+      "name": "Phase 2: SHORT TERM (Within 24 hours)",
+      "description": "Short-term mitigations...",
+      "actions": []
+    }},
+    {{
+      "name": "Phase 3: REMEDIATION (Within 72 hours)",
+      "description": "Long-term recovery...",
+      "actions": []
+    }}
+  ]
+}}
+"""
+    response = await llm.ainvoke([SystemMessage(content="You are a containment strategy expert."), HumanMessage(content=prompt)])
+    try:
+        content = response.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+        
+        raw_plan = json.loads(content)
+        
+        phases = []
+        for p_raw in raw_plan.get("phases", []):
+            actions = []
+            for a_raw in p_raw.get("actions", []):
+                try:
+                    a_type = ContainmentActionType(a_raw["type"])
+                except ValueError:
+                    logger.warning(f"Ignoring unknown containment action type: {a_raw.get('type')}")
+                    continue
+                
+                # Render the SPL for the action
+                rendered = render_template(a_type, a_raw["target"])
+                
+                action = ContainmentAction(
+                    id=str(uuid.uuid4())[:8],
+                    type=a_type,
+                    title=a_raw["title"],
+                    description=a_raw["description"],
+                    target=a_raw["target"],
+                    containment_spl=rendered["spl"],
+                    reversal_spl=rendered["reversal"],
+                    is_irreversible=a_raw.get("is_irreversible", False)
+                )
+                actions.append(action)
+            
+            phases.append(ContainmentPhase(
+                name=p_raw["name"],
+                description=p_raw["description"],
+                actions=actions
+            ))
+            
+        plan = ContainmentPlan(
+            investigation_id=investigation_id,
+            phases=phases
+        )
+        return plan.model_dump(mode="json")
+    except Exception as e:
+        logger.error(f"Failed to parse containment plan: {e}")
+        return {"phases": []}
 
 
 # ── Helper formatting functions ───────────────────────────────────────────────

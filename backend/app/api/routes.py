@@ -32,6 +32,8 @@ from app.services.supabase_client import (
     get_investigation_details
 )
 from app.utils.audit_chain import verify_chain
+from app.models.containment import ContainmentPlan
+from app.services.containment_engine import execute_phase_stream, rollback_action
 
 logger = logging.getLogger(__name__)
 
@@ -443,6 +445,111 @@ async def download_report(investigation_id: str):
         filename=f"sentinel_report_{investigation_id}.pdf",
         media_type="application/pdf"
     )
+
+
+# ---------------------------------------------------------------------------
+# Containment Plan API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/investigations/{investigation_id}/containment-plan", summary="Get containment plan")
+async def get_containment_plan(investigation_id: str):
+    """
+    Fetch the containment plan for a specific investigation.
+    """
+    data = await get_investigation_details(investigation_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    
+    report = data.get("report_json", {})
+    plan = report.get("containment_plan")
+    if not plan:
+        raise HTTPException(status_code=404, detail="Containment plan not found")
+    
+    return plan
+
+
+@router.put("/investigations/{investigation_id}/containment-plan", summary="Update containment plan")
+async def update_containment_plan(investigation_id: str, plan: dict):
+    """
+    Update the targets or actions in a containment plan before execution.
+    """
+    data = await get_investigation_details(investigation_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    
+    report = data.get("report_json", {})
+    report["containment_plan"] = plan
+    
+    mock_state = {
+        "investigation_id": investigation_id,
+        "final_report": report,
+        "attack_classification": data.get("classification"),
+        "severity": data.get("severity"),
+        "containment_plan": plan
+    }
+    
+    success = await persist_investigation(mock_state)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update containment plan")
+    
+    return {"status": "ok"}
+
+
+class ExecutePhaseRequest(BaseModel):
+    phase: int | None = None
+    confirmed: bool | None = None
+
+
+class RollbackRequest(BaseModel):
+    action_id: str | None = None
+    reason: str | None = None
+
+
+@router.post("/investigations/{investigation_id}/containment-plan/execute", summary="Execute a containment phase")
+async def execute_containment_phase(
+    investigation_id: str,
+    phase_idx: int | None = None,
+    body: ExecutePhaseRequest | None = None
+):
+    """
+    Execute all actions in a specific phase of the containment plan.
+    Streams progress via SSE.
+    """
+    actual_idx = phase_idx
+    if actual_idx is None and body is not None and body.phase is not None:
+        actual_idx = body.phase - 1
+    
+    if actual_idx is None:
+        raise HTTPException(status_code=400, detail="Missing phase or phase_idx")
+        
+    return EventSourceResponse(
+        execute_phase_stream(investigation_id, actual_idx),
+        media_type="text/event-stream"
+    )
+
+
+@router.post("/investigations/{investigation_id}/containment-plan/rollback", summary="Rollback a containment action")
+async def rollback_containment_action(
+    investigation_id: str,
+    action_id: str | None = None,
+    body: RollbackRequest | None = None
+):
+    """
+    Rollback a specific containment action.
+    """
+    actual_action_id = action_id
+    if not actual_action_id and body and body.action_id:
+        actual_action_id = body.action_id
+
+    if not actual_action_id:
+        raise HTTPException(status_code=400, detail="Missing action_id")
+
+    result = await rollback_action(investigation_id, actual_action_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=500, detail=result.get("message"))
+    
+    return result
 
 
 @router.get("/slo/status")

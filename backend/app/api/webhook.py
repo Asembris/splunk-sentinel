@@ -243,6 +243,7 @@ async def run_investigation_from_webhook(
         "prompt_injection_attempts": 0,
         "sanitization_log": [],
         "counterfactual_reasoning": {},
+        "containment_plan": {},
     }
 
     try:

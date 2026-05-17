@@ -4,7 +4,7 @@ import { useInvestigation } from '../store/InvestigationContext'
 import { 
   Download, ArrowLeft, FileJson, Printer, 
   Share2, Loader2, AlertCircle, FileText,
-  Zap
+  Zap, Shield, Play, RotateCcw, CheckCircle2, Circle, Clock
 } from 'lucide-react'
 import ExecutiveSummary from '../components/report/ExecutiveSummary'
 import FindingsGrid from '../components/report/FindingsGrid'
@@ -12,6 +12,263 @@ import MitreTable from '../components/report/MitreTable'
 import ThreatIntelCards from '../components/report/ThreatIntelCards'
 import RecommendedActions from '../components/report/RecommendedActions'
 import CveList from '../components/report/CveList'
+
+
+function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
+  const [executingPhase, setExecutingPhase] = useState(null)
+  const [progress, setProgress] = useState({}) // { actionId: 'pending' | 'running' | 'success' | 'error' }
+  const [localPlan, setLocalPlan] = useState(plan)
+
+  // Sync local plan with props if props change
+  useEffect(() => {
+    setLocalPlan(plan)
+  }, [plan])
+
+  const handleTargetChange = (phaseIdx, actionIdx, newTarget) => {
+    const updatedPlan = { ...localPlan }
+    updatedPlan.phases[phaseIdx].actions[actionIdx].target = newTarget
+    setLocalPlan(updatedPlan)
+  }
+
+  const saveChanges = async () => {
+    try {
+      const res = await fetch(`/api/investigations/${investigationId}/containment-plan`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(localPlan)
+      })
+      if (res.ok) onUpdate(localPlan)
+    } catch (err) {
+      console.error('Failed to save containment plan:', err)
+    }
+  }
+
+  const executePhase = async (phaseIdx) => {
+    setExecutingPhase(phaseIdx)
+    const eventSource = new EventSource(`/api/investigations/${investigationId}/containment-plan/execute?phase_idx=${phaseIdx}`)
+    
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      console.debug('[CONTAINMENT SSE]', data)
+
+      if (data.event === 'action_started') {
+        setProgress(prev => ({ ...prev, [data.action_id]: 'running' }))
+      } else if (data.event === 'action_complete') {
+        setProgress(prev => ({ ...prev, [data.action_id]: 'success' }))
+      } else if (data.event === 'action_failed') {
+        setProgress(prev => ({ ...prev, [data.action_id]: 'error' }))
+      } else if (data.event === 'phase_complete') {
+        setExecutingPhase(null)
+        setLocalPlan(data.plan)
+        onUpdate(data.plan)
+        eventSource.close()
+      }
+    }
+
+    eventSource.onerror = (err) => {
+      console.error('SSE Error:', err)
+      setExecutingPhase(null)
+      eventSource.close()
+    }
+  }
+
+  const handleRollback = async (actionId) => {
+    try {
+      const res = await fetch(`/api/investigations/${investigationId}/containment-plan/rollback?action_id=${actionId}`, {
+        method: 'POST'
+      })
+      if (res.ok) {
+        // Refresh plan
+        const planRes = await fetch(`/api/investigations/${investigationId}/containment-plan`)
+        const updatedPlan = await planRes.json()
+        setLocalPlan(updatedPlan)
+        onUpdate(updatedPlan)
+      }
+    } catch (err) {
+      console.error('Rollback failed:', err)
+    }
+  }
+
+  const [showConfirm, setShowConfirm] = useState(null) // phaseIdx
+
+  const handleConfirmExecute = (phaseIdx) => {
+    setShowConfirm(phaseIdx)
+  }
+
+  const proceedWithExecution = async () => {
+    const pIdx = showConfirm
+    setShowConfirm(null)
+    await executePhase(pIdx)
+  }
+
+  if (!localPlan || !localPlan.phases) return null
+
+  return (
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 mt-6">
+      {/* Confirmation Modal */}
+      {showConfirm !== null && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-sentinel-surface border border-sentinel-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-sentinel-border">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-full bg-sentinel-accent/10 flex items-center justify-center">
+                  <Shield className="w-5 h-5 text-sentinel-accent" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Execute Phase {showConfirm + 1}</h3>
+                  <p className="text-xs text-sentinel-muted">{localPlan.phases[showConfirm].name}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-sm text-sentinel-muted mb-4">
+                The following remediation actions will be executed in Splunk. Please review the SPL logic below:
+              </p>
+              
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                {localPlan.phases[showConfirm].actions.map((action) => (
+                  <div key={action.id} className="bg-sentinel-bg rounded-lg p-3 border border-sentinel-border/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-sentinel-accent" />
+                      <span className="text-[10px] font-bold text-white uppercase">{action.title}</span>
+                    </div>
+                    <code className="text-[10px] font-mono text-sentinel-accent/90 break-all leading-relaxed block bg-black/20 p-2 rounded">
+                      {action.containment_spl.replace('{{target}}', action.target)}
+                    </code>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex items-center gap-3">
+                <button 
+                  onClick={() => setShowConfirm(null)}
+                  className="flex-1 px-4 py-2.5 bg-sentinel-surface border border-sentinel-border hover:bg-sentinel-border text-white rounded-xl text-sm font-medium transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={proceedWithExecution}
+                  className="flex-1 px-4 py-2.5 bg-sentinel-accent hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all"
+                >
+                  Confirm & Execute
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-sentinel-accent" />
+          <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Containment Plan</h3>
+          <span className="text-[10px] text-sentinel-muted bg-sentinel-bg px-2 py-0.5 rounded border border-sentinel-border uppercase">
+            3-Phase Remediation
+          </span>
+        </div>
+        <button 
+          onClick={saveChanges}
+          className="text-[10px] font-bold text-sentinel-accent hover:text-white transition-colors"
+        >
+          SAVE TARGET EDITS
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        {localPlan.phases.map((phase, pIdx) => (
+          <div key={pIdx} className="relative">
+            {pIdx < localPlan.phases.length - 1 && (
+              <div className="absolute left-4 top-10 bottom-0 w-px bg-sentinel-border" />
+            )}
+            
+            <div className="flex items-start gap-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 z-10 
+                ${phase.status === 'EXECUTED' ? 'bg-green-500/20 border-green-500 text-green-400' : 
+                  phase.status === 'EXECUTING' ? 'bg-blue-500/20 border-blue-500 text-blue-400 animate-pulse' : 
+                  'bg-sentinel-bg border-sentinel-border text-sentinel-muted'}`}>
+                {phase.status === 'EXECUTED' ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs font-bold">{pIdx + 1}</span>}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h4 className="text-sm font-bold text-white">{phase.name}</h4>
+                    <p className="text-xs text-sentinel-muted">{phase.description}</p>
+                  </div>
+                  {phase.status === 'PENDING' && (
+                    <button 
+                      onClick={() => handleConfirmExecute(pIdx)}
+                      disabled={executingPhase !== null}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-sentinel-accent hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-30"
+                    >
+                      <Play className="w-3 h-3 fill-current" /> EXECUTE PHASE
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 mt-3">
+                  {phase.actions.map((action, aIdx) => (
+                    <div key={action.id} className="bg-sentinel-bg border border-sentinel-border rounded-lg p-3 group">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {action.status === 'EXECUTED' ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : 
+                           action.status === 'EXECUTING' || progress[action.id] === 'running' ? <Loader2 className="w-3 h-3 text-blue-400 animate-spin" /> :
+                           <Circle className="w-3 h-3 text-sentinel-muted" />}
+                          <span className="text-xs font-semibold text-white">{action.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {action.status === 'EXECUTED' && action.reversal_spl && (
+                            <button 
+                              onClick={() => handleRollback(action.id)}
+                              className="text-[9px] text-red-400/60 hover:text-red-400 flex items-center gap-1 transition-colors"
+                            >
+                              <RotateCcw className="w-2.5 h-2.5" /> ROLLBACK
+                            </button>
+                          )}
+                          <span className={`text-[9px] font-bold uppercase tracking-tighter px-1.5 py-0.5 rounded
+                            ${action.status === 'EXECUTED' ? 'bg-green-500/10 text-green-400' : 
+                              action.status === 'FAILED' ? 'bg-red-500/10 text-red-400' :
+                              action.status === 'ROLLED_BACK' ? 'bg-amber-500/10 text-amber-400' :
+                              'bg-sentinel-surface text-sentinel-muted'}`}>
+                            {action.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="text-[9px] text-sentinel-muted uppercase block mb-1">Target Entity</label>
+                          <input 
+                            type="text" 
+                            value={action.target}
+                            onChange={(e) => handleTargetChange(pIdx, aIdx, e.target.value)}
+                            disabled={action.status !== 'PENDING'}
+                            className="w-full bg-sentinel-surface border border-sentinel-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-sentinel-accent transition-colors disabled:opacity-50"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[9px] text-sentinel-muted uppercase block mb-1">Remediation Action</label>
+                          <div className="text-xs text-white truncate font-mono opacity-80">{action.type}</div>
+                        </div>
+                      </div>
+                      
+                      {action.error && (
+                        <div className="mt-2 text-[10px] text-red-400 bg-red-400/5 p-1.5 rounded border border-red-400/20">
+                          {action.error}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function FeedbackCard({
   feedbackRating,
@@ -432,7 +689,7 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
 
 export default function ReportPage() {
   const { id } = useParams()
-  const { state } = useInvestigation()
+  const { state, dispatch } = useInvestigation()
   const navigate = useNavigate()
   
   const [historicalData, setHistoricalData] = useState(null)
@@ -833,14 +1090,26 @@ export default function ReportPage() {
       {/* Report sections */}
       <div className="space-y-6">
         <ExecutiveSummary report={report} />
+        
         <FindingsGrid findings={report.key_findings || []} />
-        <RecommendedActions actions={report.recommended_actions || []} />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <RecommendedActions actions={report.recommended_actions || []} />
+          <CveList cves={report.cves_identified || []} />
+        </div>
+
+        <ContainmentPlanPanel 
+          investigationId={report.investigation_id || id || state.investigationId} 
+          plan={report.containment_plan}
+          onUpdate={(newPlan) => dispatch({ type: 'UPDATE_CONTAINMENT_PLAN', plan: newPlan })}
+        />
+
         <MitreTable
           techniques={report.mitre_techniques_used || []}
           ttpMappings={activeResult?.ttp_mappings || []}
         />
+        
         <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
-        <CveList cves={report.cves_identified || []} />
         
         {/* Counterfactual Reasoning */}
         {report?.counterfactual_reasoning && (

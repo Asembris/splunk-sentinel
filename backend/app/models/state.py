@@ -221,3 +221,9 @@ class AgentState(TypedDict, total=False):
     sanitization_log: list           # detailed sanitization event log
 
     counterfactual_reasoning: dict  # why alternatives were ruled out
+
+    containment_plan: dict
+    """
+    Phased remediation plan produced by SynthesisAgent.
+    See app.models.containment for structure.
+    """

@@ -46,12 +46,12 @@ class SLOPolicy:
 
     # SLO 4: Per-agent wall-clock time budgets (seconds)
     agent_timeouts: dict = field(default_factory=lambda: {
-        "triage_agent":         35,
+        "triage_agent":         45,
         "reconstruction_agent": 80,
-        "threat_intel_agent":   10,
-        "ttp_agent":            10,
+        "threat_intel_agent":   20,
+        "ttp_agent":            20,
         "synthesis_agent":      20,
-        "report_agent":         15,
+        "report_agent":         30,
     })
 
 

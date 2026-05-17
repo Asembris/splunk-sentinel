@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Configuration constants
 # ---------------------------------------------------------------------------
 
-PERMITTED_INDEXES = {"botsv3", "sentinel_findings"}
+PERMITTED_INDEXES = {"botsv3", "sentinel_findings", "sentinel_actions"}
 
 BLOCKED_KEYWORDS: list[str] = [
     "delete",
@@ -127,6 +127,11 @@ def _layer1_check(spl: str) -> GuardrailResult:
     # Check additional blocked commands
     for term in ADDITIONAL_BLOCKED_TERMS:
         if term.lower() in spl_lower:
+            # EXCEPTION: allow '| collect' ONLY if targeting 'sentinel_actions'
+            if "| collect" in term.lower() or "|collect" in term.lower():
+                if "index=sentinel_actions" in spl_lower:
+                    continue
+            
             return GuardrailResult(
                 is_blocked=True,
                 layer=1,

@@ -163,6 +163,15 @@ function reducer(state, action) {
         }],
       }
 
+    case 'UPDATE_CONTAINMENT_PLAN':
+      return {
+        ...state,
+        result: {
+          ...state.result,
+          containment_plan: action.plan
+        }
+      }
+
     default:
       return state
   }

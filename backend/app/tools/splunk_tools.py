@@ -180,7 +180,7 @@ class SplunkClient:
         # splunklib requires SPL to begin with 'search' keyword
         # when using the oneshot API
         normalized_spl = spl.strip()
-        if not normalized_spl.lower().startswith("search "):
+        if not normalized_spl.lower().startswith("search ") and not normalized_spl.startswith("|"):
             normalized_spl = f"search {normalized_spl}"
 
         loop = asyncio.get_event_loop()
