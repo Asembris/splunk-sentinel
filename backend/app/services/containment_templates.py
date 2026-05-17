@@ -6,7 +6,8 @@ Ensures that all remediation actions follow a strictly controlled syntax
 and target only the permitted sentinel_actions index.
 """
 
-from typing import Dict, Any
+import re
+from typing import Dict, Any, Optional
 from app.models.containment import ContainmentActionType
 
 
@@ -62,6 +63,8 @@ TEMPLATES: Dict[ContainmentActionType, Dict[str, Any]] = {
     },
 }
 
+CONTAINMENT_TEMPLATES = TEMPLATES
+
 
 def render_template(template_type: ContainmentActionType, target: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
     """
@@ -88,4 +91,165 @@ def render_template(template_type: ContainmentActionType, target: str, context: 
         "title": template_data["title"],
         "description": template_data["description"],
         "is_irreversible": template_data.get("is_irreversible", reversal is None)
+    }
+
+
+# ---------------------------------------------------------------------------
+# Test Compatibility functions
+# ---------------------------------------------------------------------------
+
+def _sanitize_spl_value(val: str) -> str:
+    """
+    Strip double quotes, pipes, backticks, backslashes, square brackets.
+    Truncate target to 200 characters max.
+    """
+    if not val:
+        return ""
+    sanitized = re.sub(r'["|`\\\[\]]', "", val)
+    return sanitized[:200]
+
+
+def generate_action_spl(
+    action_type: Any,
+    target: str,
+    reason: str,
+    investigation_id: str,
+    action_id: str,
+    confidence: float = 1.0,
+    phase: int = 1
+) -> tuple[str, Optional[str]]:
+    """
+    Generate sanitized containment SPL and reversal SPL.
+    Ensures that the generated SPL contains target, reason, investigation_id, and action_id.
+    """
+    if isinstance(action_type, str):
+        try:
+            enum_type = ContainmentActionType[action_type.upper()]
+        except KeyError:
+            raise ValueError(f"Unknown action type: {action_type}")
+    else:
+        enum_type = action_type
+
+    template_data = TEMPLATES.get(enum_type)
+    if not template_data:
+        raise ValueError(f"Unknown action type: {action_type}")
+
+    sanitized_target = _sanitize_spl_value(target)
+    sanitized_reason = _sanitize_spl_value(reason)
+    sanitized_investigation_id = _sanitize_spl_value(investigation_id)
+    sanitized_action_id = _sanitize_spl_value(action_id)
+
+    eval_fields = {}
+    if enum_type == ContainmentActionType.BLOCK_IP:
+        eval_fields["ip"] = sanitized_target
+        eval_fields["action"] = "block"
+        eval_fields["type"] = "network"
+        eval_fields["severity"] = "high"
+    elif enum_type == ContainmentActionType.ISOLATE_HOST:
+        eval_fields["host"] = sanitized_target
+        eval_fields["action"] = "isolate"
+        eval_fields["type"] = "endpoint"
+        eval_fields["severity"] = "critical"
+    elif enum_type == ContainmentActionType.DISABLE_ACCOUNT:
+        eval_fields["user"] = sanitized_target
+        eval_fields["action"] = "disable"
+        eval_fields["type"] = "identity"
+    elif enum_type == ContainmentActionType.ROTATE_CREDENTIALS:
+        eval_fields["user"] = sanitized_target
+        eval_fields["action"] = "rotate"
+        eval_fields["type"] = "identity"
+    elif enum_type == ContainmentActionType.AUDIT_CLOUDTRAIL:
+        eval_fields["resource"] = sanitized_target
+        eval_fields["action"] = "audit"
+        eval_fields["type"] = "cloudtrail"
+    elif enum_type == ContainmentActionType.KILL_PROCESS:
+        eval_fields["process"] = sanitized_target
+        eval_fields["action"] = "kill"
+    elif enum_type == ContainmentActionType.REVOKE_CREDENTIALS:
+        eval_fields["user"] = sanitized_target
+        eval_fields["action"] = "revoke"
+        eval_fields["type"] = "identity"
+    else:
+        eval_fields["target"] = sanitized_target
+
+    eval_fields["target"] = sanitized_target
+    eval_fields["reason"] = sanitized_reason
+    eval_fields["investigation_id"] = sanitized_investigation_id
+    eval_fields["action_id"] = sanitized_action_id
+    eval_fields["confidence"] = str(confidence)
+    eval_fields["phase"] = str(phase)
+
+    # Construct SPL
+    eval_part = ", ".join(f'{k}="{v}"' for k, v in eval_fields.items())
+    spl = f'| makeresults | eval {eval_part} | collect index=sentinel_actions'
+
+    # Construct Reversal SPL if reversible
+    reversal = None
+    if not template_data.get("is_irreversible", False):
+        rev_fields = {
+            "reason": f"Analyst rollback of action {sanitized_action_id}",
+            "investigation_id": sanitized_investigation_id,
+            "action_id": sanitized_action_id,
+        }
+        if enum_type == ContainmentActionType.BLOCK_IP:
+            rev_fields["ip"] = sanitized_target
+            rev_fields["action"] = "unblock"
+            rev_fields["type"] = "network"
+        elif enum_type == ContainmentActionType.ISOLATE_HOST:
+            rev_fields["host"] = sanitized_target
+            rev_fields["action"] = "rejoin"
+            rev_fields["type"] = "endpoint"
+        elif enum_type == ContainmentActionType.DISABLE_ACCOUNT:
+            rev_fields["user"] = sanitized_target
+            rev_fields["action"] = "enable"
+            rev_fields["type"] = "identity"
+        
+        rev_fields["target"] = sanitized_target
+        rev_eval = ", ".join(f'{k}="{v}"' for k, v in rev_fields.items())
+        reversal = f'| makeresults | eval {rev_eval} | collect index=sentinel_actions'
+
+    return spl, reversal
+
+
+def validate_containment_spl(spl: str, action_type: Any) -> bool:
+    """
+    Validate containment SPL.
+    """
+    if not spl:
+        return False
+    if isinstance(action_type, str):
+        try:
+            enum_type = ContainmentActionType[action_type.upper()]
+        except KeyError:
+            return False
+    else:
+        enum_type = action_type
+
+    if enum_type not in TEMPLATES:
+        return False
+
+    if "sentinel_actions" not in spl.lower():
+        return False
+
+    return True
+
+
+def get_template_metadata(action_type: Any) -> dict:
+    """
+    Get template metadata (reversibility).
+    """
+    if isinstance(action_type, str):
+        try:
+            enum_type = ContainmentActionType[action_type.upper()]
+        except KeyError:
+            raise ValueError(f"Unknown action type: {action_type}")
+    else:
+        enum_type = action_type
+
+    template_data = TEMPLATES.get(enum_type)
+    if not template_data:
+        raise ValueError(f"Unknown action type: {action_type}")
+
+    return {
+        "reversible": not template_data.get("is_irreversible", False)
     }

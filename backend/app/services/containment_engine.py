@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Any
 
 from app.models.containment import (
     ContainmentAction,
@@ -193,9 +193,9 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
 
     # Update phase and plan status
     if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
-        phase.status = ContainmentStatus.EXECUTED
+        phase.status = ContainmentStatus.COMPLETE
     else:
-        phase.status = ContainmentStatus.FAILED
+        phase.status = ContainmentStatus.PARTIAL
     
     plan.update_status()
     plan.updated_at = datetime.now(timezone.utc)
@@ -210,4 +210,145 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
     }
     await persist_investigation(mock_state)
 
+    yield f"data: {json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Test Compatibility functions
+# ---------------------------------------------------------------------------
+
+async def execute_single_action(action: ContainmentAction, service: Any, investigation_id: str) -> dict:
+    """
+    Execute a single containment action using a mock or provided Splunk client.
+    """
+    if action.status == ContainmentStatus.SKIPPED:
+        return {
+            "status": "SKIPPED",
+            "action_id": action.id
+        }
+
+    if not validate_containment_spl(action.containment_spl):
+        action.status = ContainmentStatus.FAILED
+        action.error = "SPL validation failed"
+        return {
+            "status": "FAILED",
+            "action_id": action.id,
+            "error": "SPL validation failed"
+        }
+
+    try:
+        loop = asyncio.get_event_loop()
+        def _run():
+            res = service.jobs.oneshot(
+                action.containment_spl,
+                earliest_time="0",
+                latest_time="now",
+                output_mode="json"
+            )
+            return list(res)
+
+        rows = await loop.run_in_executor(None, _run)
+        if not rows or len(rows) == 0:
+            action.status = ContainmentStatus.FAILED
+            action.error = "Zero rows returned"
+            return {
+                "status": "FAILED",
+                "action_id": action.id,
+                "error": "Zero rows returned"
+            }
+
+        action.status = ContainmentStatus.EXECUTED
+        action.executed_at = datetime.now(timezone.utc)
+        return {
+            "status": "EXECUTED",
+            "action_id": action.id,
+            "executed_at": action.executed_at.isoformat()
+        }
+    except Exception as e:
+        action.status = ContainmentStatus.FAILED
+        action.error = str(e)
+        return {
+            "status": "FAILED",
+            "action_id": action.id,
+            "error": str(e)
+        }
+
+
+async def execute_rollback_action(action: ContainmentAction, reason: str, service: Any, investigation_id: str) -> dict:
+    """
+    Execute rollback using the provided Splunk service client.
+    """
+    if action.is_irreversible or not action.reversal_spl:
+        return {
+            "status": "FAILED",
+            "action_id": action.id,
+            "error": "Action is not reversible"
+        }
+    if action.status != ContainmentStatus.EXECUTED:
+        return {
+            "status": "FAILED",
+            "action_id": action.id,
+            "error": "Cannot rollback a non-executed action"
+        }
+
+    try:
+        loop = asyncio.get_event_loop()
+        def _run_reversal():
+            res = service.jobs.oneshot(
+                action.reversal_spl,
+                earliest_time="0",
+                latest_time="now",
+                output_mode="json"
+            )
+            return list(res)
+
+        await loop.run_in_executor(None, _run_reversal)
+        action.status = ContainmentStatus.ROLLED_BACK
+        action.rolled_back_at = datetime.now(timezone.utc)
+        return {
+            "status": "ROLLED_BACK",
+            "action_id": action.id,
+            "rolled_back_at": action.rolled_back_at.isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "FAILED",
+            "action_id": action.id,
+            "error": str(e)
+        }
+
+
+async def stream_phase_execution(plan: ContainmentPlan, phase_idx: int, service: Any) -> AsyncGenerator[str, None]:
+    """
+    SSE stream for phase execution using the provided service client.
+    """
+    if phase_idx >= len(plan.phases):
+        yield f"data: {json.dumps({'event': 'error', 'message': 'Invalid phase index'})}\n\n"
+        return
+
+    phase = plan.phases[phase_idx]
+    phase.status = ContainmentStatus.EXECUTING
+    
+    yield f"data: {json.dumps({'event': 'phase_start', 'phase': phase.name})}\n\n"
+
+    for i, action in enumerate(phase.actions):
+        if action.status == ContainmentStatus.SKIPPED:
+            yield f"data: {json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}\n\n"
+            continue
+
+        yield f"data: {json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}\n\n"
+        
+        res = await execute_single_action(action, service, plan.investigation_id)
+        
+        event_type = 'action_complete' if res["status"] == "EXECUTED" else 'action_failed'
+        yield f"data: {json.dumps({'event': event_type, 'action_id': action.id, 'status': action.status, 'error': action.error})}\n\n"
+
+    if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
+        phase.status = ContainmentStatus.COMPLETE
+    else:
+        phase.status = ContainmentStatus.PARTIAL
+    
+    plan.update_status()
+    plan.updated_at = datetime.now(timezone.utc)
+    
     yield f"data: {json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}\n\n"

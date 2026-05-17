@@ -336,3 +336,42 @@ class SPLGuardrail:
         # Capture in memory for testing/verification
         timestamp = datetime.now(timezone.utc).isoformat()
         self.audit_entries.append(f"[{timestamp}] {spl}")
+
+
+# ---------------------------------------------------------------------------
+# Containment-specific Guardrail Check
+# ---------------------------------------------------------------------------
+
+def validate_containment_spl_guardrail(spl: str) -> GuardrailResult:
+    """
+    Validate containment SPL specifically.
+    Must ensure that if collect is used, it only targets sentinel_actions index.
+    """
+    spl_lower = spl.lower()
+    
+    # Layer 1 and 2 check
+    result = validate_spl(spl)
+    if result.is_blocked:
+        return result
+        
+    # Extra check for collect in containment spl:
+    if "collect" in spl_lower:
+        # Must target sentinel_actions index
+        indexes = _extract_indexes_from_spl(spl)
+        # Ensure it has sentinel_actions
+        if "sentinel_actions" not in indexes:
+            return GuardrailResult(
+                is_blocked=True,
+                layer=2,
+                reason="CONTAINMENT_INDEX_MISMATCH: collect command in containment SPL must target sentinel_actions."
+            )
+        # Ensure it does NOT collect into sentinel_findings or botsv3
+        if re.search(r'collect\s+index\s*=\s*(sentinel_findings|botsv3)', spl_lower):
+            return GuardrailResult(
+                is_blocked=True,
+                layer=2,
+                reason="CONTAINMENT_INDEX_MISMATCH: collect command in containment SPL must target sentinel_actions."
+            )
+
+    return GuardrailResult(is_blocked=False, layer=0, reason="")
+
