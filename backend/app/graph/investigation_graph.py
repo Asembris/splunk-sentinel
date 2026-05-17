@@ -122,13 +122,35 @@ def _build_graph() -> StateGraph:
                 monitor.record_agent_end(agent_name)
                 logger.error(
                     "[SLO] %s | %s TIMEOUT after %ds — "
-                    "returning partial state",
+                    "returning partial state with escalation flag",
                     investigation_id,
                     agent_name,
                     timeout_seconds,
                 )
-                # Return error state so downstream routing can handle it
-                return {"error": f"Agent {agent_name} timed out after {timeout_seconds}s"}
+                # Preserve all upstream state — only add timeout markers.
+                # A minimal final_report ensures report_agent and the frontend
+                # receive a structured degraded response instead of null fields.
+                partial_report = state.get("final_report") or {
+                    "investigation_id": investigation_id,
+                    "generated_at": __import__("datetime").datetime.now(
+                        __import__("datetime").timezone.utc
+                    ).isoformat(),
+                    "executive_summary": (
+                        f"Investigation incomplete — {agent_name} timed out "
+                        f"after {timeout_seconds}s. Manual analyst review required."
+                    ),
+                    "key_findings": [],
+                    "recommended_actions": [],
+                    "mitre_techniques_used": [],
+                    "investigation_confidence": 0.0,
+                    "containment_plan": {"phases": []},
+                }
+                return {
+                    **state,
+                    "error": f"Agent {agent_name} timed out after {timeout_seconds}s",
+                    "escalate_to_human": True,
+                    "final_report": partial_report,
+                }
 
         timed_agent.__name__ = f"timed_{agent_name}"
         return timed_agent

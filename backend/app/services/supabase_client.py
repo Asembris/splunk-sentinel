@@ -88,6 +88,57 @@ async def persist_investigation(state: dict) -> Optional[str]:
     return None
 
 
+async def patch_containment_plan(
+    investigation_id: str,
+    containment_plan: dict,
+) -> bool:
+    """
+    Patch only the containment_plan key inside report_json for a given
+    investigation. Reads the existing report_json, merges the new plan,
+    and writes back — without touching kill_chain_stages, confidence,
+    analyst_rating, or any other Supabase column.
+
+    This is safer than persist_investigation() for post-synthesis edits
+    because it never overwrites audit_log, slo_report, or other fields
+    that are stored inside report_json but are absent from the caller's
+    mock state.
+    """
+    try:
+        client = get_supabase_client()
+
+        # Fetch existing report_json only
+        response = (
+            client.table("investigations")
+            .select("report_json")
+            .eq("investigation_id", investigation_id)
+            .single()
+            .execute()
+        )
+        existing = response.data or {}
+        report_json = existing.get("report_json") or {}
+
+        # Merge — only update containment_plan key
+        report_json["containment_plan"] = containment_plan
+
+        client.table("investigations").update(
+            {"report_json": report_json}
+        ).eq("investigation_id", investigation_id).execute()
+
+        logger.info(
+            "[SUPABASE] Containment plan patched | investigation_id=%s",
+            investigation_id,
+        )
+        return True
+
+    except Exception as e:
+        logger.error(
+            "[SUPABASE] Containment plan patch failed | id=%s | error=%s",
+            investigation_id,
+            str(e),
+        )
+        return False
+
+
 async def update_feedback(
     investigation_id: str,
     rating: str,

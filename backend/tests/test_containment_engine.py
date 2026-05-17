@@ -131,11 +131,11 @@ class TestExecuteAction:
 
 class TestRollbackAction:
     @pytest.mark.asyncio
-    @patch("app.services.containment_engine.persist_investigation", new_callable=AsyncMock)
+    @patch("app.services.containment_engine.patch_containment_plan", new_callable=AsyncMock)
     @patch("app.services.containment_engine.get_investigation_details", new_callable=AsyncMock)
     @patch("app.services.containment_engine.get_splunk_client")
     async def test_rolls_back_executed_action_successfully(
-        self, mock_get_splunk, mock_get_details, mock_persist, sample_action, sample_plan
+        self, mock_get_splunk, mock_get_details, mock_patch_plan, sample_action, sample_plan
     ):
         # Configure action as EXECUTED in the plan
         sample_action.status = ContainmentStatus.EXECUTED
@@ -156,16 +156,18 @@ class TestRollbackAction:
         mock_get_splunk.return_value = mock_splunk
 
         # Mock Persist
-        mock_persist.return_value = True
+        mock_patch_plan.return_value = True
 
         res = await rollback_action("inv-engine-test", "act-test-111")
         assert res["status"] == "success"
         assert res["action_id"] == "act-test-111"
 
-        # Verify action status updated in persisted state
-        mock_persist.assert_called_once()
-        persisted_state = mock_persist.call_args[0][0]
-        persisted_plan = persisted_state["final_report"]["containment_plan"]
+        # Verify patch_containment_plan was called with the updated plan
+        # New signature: patch_containment_plan(investigation_id, plan_dict)
+        mock_patch_plan.assert_called_once()
+        call_args = mock_patch_plan.call_args[0]
+        assert call_args[0] == "inv-engine-test"           # investigation_id
+        persisted_plan = call_args[1]                       # plan dict
         assert persisted_plan["phases"][0]["actions"][0]["status"] == ContainmentStatus.ROLLED_BACK
 
     @pytest.mark.asyncio
@@ -200,11 +202,11 @@ class TestRollbackAction:
 
 class TestExecutePhaseStream:
     @pytest.mark.asyncio
-    @patch("app.services.containment_engine.persist_investigation", new_callable=AsyncMock)
+    @patch("app.services.containment_engine.patch_containment_plan", new_callable=AsyncMock)
     @patch("app.services.containment_engine.get_investigation_details", new_callable=AsyncMock)
     @patch("app.services.containment_engine.get_splunk_client")
     async def test_streams_events_successfully(
-        self, mock_get_splunk, mock_get_details, mock_persist, sample_action, sample_plan
+        self, mock_get_splunk, mock_get_details, mock_patch_plan, sample_action, sample_plan
     ):
         mock_get_details.return_value = {
             "classification": "APT",
@@ -217,7 +219,7 @@ class TestExecutePhaseStream:
         mock_splunk = MagicMock()
         mock_splunk.service.jobs.oneshot = MagicMock(return_value=[])
         mock_get_splunk.return_value = mock_splunk
-        mock_persist.return_value = True
+        mock_patch_plan.return_value = True
 
         events = []
         async for sse_event in execute_phase_stream("inv-engine-test", 0):

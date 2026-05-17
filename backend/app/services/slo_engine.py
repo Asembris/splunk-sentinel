@@ -50,7 +50,8 @@ class SLOPolicy:
         "reconstruction_agent": 80,
         "threat_intel_agent":   20,
         "ttp_agent":            20,
-        "synthesis_agent":      20,
+        # 4 parallel LLM calls — wall time ~15s, 90s gives 6× headroom
+        "synthesis_agent":      90,
         "report_agent":         30,
     })
 

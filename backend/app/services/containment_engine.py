@@ -18,7 +18,7 @@ from app.models.containment import (
     ContainmentPhase
 )
 from app.tools.splunk_tools import get_splunk_client
-from app.services.supabase_client import get_investigation_details, persist_investigation
+from app.services.supabase_client import get_investigation_details, patch_containment_plan
 from app.guardrails import spl_guardrail
 
 logger = logging.getLogger(__name__)
@@ -131,18 +131,14 @@ async def rollback_action(investigation_id: str, action_id: str) -> dict:
         await loop.run_in_executor(None, _run_reversal)
         
         target_action.status = ContainmentStatus.ROLLED_BACK
+        target_action.rolled_back_at = datetime.now(timezone.utc).isoformat()
         plan.updated_at = datetime.now(timezone.utc)
-        
-        # 4. Persist updated plan
-        report["containment_plan"] = plan.model_dump(mode="json")
-        mock_state = {
-            "investigation_id": investigation_id,
-            "final_report": report,
-            "attack_classification": data.get("classification"),
-            "severity": data.get("severity")
-        }
-        await persist_investigation(mock_state)
-        
+
+        # 4. Persist updated plan — targeted patch, never drops Supabase fields
+        await patch_containment_plan(
+            investigation_id, plan.model_dump(mode="json")
+        )
+
         return {"status": "success", "action_id": action_id}
         
     except Exception as e:
@@ -199,16 +195,11 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
     
     plan.update_status()
     plan.updated_at = datetime.now(timezone.utc)
-    
-    # Persist
-    report["containment_plan"] = plan.model_dump(mode="json")
-    mock_state = {
-        "investigation_id": investigation_id,
-        "final_report": report,
-        "attack_classification": data.get("classification"),
-        "severity": data.get("severity")
-    }
-    await persist_investigation(mock_state)
+
+    # Persist updated plan — targeted patch, never drops Supabase fields
+    await patch_containment_plan(
+        investigation_id, plan.model_dump(mode="json")
+    )
 
     yield f"data: {json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}\n\n"
 

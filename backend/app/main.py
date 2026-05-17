@@ -30,8 +30,8 @@ from app.api.routes import router
 # Logging configuration
 # ---------------------------------------------------------------------------
 
-# Ensure logs directory exists outside of the watched backend folder
-logs_dir = Path("../logs")
+# Ensure logs directory exists (relative to backend/ CWD, same as spl_audit.log)
+logs_dir = Path("logs")
 logs_dir.mkdir(parents=True, exist_ok=True)
 
 logging.config.dictConfig(
@@ -50,8 +50,10 @@ logging.config.dictConfig(
                 "formatter": "detailed",
             },
             "file": {
-                "class": "logging.FileHandler",
-                "filename": "../logs/splunk_sentinel.log",
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": "logs/splunk_sentinel.log",
+                "maxBytes": 10_485_760,   # 10 MB per file
+                "backupCount": 5,
                 "formatter": "detailed",
                 "encoding": "utf-8",
             },

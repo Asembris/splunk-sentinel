@@ -73,15 +73,15 @@ class TestGetContainmentPlanRoute:
 
 
 class TestUpdateContainmentPlanRoute:
-    @patch("app.api.routes.persist_investigation", new_callable=AsyncMock, create=True)
+    @patch("app.api.routes.patch_containment_plan", new_callable=AsyncMock)
     @patch("app.api.routes.get_investigation_details", new_callable=AsyncMock)
-    def test_update_plan_success(self, mock_get_details, mock_persist, mock_plan):
+    def test_update_plan_success(self, mock_get_details, mock_patch_plan, mock_plan):
         mock_get_details.return_value = {
             "classification": "APT",
             "severity": "CRITICAL",
             "report_json": {}
         }
-        mock_persist.return_value = True
+        mock_patch_plan.return_value = True
 
         response = client.put(
             "/api/investigations/inv-123/containment-plan",
@@ -89,7 +89,7 @@ class TestUpdateContainmentPlanRoute:
         )
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-        mock_persist.assert_called_once()
+        mock_patch_plan.assert_called_once()
 
     @patch("app.api.routes.get_investigation_details", new_callable=AsyncMock)
     def test_update_plan_investigation_not_found(self, mock_get_details, mock_plan):

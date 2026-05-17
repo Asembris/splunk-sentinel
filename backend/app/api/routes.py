@@ -29,7 +29,9 @@ from app.tools.splunk_tools import SplunkClient
 from app.services.supabase_client import (
     update_feedback,
     get_investigation_history,
-    get_investigation_details
+    get_investigation_details,
+    persist_investigation,
+    patch_containment_plan,
 )
 from app.utils.audit_chain import verify_chain
 from app.models.containment import ContainmentPlan
@@ -473,26 +475,17 @@ async def get_containment_plan(investigation_id: str):
 async def update_containment_plan(investigation_id: str, plan: dict):
     """
     Update the targets or actions in a containment plan before execution.
+    Uses a targeted Supabase patch rather than a full re-persist so that
+    kill_chain, audit_log, and other Supabase fields are never dropped.
     """
     data = await get_investigation_details(investigation_id)
     if not data:
         raise HTTPException(status_code=404, detail="Investigation not found")
-    
-    report = data.get("report_json", {})
-    report["containment_plan"] = plan
-    
-    mock_state = {
-        "investigation_id": investigation_id,
-        "final_report": report,
-        "attack_classification": data.get("classification"),
-        "severity": data.get("severity"),
-        "containment_plan": plan
-    }
-    
-    success = await persist_investigation(mock_state)
+
+    success = await patch_containment_plan(investigation_id, plan)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update containment plan")
-    
+
     return {"status": "ok"}
 
 
@@ -506,26 +499,48 @@ class RollbackRequest(BaseModel):
     reason: str | None = None
 
 
-@router.post("/investigations/{investigation_id}/containment-plan/execute", summary="Execute a containment phase")
-async def execute_containment_phase(
+@router.get(
+    "/investigations/{investigation_id}/containment-plan/execute",
+    summary="Execute a containment phase (SSE stream — EventSource GET)",
+)
+async def execute_containment_phase_get(
     investigation_id: str,
-    phase_idx: int | None = None,
-    body: ExecutePhaseRequest | None = None
+    phase_idx: int,
 ):
     """
-    Execute all actions in a specific phase of the containment plan.
-    Streams progress via SSE.
+    SSE stream for containment phase execution.
+    Accepts GET because the browser EventSource API only issues GET requests.
+    phase_idx is a 0-based index into the containment plan phases array.
+    """
+    return EventSourceResponse(
+        execute_phase_stream(investigation_id, phase_idx),
+        media_type="text/event-stream",
+    )
+
+
+@router.post(
+    "/investigations/{investigation_id}/containment-plan/execute",
+    summary="Execute a containment phase (POST — non-browser clients)",
+)
+async def execute_containment_phase_post(
+    investigation_id: str,
+    phase_idx: int | None = None,
+    body: ExecutePhaseRequest | None = None,
+):
+    """
+    POST variant for non-browser clients (curl, test runners).
+    Accepts phase_idx as query param or body.phase (1-based, converted internally).
     """
     actual_idx = phase_idx
     if actual_idx is None and body is not None and body.phase is not None:
         actual_idx = body.phase - 1
-    
+
     if actual_idx is None:
         raise HTTPException(status_code=400, detail="Missing phase or phase_idx")
-        
+
     return EventSourceResponse(
         execute_phase_stream(investigation_id, actual_idx),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
     )
 
 
