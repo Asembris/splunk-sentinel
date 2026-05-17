@@ -10,35 +10,60 @@ from typing import Dict, Any
 from app.models.containment import ContainmentActionType
 
 
-TEMPLATES: Dict[ContainmentActionType, Dict[str, str]] = {
+TEMPLATES: Dict[ContainmentActionType, Dict[str, Any]] = {
     ContainmentActionType.BLOCK_IP: {
         "title": "Block Malicious IP",
         "description": "Blacklist a source IP across the enterprise security boundary.",
         "spl": '| makeresults | eval ip="{{target}}", action="block", type="network", severity="high", reason="Sentinel investigation findings" | collect index=sentinel_actions',
         "reversal": '| makeresults | eval ip="{{target}}", action="unblock", type="network", reason="Sentinel analyst rollback" | collect index=sentinel_actions',
+        "is_irreversible": False,
     },
     ContainmentActionType.ISOLATE_HOST: {
         "title": "Isolate Endpoint",
         "description": "Sever network connectivity for the affected host except for management and Sentinel traffic.",
         "spl": '| makeresults | eval host="{{target}}", action="isolate", type="endpoint", severity="critical" | collect index=sentinel_actions',
         "reversal": '| makeresults | eval host="{{target}}", action="rejoin", type="endpoint", reason="Post-investigation restoration" | collect index=sentinel_actions',
+        "is_irreversible": False,
+    },
+    ContainmentActionType.DISABLE_ACCOUNT: {
+        "title": "Disable Compromised Account",
+        "description": "Disable the compromised user account to prevent further access.",
+        "spl": '| makeresults | eval user="{{target}}", action="disable", type="identity" | collect index=sentinel_actions',
+        "reversal": '| makeresults | eval user="{{target}}", action="enable", type="identity", reason="Analyst reactivation" | collect index=sentinel_actions',
+        "is_irreversible": False,
+    },
+    ContainmentActionType.ROTATE_CREDENTIALS: {
+        "title": "Rotate API Credentials",
+        "description": "Rotate API keys and credentials associated with the target resource.",
+        "spl": '| makeresults | eval user="{{target}}", action="rotate", type="identity" | collect index=sentinel_actions',
+        "reversal": None,
+        "is_irreversible": True,
+    },
+    ContainmentActionType.AUDIT_CLOUDTRAIL: {
+        "title": "Audit CloudTrail logs",
+        "description": "Initiate comprehensive log auditing on the target cloud resource.",
+        "spl": '| makeresults | eval resource="{{target}}", action="audit", type="cloudtrail" | collect index=sentinel_actions',
+        "reversal": None,
+        "is_irreversible": True,
     },
     ContainmentActionType.KILL_PROCESS: {
         "title": "Terminate Malicious Process",
         "description": "Remotely terminate a process by name or PID.",
         "spl": '| makeresults | eval process="{{target}}", action="kill" | collect index=sentinel_actions',
         "reversal": None,  # Process termination is irreversible
+        "is_irreversible": True,
     },
     ContainmentActionType.REVOKE_CREDENTIALS: {
         "title": "Revoke User Session",
         "description": "Invalidate all active sessions and force password reset for the compromised account.",
         "spl": '| makeresults | eval user="{{target}}", action="revoke", type="identity" | collect index=sentinel_actions',
         "reversal": None,  # Credential revocation is effectively irreversible via SPL
+        "is_irreversible": True,
     },
 }
 
 
-def render_template(template_type: ContainmentActionType, target: str, context: Dict[str, Any] = None) -> Dict[str, str]:
+def render_template(template_type: ContainmentActionType, target: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Render an SPL template with the provided target and context.
     """
@@ -61,5 +86,6 @@ def render_template(template_type: ContainmentActionType, target: str, context: 
         "spl": spl,
         "reversal": reversal,
         "title": template_data["title"],
-        "description": template_data["description"]
+        "description": template_data["description"],
+        "is_irreversible": template_data.get("is_irreversible", reversal is None)
     }

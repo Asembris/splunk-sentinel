@@ -553,6 +553,23 @@ data not present in the inputs.
     }
 
 
+INVALID_KILL_PROCESS_TARGETS = [
+    "suspicious",
+    "placeholder", 
+    "process_id",
+    "malicious_process",
+    "any remaining",
+    "remaining suspicious",
+]
+
+def _is_valid_kill_process_target(target: str) -> bool:
+    target_lower = target.lower()
+    return not any(
+        invalid in target_lower
+        for invalid in INVALID_KILL_PROCESS_TARGETS
+    )
+
+
 async def _generate_containment_plan(investigation_id: str, blast_radius: dict, kill_chain: list, classification: str, llm) -> dict:
     """
     Generate a structured containment plan using the LLM.
@@ -577,6 +594,13 @@ For each action, you MUST ONLY choose one of these exact action types:
 - REVOKE_CREDENTIALS
 
 CRITICAL: Do NOT invent or use any other action type under any circumstances. If an action does not map to one of these 4 types, do NOT include it.
+
+kill_process: ONLY use if you have confirmed malicious process names from the kill chain stages.
+Target must be a specific process name like:
+"backgroundTaskHost.exe", "cmd.exe", "WMIC.exe", "reg.exe", "powershell.exe"
+Use EventCode 4688 evidence from the kill chain.
+If you have no confirmed process name from the evidence, DO NOT include a kill_process action.
+Never use placeholder targets like "suspicious_process_id" or "malicious_process".
 
 Return a JSON object matching this structure:
 {{
@@ -627,18 +651,32 @@ Return a JSON object matching this structure:
                     logger.warning(f"Ignoring unknown containment action type: {a_raw.get('type')}")
                     continue
                 
+                target = a_raw["target"]
+                
+                if a_type == ContainmentActionType.KILL_PROCESS:
+                    if not _is_valid_kill_process_target(target):
+                        logger.warning(
+                            "[%s] Skipping kill_process action — "
+                            "invalid placeholder target: %s",
+                            investigation_id,
+                            target,
+                        )
+                        continue
+                
                 # Render the SPL for the action
-                rendered = render_template(a_type, a_raw["target"])
+                rendered = render_template(a_type, target)
+                reversal_spl = rendered["reversal"]
+                is_irreversible = reversal_spl is None
                 
                 action = ContainmentAction(
                     id=str(uuid.uuid4())[:8],
                     type=a_type,
                     title=a_raw["title"],
                     description=a_raw["description"],
-                    target=a_raw["target"],
+                    target=target,
                     containment_spl=rendered["spl"],
-                    reversal_spl=rendered["reversal"],
-                    is_irreversible=a_raw.get("is_irreversible", False)
+                    reversal_spl=reversal_spl,
+                    is_irreversible=is_irreversible
                 )
                 actions.append(action)
             
