@@ -82,6 +82,13 @@ class SplunkClient:
             "Splunk connection established. Version: %s",
             self.service.info.get("version", "unknown"),
         )
+        try:
+            if "sentinel_actions" not in self.service.indexes:
+                logger.info("Creating index 'sentinel_actions' in Splunk...")
+                self.service.indexes.create("sentinel_actions")
+                logger.info("Index 'sentinel_actions' created successfully.")
+        except Exception as e:
+            logger.warning("Could not check/create index 'sentinel_actions': %s", e)
 
     # ------------------------------------------------------------------
     # Internal helpers

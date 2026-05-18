@@ -223,10 +223,8 @@ class TestExecutePhaseStream:
 
         events = []
         async for sse_event in execute_phase_stream("inv-engine-test", 0):
-            # Parse 'data: {...}'
-            if sse_event.startswith("data: "):
-                data_str = sse_event[len("data: "):].strip()
-                events.append(json.loads(data_str))
+            assert "data" in sse_event
+            events.append(json.loads(sse_event["data"]))
 
         # Check standard SSE event sequence
         assert events[0]["event"] == "phase_started"
@@ -282,9 +280,8 @@ class TestCompatibilityHelpers:
 
         events = []
         async for sse_event in stream_phase_execution(sample_plan, 0, mock_service):
-            if sse_event.startswith("data: "):
-                data_str = sse_event[len("data: "):].strip()
-                events.append(json.loads(data_str))
+            assert "data" in sse_event
+            events.append(json.loads(sse_event["data"]))
 
         assert events[0]["event"] == "phase_start"
         assert events[1]["event"] == "action_started"

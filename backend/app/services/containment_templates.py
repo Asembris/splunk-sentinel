@@ -145,6 +145,7 @@ def generate_action_spl(
         eval_fields["action"] = "block"
         eval_fields["type"] = "network"
         eval_fields["severity"] = "high"
+        eval_fields["host"] = "firewall"
     elif enum_type == ContainmentActionType.ISOLATE_HOST:
         eval_fields["host"] = sanitized_target
         eval_fields["action"] = "isolate"
@@ -154,21 +155,32 @@ def generate_action_spl(
         eval_fields["user"] = sanitized_target
         eval_fields["action"] = "disable"
         eval_fields["type"] = "identity"
+        eval_fields["severity"] = "medium"
+        eval_fields["host"] = "active_directory"
     elif enum_type == ContainmentActionType.ROTATE_CREDENTIALS:
         eval_fields["user"] = sanitized_target
         eval_fields["action"] = "rotate"
         eval_fields["type"] = "identity"
+        eval_fields["severity"] = "low"
+        eval_fields["host"] = "active_directory"
     elif enum_type == ContainmentActionType.AUDIT_CLOUDTRAIL:
         eval_fields["resource"] = sanitized_target
         eval_fields["action"] = "audit"
         eval_fields["type"] = "cloudtrail"
+        eval_fields["severity"] = "low"
+        eval_fields["host"] = "aws_cloudtrail"
     elif enum_type == ContainmentActionType.KILL_PROCESS:
         eval_fields["process"] = sanitized_target
         eval_fields["action"] = "kill"
+        eval_fields["type"] = "endpoint"
+        eval_fields["severity"] = "high"
+        eval_fields["host"] = "endpoint_manager"
     elif enum_type == ContainmentActionType.REVOKE_CREDENTIALS:
         eval_fields["user"] = sanitized_target
         eval_fields["action"] = "revoke"
         eval_fields["type"] = "identity"
+        eval_fields["severity"] = "high"
+        eval_fields["host"] = "active_directory"
     else:
         eval_fields["target"] = sanitized_target
 
@@ -190,11 +202,13 @@ def generate_action_spl(
             "reason": f"Analyst rollback of action {sanitized_action_id}",
             "investigation_id": sanitized_investigation_id,
             "action_id": sanitized_action_id,
+            "severity": "informational",
         }
         if enum_type == ContainmentActionType.BLOCK_IP:
             rev_fields["ip"] = sanitized_target
             rev_fields["action"] = "unblock"
             rev_fields["type"] = "network"
+            rev_fields["host"] = "firewall"
         elif enum_type == ContainmentActionType.ISOLATE_HOST:
             rev_fields["host"] = sanitized_target
             rev_fields["action"] = "rejoin"
@@ -203,6 +217,7 @@ def generate_action_spl(
             rev_fields["user"] = sanitized_target
             rev_fields["action"] = "enable"
             rev_fields["type"] = "identity"
+            rev_fields["host"] = "active_directory"
         
         rev_fields["target"] = sanitized_target
         rev_eval = ", ".join(f'{k}="{v}"' for k, v in rev_fields.items())

@@ -152,31 +152,31 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
     """
     data = await get_investigation_details(investigation_id)
     if not data:
-        yield f"data: {json.dumps({'event': 'error', 'message': 'Investigation not found'})}\n\n"
+        yield {"data": json.dumps({'event': 'error', 'message': 'Investigation not found'})}
         return
 
     report = data.get("report_json", {})
     plan_dict = report.get("containment_plan")
     if not plan_dict:
-        yield f"data: {json.dumps({'event': 'error', 'message': 'Plan not found'})}\n\n"
+        yield {"data": json.dumps({'event': 'error', 'message': 'Plan not found'})}
         return
 
     plan = ContainmentPlan(**plan_dict)
     if phase_idx >= len(plan.phases):
-        yield f"data: {json.dumps({'event': 'error', 'message': 'Invalid phase index'})}\n\n"
+        yield {"data": json.dumps({'event': 'error', 'message': 'Invalid phase index'})}
         return
 
     phase = plan.phases[phase_idx]
     phase.status = ContainmentStatus.EXECUTING
     
-    yield f"data: {json.dumps({'event': 'phase_started', 'phase': phase.name})}\n\n"
+    yield {"data": json.dumps({'event': 'phase_started', 'phase': phase.name})}
 
     for i, action in enumerate(phase.actions):
         if action.status == ContainmentStatus.SKIPPED:
-            yield f"data: {json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}\n\n"
+            yield {"data": json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}
             continue
 
-        yield f"data: {json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}\n\n"
+        yield {"data": json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}
         
         # Artificial delay for UI "vibe"
         await asyncio.sleep(0.5)
@@ -185,7 +185,7 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
         phase.actions[i] = updated_action
         
         event_type = 'action_complete' if updated_action.status == ContainmentStatus.EXECUTED else 'action_failed'
-        yield f"data: {json.dumps({'event': event_type, 'action_id': action.id, 'status': updated_action.status, 'error': updated_action.error})}\n\n"
+        yield {"data": json.dumps({'event': event_type, 'action_id': action.id, 'status': updated_action.status, 'error': updated_action.error})}
 
     # Update phase and plan status
     if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
@@ -201,7 +201,7 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
         investigation_id, plan.model_dump(mode="json")
     )
 
-    yield f"data: {json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}\n\n"
+    yield {"data": json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}
 
 
 # ---------------------------------------------------------------------------
@@ -309,30 +309,30 @@ async def execute_rollback_action(action: ContainmentAction, reason: str, servic
         }
 
 
-async def stream_phase_execution(plan: ContainmentPlan, phase_idx: int, service: Any) -> AsyncGenerator[str, None]:
+async def stream_phase_execution(plan: ContainmentPlan, phase_idx: int, service: Any) -> AsyncGenerator[dict, None]:
     """
     SSE stream for phase execution using the provided service client.
     """
     if phase_idx >= len(plan.phases):
-        yield f"data: {json.dumps({'event': 'error', 'message': 'Invalid phase index'})}\n\n"
+        yield {"data": json.dumps({'event': 'error', 'message': 'Invalid phase index'})}
         return
 
     phase = plan.phases[phase_idx]
     phase.status = ContainmentStatus.EXECUTING
     
-    yield f"data: {json.dumps({'event': 'phase_start', 'phase': phase.name})}\n\n"
+    yield {"data": json.dumps({'event': 'phase_start', 'phase': phase.name})}
 
     for i, action in enumerate(phase.actions):
         if action.status == ContainmentStatus.SKIPPED:
-            yield f"data: {json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}\n\n"
+            yield {"data": json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}
             continue
 
-        yield f"data: {json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}\n\n"
+        yield {"data": json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}
         
         res = await execute_single_action(action, service, plan.investigation_id)
         
         event_type = 'action_complete' if res["status"] == "EXECUTED" else 'action_failed'
-        yield f"data: {json.dumps({'event': event_type, 'action_id': action.id, 'status': action.status, 'error': action.error})}\n\n"
+        yield {"data": json.dumps({'event': event_type, 'action_id': action.id, 'status': action.status, 'error': action.error})}
 
     if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
         phase.status = ContainmentStatus.COMPLETE
@@ -342,4 +342,4 @@ async def stream_phase_execution(plan: ContainmentPlan, phase_idx: int, service:
     plan.update_status()
     plan.updated_at = datetime.now(timezone.utc)
     
-    yield f"data: {json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}\n\n"
+    yield {"data": json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}

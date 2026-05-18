@@ -105,8 +105,8 @@ class TestExecuteContainmentPhaseRoute:
     @patch("app.api.routes.execute_phase_stream")
     def test_execute_phase_sse_stream(self, mock_stream):
         async def dummy_generator(inv_id, phase_idx):
-            yield "data: " + json.dumps({"event": "phase_started"}) + "\n\n"
-            yield "data: " + json.dumps({"event": "phase_complete", "status": "COMPLETE"}) + "\n\n"
+            yield {"data": json.dumps({"event": "phase_started"})}
+            yield {"data": json.dumps({"event": "phase_complete", "status": "COMPLETE"})}
 
         mock_stream.return_value = dummy_generator(None, None)
 
