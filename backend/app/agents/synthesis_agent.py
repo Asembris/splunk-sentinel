@@ -606,8 +606,11 @@ For each action, you MUST ONLY choose one of these exact action types:
 - ISOLATE_HOST
 - KILL_PROCESS
 - REVOKE_CREDENTIALS
+- DISABLE_ACCOUNT
+- ROTATE_CREDENTIALS
+- AUDIT_CLOUDTRAIL
 
-CRITICAL: Do NOT invent or use any other action type under any circumstances. If an action does not map to one of these 4 types, do NOT include it.
+CRITICAL: Do NOT invent or use any other action type under any circumstances. If an action does not map to one of these 7 types, do NOT include it.
 
 kill_process: ONLY use if you have confirmed malicious process names from the kill chain stages.
 Target must be a specific process name like:
