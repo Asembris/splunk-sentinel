@@ -164,11 +164,15 @@ function reducer(state, action) {
       }
 
     case 'UPDATE_CONTAINMENT_PLAN':
+      if (!state.result) return state;
       return {
         ...state,
         result: {
           ...state.result,
-          containment_plan: action.plan
+          final_report: {
+            ...state.result.final_report,
+            containment_plan: action.plan
+          }
         }
       }
 
@@ -210,7 +214,7 @@ export function InvestigationProvider({ children }) {
   }, [])
 
   return (
-    <InvestigationContext.Provider value={{ state, startInvestigation }}>
+    <InvestigationContext.Provider value={{ state, startInvestigation, dispatch }}>
       {children}
     </InvestigationContext.Provider>
   )

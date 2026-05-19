@@ -4,10 +4,10 @@ import json
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, AsyncGenerator
+from typing import Optional, Dict, Any, AsyncGenerator, List
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 from app.models.containment import (
     ContainmentAction,
@@ -36,19 +36,9 @@ RFC1918_PREFIXES = (
     "127.",      # loopback
 )
 
-
 def _is_internal_ip(ip: str) -> bool:
     """Return True if IP is RFC1918 or otherwise non-routable."""
     return any(ip.startswith(prefix) for prefix in RFC1918_PREFIXES)
-
-
-# Structured LLM Output schema
-class ContainmentChatResponse(BaseModel):
-    reply: str = Field(description="The conversational response to the security analyst.")
-    suggested_action_type: Optional[str] = Field(None, description="Type of action to suggest/add: BLOCK_IP, ISOLATE_HOST, KILL_PROCESS, REVOKE_CREDENTIALS, DISABLE_ACCOUNT, ROTATE_CREDENTIALS, AUDIT_CLOUDTRAIL.")
-    suggested_action_target: Optional[str] = Field(None, description="The target entity of the suggested action (IP, hostname, username, process, etc.).")
-    suggested_action_reason: Optional[str] = Field(None, description="The security rationale/justification for adding this action.")
-    action_to_delete_id: Optional[str] = Field(None, description="The unique ID of the existing action to delete from the plan.")
 
 
 class PersistentConstraintStore:
@@ -78,11 +68,24 @@ class PersistentConstraintStore:
                 return f"User account '{target}' is a protected administrative identity and cannot be modified."
         return None
 
+# Define ReAct Tools using Pydantic Models
+class AddContainmentAction(BaseModel):
+    """Adds a new containment action to the plan."""
+    action_type: str = Field(description="Type of action: BLOCK_IP, ISOLATE_HOST, KILL_PROCESS, REVOKE_CREDENTIALS, DISABLE_ACCOUNT, ROTATE_CREDENTIALS, AUDIT_CLOUDTRAIL")
+    action_target: str = Field(description="The target entity of the action (IP, hostname, username, process, etc.).")
+    action_reason: Optional[str] = Field(None, description="The security rationale/justification for adding this action.")
+    phase: int = Field(description="The phase number (1, 2, or 3) where the action should be added. Phase 1 = Immediate, Phase 2 = Short Term, Phase 3 = Remediation.")
+
+class DeleteContainmentAction(BaseModel):
+    """Deletes an existing containment action from the plan."""
+    action_id: Optional[str] = Field(None, description="The unique ID of the existing action to delete.")
+    action_type: Optional[str] = Field(None, description="If action_id is unknown, specify the action type (e.g. BLOCK_IP) to match for deletion.")
+    action_target: Optional[str] = Field(None, description="If action_id is unknown, specify the action target (e.g. 184.85.20.125) to match for deletion.")
+
 
 # LLM setup
 _LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_LLM_STRUCTURED = _LLM.with_structured_output(ContainmentChatResponse)
-
+_LLM_WITH_TOOLS = _LLM.bind_tools([AddContainmentAction, DeleteContainmentAction])
 
 def get_initial_chat_message() -> dict:
     """
@@ -98,11 +101,9 @@ def get_initial_chat_message() -> dict:
         "created_at": "2026-05-19T12:00:00Z"
     }
 
-
 async def handle_containment_chat_stream(investigation_id: str, message: str) -> AsyncGenerator[str, None]:
     """
-    SSE stream handler for containment plan conversation.
-    Streams progress events and final status.
+    SSE stream handler for containment plan conversation using ReAct Tool-Calling Loop.
     """
     # 1. Check if the plan is currently locked for execution
     if is_plan_locked(investigation_id):
@@ -129,34 +130,25 @@ async def handle_containment_chat_stream(investigation_id: str, message: str) ->
         yield "event: done\ndata: {}\n\n"
         return
 
-    # 3. Apply rolling window memory (keep system prompt context + last 10 messages)
+    # 3. Apply rolling window memory
     system_prompt = f"""You are Splunk Sentinel, an expert virtual Incident Response assistant.
 Your task is to help the analyst refine the containment plan dynamically.
 
 Current Containment Plan:
 {json.dumps(plan_dict, indent=2)}
 
-You can suggest:
-1. Adding new containment actions (type must be one of: BLOCK_IP, ISOLATE_HOST, KILL_PROCESS, REVOKE_CREDENTIALS, DISABLE_ACCOUNT, ROTATE_CREDENTIALS, AUDIT_CLOUDTRAIL).
-2. Deleting an existing action by identifying its target/type and returning its 'id' in 'action_to_delete_id'.
+You can suggest adding or deleting containment actions by calling the provided tools.
+You can call the tools MULTIPLE times in a single turn if the user asks for multiple actions (e.g. "block IP X and IP Y", or "remove all block IPs").
 
-Constraints & Safety Boundaries:
-- For block_ip: ONLY use IP addresses that appear in the CURRENT PLAN STATE provided above as existing action targets, OR IPs explicitly mentioned by the analyst in their message. NEVER invent, guess, or extrapolate IP addresses. NEVER use RFC1918 addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x) as block_ip targets — these are internal IPs that cannot be blocked at perimeter. If the analyst asks to block "all attacker IPs" without specifying them, look at the existing block_ip actions in the current plan and use only those confirmed IPs.
+CRITICAL RULES:
+- For block_ip: ONLY use IP addresses that appear in the CURRENT PLAN STATE provided above as existing action targets, OR IPs explicitly mentioned by the analyst in their message. NEVER invent, guess, or extrapolate IP addresses. NEVER use RFC1918 addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x) as block_ip targets — these are internal IPs that cannot be blocked at perimeter.
 - Core network gateways (192.168.1.1), primary DNS (8.8.8.8, 1.1.1.1), the Splunk SIEM server itself (10.0.0.10), domain controllers (domain-controller), and core administrator accounts (admin, system) MUST NOT be targeted.
-- Always provide highly professional, concise, and defensive security rationale.
-
-Response Format:
-Always respond with the specified structure containing:
-- 'reply': A conversational explanation of what you are doing (e.g. 'I will add a Block IP action for...')
-- 'suggested_action_type': string or null
-- 'suggested_action_target': string or null
-- 'suggested_action_reason': string or null
-- 'action_to_delete_id': string or null
+- If deleting, try to provide the exact `action_id`. If unavailable, provide BOTH the `action_type` and `action_target` to safely match it.
+- After all tool executions are complete, write a conversational response summarizing the successful actions and any errors that occurred (based on the tool execution results).
 """
 
     messages = [SystemMessage(content=system_prompt)]
     
-    # Extract only last 10 messages from chat history for context window
     recent_history = history[-10:]
     for h in recent_history:
         if h.get("sender") == "user":
@@ -164,126 +156,174 @@ Always respond with the specified structure containing:
         else:
             messages.append(AIMessage(content=h.get("text", "")))
             
-    # Append the new user message
     messages.append(HumanMessage(content=message))
 
-    # 4. Invoke Structured LLM
-    try:
-        res: ContainmentChatResponse = await _LLM_STRUCTURED.ainvoke(messages)
-    except Exception as e:
-        logger.error("[CHAT] LLM invocation failed: %s", str(e))
-        yield "event: response_start\ndata: {}\n\n"
-        err_msg = f"I encountered an error querying the model: {str(e)}"
-        yield f"event: response_token\ndata: {json.dumps({'token': err_msg})}\n\n"
-        yield f"event: response_complete\ndata: {json.dumps({'reply': err_msg})}\n\n"
-        yield "event: done\ndata: {}\n\n"
-        return
+    # 4. Tool-Calling Loop
+    plan_updated = False
+    added_actions_meta = []
+    deleted_actions_meta = []
+    reply = ""
 
-    reply = res.reply
-    action_type = res.suggested_action_type
-    action_target = res.suggested_action_target
-    action_reason = res.suggested_action_reason
-    action_to_delete_id = res.action_to_delete_id
+    max_iterations = 5
+    for iteration in range(max_iterations):
+        try:
+            res = await _LLM_WITH_TOOLS.ainvoke(messages)
+            messages.append(res)
+        except Exception as e:
+            logger.error("[CHAT] LLM invocation failed: %s", str(e))
+            reply = f"I encountered an error querying the model: {str(e)}"
+            break
+
+        if not res.tool_calls:
+            # Done! It responded with text
+            reply = res.content
+            break
+
+        # Execute tool calls
+        for tool_call in res.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            tool_call_id = tool_call["id"]
+
+            if tool_name == "AddContainmentAction":
+                action_type = tool_args.get("action_type")
+                action_target = tool_args.get("action_target")
+                action_reason = tool_args.get("action_reason")
+                phase_num = tool_args.get("phase", 1)
+
+                if not action_type or not action_target:
+                    messages.append(ToolMessage(content="Error: action_type and action_target are required.", tool_call_id=tool_call_id))
+                    continue
+
+                violation = PersistentConstraintStore.validate_target(action_type, action_target)
+                if violation:
+                    messages.append(ToolMessage(content=f"Error: {violation}", tool_call_id=tool_call_id))
+                    continue
+
+                target_phase_num = phase_num if phase_num in (1, 2, 3) else 1
+                target_phase_idx = target_phase_num - 1
+
+                # Duplicate detection
+                duplicate_found = False
+                for p in plan_dict.get("phases", []):
+                    for a in p.get("actions", []):
+                        if (a.get("type", "").upper() == action_type.upper() and
+                                a.get("target", "").strip().lower() == action_target.strip().lower()):
+                            duplicate_found = True
+                            break
+                    if duplicate_found:
+                        break
+
+                if duplicate_found:
+                    messages.append(ToolMessage(content=f"Error: Duplicate action. {action_type} for '{action_target}' already exists.", tool_call_id=tool_call_id))
+                    continue
+
+                # Add Action
+                new_id = f"chat_{uuid.uuid4().hex[:8]}"
+                reason_text = action_reason or f"Refined via chat: {message}"
+                spl, rev = generate_action_spl(
+                    action_type=action_type,
+                    target=action_target,
+                    reason=reason_text,
+                    investigation_id=investigation_id,
+                    action_id=new_id,
+                    confidence=1.0,
+                    phase=target_phase_num
+                )
+                
+                is_irr = (rev is None) or (action_type in ["ROTATE_CREDENTIALS", "AUDIT_CLOUDTRAIL", "KILL_PROCESS", "REVOKE_CREDENTIALS"])
+                risk_level = RiskLevel.HIGH if is_irr else RiskLevel.MEDIUM
+                
+                new_action_dict = {
+                    "id": new_id,
+                    "action_id": new_id,
+                    "type": action_type,
+                    "title": f"Refined: {action_type.replace('_', ' ').title()}",
+                    "description": reason_text,
+                    "target": action_target,
+                    "containment_spl": spl,
+                    "reversal_spl": rev,
+                    "status": ContainmentStatus.PENDING,
+                    "is_irreversible": is_irr,
+                    "reversible": not is_irr,
+                    "phase": target_phase_num,
+                    "risk_level": risk_level,
+                    "executed_by": "Sentinel Chat Assistant"
+                }
+                
+                if "phases" in plan_dict and len(plan_dict["phases"]) > target_phase_idx:
+                    plan_dict["phases"][target_phase_idx]["actions"].append(new_action_dict)
+                    plan_updated = True
+                    added_actions_meta.append({
+                        "id": new_id,
+                        "type": action_type,
+                        "target": action_target,
+                        "phase": target_phase_num
+                    })
+                    messages.append(ToolMessage(content=f"Success: Added {action_type} for '{action_target}'.", tool_call_id=tool_call_id))
+                else:
+                    messages.append(ToolMessage(content=f"Error: Invalid phase {target_phase_num}.", tool_call_id=tool_call_id))
+
+            elif tool_name == "DeleteContainmentAction":
+                target_id = (tool_args.get("action_id") or "").strip()
+                del_type = (tool_args.get("action_type") or "").strip().upper()
+                del_target = (tool_args.get("action_target") or "").strip().lower()
+
+                deleted_count = 0
+                for p in plan_dict.get("phases", []):
+                    actions = p.get("actions", [])
+                    new_actions = []
+                    for a in actions:
+                        match = False
+                        if target_id and (a.get("id") == target_id or a.get("action_id") == target_id):
+                            match = True
+                        elif del_type and del_target and a.get("type", "").upper() == del_type and a.get("target", "").strip().lower() == del_target:
+                            match = True
+                            
+                        if match:
+                            deleted_count += 1
+                            deleted_actions_meta.append({
+                                "id": a.get("id", "unknown"),
+                                "type": a.get("type"),
+                                "target": a.get("target")
+                            })
+                        else:
+                            new_actions.append(a)
+                    p["actions"] = new_actions
+
+                if deleted_count > 0:
+                    plan_updated = True
+                    messages.append(ToolMessage(content=f"Success: Deleted {deleted_count} matching actions.", tool_call_id=tool_call_id))
+                else:
+                    messages.append(ToolMessage(content="Error: No matching action found to delete.", tool_call_id=tool_call_id))
+            else:
+                messages.append(ToolMessage(content=f"Error: Unknown tool {tool_name}", tool_call_id=tool_call_id))
+
+    else:
+        # Reached max iterations
+        reply = "I attempted to process your request but reached the maximum number of operations allowed in one step."
 
     # 5. Stream response reply token-by-token
     yield "event: response_start\ndata: {}\n\n"
-    # Stream simulated tokens of the reply
     words = reply.split(" ")
     for i, w in enumerate(words):
         space = " " if i < len(words) - 1 else ""
         yield f"event: response_token\ndata: {json.dumps({'token': w + space})}\n\n"
-        await asyncio.sleep(0.01) # fast premium simulated stream
-    yield f"event: response_complete\ndata: {json.dumps({'reply': reply})}\n\n"
+        await asyncio.sleep(0.01)
 
-    # 6. Safety check on suggested actions
-    plan_updated = False
-    added_action_meta = None
-    deleted_action_meta = None
+    # 6. Emit response_complete with arrays of action metadata
+    complete_payload = {'reply': reply}
+    if added_actions_meta:
+        complete_payload['added_actions'] = added_actions_meta
+    if deleted_actions_meta:
+        complete_payload['deleted_actions'] = deleted_actions_meta
+    yield f"event: response_complete\ndata: {json.dumps(complete_payload)}\n\n"
 
-    if action_type and action_target:
-        # Validate against safety boundaries
-        violation = PersistentConstraintStore.validate_target(action_type, action_target)
-        if violation:
-            # Yield safety violation response instead of adding it
-            yield f"event: response_token\ndata: {json.dumps({'token': f'\\n\\n[SAFETY ALERT] {violation}'})}\n\n"
-            reply += f"\n\n[SAFETY ALERT] {violation}"
-        else:
-            # Generate new action
-            new_id = f"chat_{uuid.uuid4().hex[:8]}"
-            reason_text = action_reason or f"Refined via chat: {message}"
-            spl, rev = generate_action_spl(
-                action_type=action_type,
-                target=action_target,
-                reason=reason_text,
-                investigation_id=investigation_id,
-                action_id=new_id,
-                confidence=1.0,
-                phase=1
-            )
-            
-            # Map metadata for risk level
-            is_irr = (rev is None) or (action_type in ["ROTATE_CREDENTIALS", "AUDIT_CLOUDTRAIL", "KILL_PROCESS", "REVOKE_CREDENTIALS"])
-            risk_level = RiskLevel.HIGH if is_irr else RiskLevel.MEDIUM
-            
-            new_action_dict = {
-                "id": new_id,
-                "action_id": new_id,
-                "type": action_type,
-                "title": f"Refined: {action_type.replace('_', ' ').title()}",
-                "description": reason_text,
-                "target": action_target,
-                "containment_spl": spl,
-                "reversal_spl": rev,
-                "status": ContainmentStatus.PENDING,
-                "is_irreversible": is_irr,
-                "reversible": not is_irr,
-                "phase": 1,
-                "risk_level": risk_level,
-                "executed_by": "Sentinel Chat Assistant"
-            }
-            
-            # Insert to phase 1
-            if "phases" in plan_dict and len(plan_dict["phases"]) > 0:
-                plan_dict["phases"][0]["actions"].append(new_action_dict)
-                plan_updated = True
-                added_action_meta = {
-                    "id": new_id,
-                    "type": action_type,
-                    "target": action_target
-                }
-                logger.info("[CHAT] Added action %s to Phase 1", new_id)
-
-    # 7. Check for Deletion request
-    if action_to_delete_id:
-        target_id = action_to_delete_id.strip()
-        deleted = False
-        for phase in plan_dict.get("phases", []):
-            actions = phase.get("actions", [])
-            for action in list(actions):
-                if action.get("id") == target_id or action.get("action_id") == target_id:
-                    actions.remove(action)
-                    deleted = True
-                    deleted_action_meta = {
-                        "id": target_id,
-                        "type": action.get("type"),
-                        "target": action.get("target")
-                    }
-                    break
-            if deleted:
-                break
-        if deleted:
-            plan_updated = True
-            logger.info("[CHAT] Deleted action %s successfully", target_id)
-
-    # 8. Save updated plan and stream plan_updated
+    # 7. Save updated plan and stream plan_updated
     if plan_updated:
-        # Sync timestamp
         plan_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+        yield f"event: plan_updated\ndata: {json.dumps({'plan': plan_dict})}\n\n"
         
-        # Notify client first — plan is already updated in memory
-        yield f"event: plan_updated\ndata: {json.dumps(plan_dict)}\n\n"
-        
-        # Best-effort persistence to Supabase
         try:
             client = get_supabase_client()
             response = client.table("investigations").select("report_json").eq("investigation_id", investigation_id).single().execute()
@@ -297,25 +337,31 @@ Always respond with the specified structure containing:
         except Exception as e:
             logger.error("[CHAT] Failed to persist modified plan: %s", str(e))
 
-    # 9. Append messages to chat history and persist
+    # 8. Append messages to chat history and persist
     new_user_msg = {
         "id": f"msg_{uuid.uuid4().hex[:8]}",
         "sender": "user",
         "text": message,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
+    
+    # Store multiple actions for legacy UI components if they exist, to prevent breaking
+    legacy_added = added_actions_meta[0] if added_actions_meta else None
+    legacy_deleted = deleted_actions_meta[0] if deleted_actions_meta else None
+    
     new_assistant_msg = {
         "id": f"msg_{uuid.uuid4().hex[:8]}",
         "sender": "assistant",
         "text": reply,
-        "added_action": added_action_meta,
-        "deleted_action": deleted_action_meta,
+        "added_actions": added_actions_meta,
+        "deleted_actions": deleted_actions_meta,
+        "added_action": legacy_added,      # Backward compatibility
+        "deleted_action": legacy_deleted,  # Backward compatibility
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     history.append(new_user_msg)
     history.append(new_assistant_msg)
-    
     save_chat_history(investigation_id, history)
 
     yield "event: done\ndata: {}\n\n"

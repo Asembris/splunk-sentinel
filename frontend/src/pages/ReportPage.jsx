@@ -221,7 +221,9 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                     ...msg, 
                     text: payload.reply || accumText,
                     added_action: payload.added_action,
-                    deleted_action_id: payload.deleted_action_id
+                    deleted_action_id: payload.deleted_action_id,
+                    added_actions: payload.added_actions,
+                    deleted_actions: payload.deleted_actions
                   } : msg
                 ))
               } catch (err) {}
@@ -466,7 +468,8 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                   >
                     {msg.text}
                     
-                    {msg.added_action && (
+                    {/* Legacy singular render for old messages */}
+                    {msg.added_action && !msg.added_actions?.length && (
                       <div className="mt-2.5 bg-green-500/10 border border-green-500/20 rounded-lg p-2 text-[10px] text-green-400">
                         <div className="font-bold uppercase tracking-wider mb-1">
                           ✓ Proposed Action Added:
@@ -482,7 +485,25 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                       </div>
                     )}
 
-                    {msg.deleted_action_id && (
+                    {/* New array rendering */}
+                    {msg.added_actions && msg.added_actions.map((act, idx) => (
+                      <div key={`add-${idx}`} className="mt-2.5 bg-green-500/10 border border-green-500/20 rounded-lg p-2 text-[10px] text-green-400">
+                        <div className="font-bold uppercase tracking-wider mb-1">
+                          ✓ Proposed Action Added:
+                        </div>
+                        <div className="flex justify-between mb-0.5">
+                          <span className="text-white/60">Type:</span>
+                          <span className="font-mono">{act.type}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Target:</span>
+                          <span className="font-mono text-white">{act.target}</span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Legacy singular render for old messages */}
+                    {msg.deleted_action_id && !msg.deleted_actions?.length && (
                       <div className="mt-2.5 bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400">
                         <div className="font-bold uppercase tracking-wider mb-1">
                           ✗ Proposed Action Removed:
@@ -493,6 +514,23 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                         </div>
                       </div>
                     )}
+
+                    {/* New array rendering */}
+                    {msg.deleted_actions && msg.deleted_actions.map((act, idx) => (
+                      <div key={`del-${idx}`} className="mt-2.5 bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400">
+                        <div className="font-bold uppercase tracking-wider mb-1">
+                          ✗ Proposed Action Removed:
+                        </div>
+                        <div className="flex justify-between mb-0.5">
+                          <span className="text-white/60">Type:</span>
+                          <span className="font-mono text-white">{act.type || 'Unknown'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Target:</span>
+                          <span className="font-mono text-white">{act.target || act.id || 'Unknown'}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                   <span className="text-[9px] text-sentinel-muted mt-1 px-1">
                     {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -1366,7 +1404,19 @@ export default function ReportPage() {
         <ContainmentPlanPanel 
           investigationId={report.investigation_id || id || state.investigationId} 
           plan={report.containment_plan}
-          onUpdate={(newPlan) => dispatch({ type: 'UPDATE_CONTAINMENT_PLAN', plan: newPlan })}
+          onUpdate={(newPlan) => {
+            if (state.result) {
+              dispatch({ type: 'UPDATE_CONTAINMENT_PLAN', plan: newPlan })
+            } else if (historicalData) {
+              setHistoricalData(prev => ({
+                ...prev,
+                final_report: {
+                  ...prev.final_report,
+                  containment_plan: newPlan
+                }
+              }))
+            }
+          }}
         />
 
         <MitreTable

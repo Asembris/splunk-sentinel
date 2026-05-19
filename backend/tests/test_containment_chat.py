@@ -5,6 +5,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from app.api.routes import router
 from app.services.containment_chat import PersistentConstraintStore, get_initial_chat_message
 from app.models.containment import ContainmentStatus, RiskLevel
+from langchain_core.messages import AIMessage
 
 client = TestClient(router)
 
@@ -48,7 +49,7 @@ async def test_handle_containment_chat_stream_add_action(
     mock_get_plan,
     mock_get_history
 ):
-    from app.services.containment_chat import handle_containment_chat_stream, ContainmentChatResponse
+    from app.services.containment_chat import handle_containment_chat_stream
     import app.services.containment_chat
     
     investigation_id = "test_inv_123"
@@ -69,16 +70,24 @@ async def test_handle_containment_chat_stream_add_action(
     mock_execute.data = {"report_json": {}}
     mock_client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = mock_execute
     
-    # Mock LLM structured output to return an action suggestion by directly overriding module var
+    # Mock LLM to return tool calls in the first iteration, and then text in the second
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = ContainmentChatResponse(
-        reply="Sure, I will add a Block IP action for 192.168.99.99.",
-        suggested_action_type="BLOCK_IP",
-        suggested_action_target="192.168.99.99",
-        suggested_action_reason="Suspicious outgoing connections detected.",
-        action_to_delete_id=None
-    )
-    app.services.containment_chat._LLM_STRUCTURED = mock_llm
+    
+    call_1 = AIMessage(content="", tool_calls=[{
+        "name": "AddContainmentAction",
+        "args": {
+            "action_type": "BLOCK_IP",
+            "action_target": "192.168.99.99",
+            "action_reason": "Suspicious outgoing connections detected.",
+            "phase": 1
+        },
+        "id": "call_abc123"
+    }])
+    
+    call_2 = AIMessage(content="Sure, I will add a Block IP action for 192.168.99.99.")
+    
+    mock_llm.ainvoke.side_effect = [call_1, call_2]
+    app.services.containment_chat._LLM_WITH_TOOLS = mock_llm
     
     events = []
     async for event in handle_containment_chat_stream(investigation_id, message):
@@ -97,4 +106,4 @@ async def test_handle_containment_chat_stream_add_action(
     assert len(saved_history) == 3 # init_msg + user_msg + assistant_msg
     assert saved_history[1]["sender"] == "user"
     assert saved_history[2]["sender"] == "assistant"
-    assert saved_history[2]["added_action"]["target"] == "192.168.99.99"
+    assert saved_history[2]["added_actions"][0]["target"] == "192.168.99.99"
