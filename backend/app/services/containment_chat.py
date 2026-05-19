@@ -27,6 +27,21 @@ from app.services.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
+RFC1918_PREFIXES = (
+    "10.", "192.168.",
+    "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+    "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+    "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+    "169.254.",  # link-local
+    "127.",      # loopback
+)
+
+
+def _is_internal_ip(ip: str) -> bool:
+    """Return True if IP is RFC1918 or otherwise non-routable."""
+    return any(ip.startswith(prefix) for prefix in RFC1918_PREFIXES)
+
+
 # Structured LLM Output schema
 class ContainmentChatResponse(BaseModel):
     reply: str = Field(description="The conversational response to the security analyst.")
@@ -51,13 +66,14 @@ class PersistentConstraintStore:
             return "Target entity cannot be empty."
         t_lower = target.lower().strip()
         
-        if action_type == "BLOCK_IP":
+        action_type_upper = action_type.upper().strip()
+        if action_type_upper == "BLOCK_IP":
             if target in cls.PROTECTED_IPS or t_lower in ["localhost", "127.0.0.1"]:
                 return f"IP address '{target}' falls within the system protected boundary (gateway, SIEM, DNS) and cannot be blocked."
-        elif action_type == "ISOLATE_HOST":
+        elif action_type_upper == "ISOLATE_HOST":
             if t_lower in cls.PROTECTED_HOSTNAMES or any(ph in t_lower for ph in cls.PROTECTED_HOSTNAMES):
                 return f"Host '{target}' is a critical infrastructure asset and cannot be isolated."
-        elif action_type in ["DISABLE_ACCOUNT", "REVOKE_CREDENTIALS"]:
+        elif action_type_upper in ["DISABLE_ACCOUNT", "REVOKE_CREDENTIALS"]:
             if t_lower in cls.PROTECTED_USERS or any(pu in t_lower for pu in cls.PROTECTED_USERS):
                 return f"User account '{target}' is a protected administrative identity and cannot be modified."
         return None
@@ -125,6 +141,7 @@ You can suggest:
 2. Deleting an existing action by identifying its target/type and returning its 'id' in 'action_to_delete_id'.
 
 Constraints & Safety Boundaries:
+- For block_ip: ONLY use IP addresses that appear in the CURRENT PLAN STATE provided above as existing action targets, OR IPs explicitly mentioned by the analyst in their message. NEVER invent, guess, or extrapolate IP addresses. NEVER use RFC1918 addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x) as block_ip targets — these are internal IPs that cannot be blocked at perimeter. If the analyst asks to block "all attacker IPs" without specifying them, look at the existing block_ip actions in the current plan and use only those confirmed IPs.
 - Core network gateways (192.168.1.1), primary DNS (8.8.8.8, 1.1.1.1), the Splunk SIEM server itself (10.0.0.10), domain controllers (domain-controller), and core administrator accounts (admin, system) MUST NOT be targeted.
 - Always provide highly professional, concise, and defensive security rationale.
 
@@ -263,7 +280,10 @@ Always respond with the specified structure containing:
         # Sync timestamp
         plan_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
         
-        # Patch containment plan in investigations
+        # Notify client first — plan is already updated in memory
+        yield f"event: plan_updated\ndata: {json.dumps(plan_dict)}\n\n"
+        
+        # Best-effort persistence to Supabase
         try:
             client = get_supabase_client()
             response = client.table("investigations").select("report_json").eq("investigation_id", investigation_id).single().execute()
@@ -274,8 +294,6 @@ Always respond with the specified structure containing:
             client.table("investigations").update(
                 {"report_json": report_json}
             ).eq("investigation_id", investigation_id).execute()
-            
-            yield f"event: plan_updated\ndata: {json.dumps(plan_dict)}\n\n"
         except Exception as e:
             logger.error("[CHAT] Failed to persist modified plan: %s", str(e))
 

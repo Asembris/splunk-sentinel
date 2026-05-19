@@ -624,7 +624,8 @@ def _get_fallback_containment_plan(
         target=ext_ip,
         containment_spl=p1_a1_spl["spl"],
         reversal_spl=p1_a1_spl["reversal"],
-        is_irreversible=False
+        is_irreversible=False,
+        phase=1
     ))
 
     # Action 2: Isolate affected internal host
@@ -637,7 +638,8 @@ def _get_fallback_containment_plan(
         target=int_ip,
         containment_spl=p1_a2_spl["spl"],
         reversal_spl=p1_a2_spl["reversal"],
-        is_irreversible=False
+        is_irreversible=False,
+        phase=1
     ))
 
     # Action 3: Terminate malicious process
@@ -650,7 +652,8 @@ def _get_fallback_containment_plan(
         target=proc_name,
         containment_spl=p1_a3_spl["spl"],
         reversal_spl=None,
-        is_irreversible=True
+        is_irreversible=True,
+        phase=1
     ))
 
     # Phase 2 Actions
@@ -666,7 +669,8 @@ def _get_fallback_containment_plan(
         target="Administrator",
         containment_spl=p2_a1_spl["spl"],
         reversal_spl=p2_a1_spl["reversal"],
-        is_irreversible=False
+        is_irreversible=False,
+        phase=2
     ))
 
     # Action 2: Disable compromised user account
@@ -679,7 +683,8 @@ def _get_fallback_containment_plan(
         target="Administrator",
         containment_spl=p2_a2_spl["spl"],
         reversal_spl=p2_a2_spl["reversal"],
-        is_irreversible=False
+        is_irreversible=False,
+        phase=2
     ))
 
     # Phase 3 Actions
@@ -695,7 +700,8 @@ def _get_fallback_containment_plan(
         target="Administrator",
         containment_spl=p3_a1_spl["spl"],
         reversal_spl=None,
-        is_irreversible=True
+        is_irreversible=True,
+        phase=3
     ))
 
     # Action 2: Audit CloudTrail
@@ -708,7 +714,8 @@ def _get_fallback_containment_plan(
         target="botsv3-production-resource",
         containment_spl=p3_a2_spl["spl"],
         reversal_spl=None,
-        is_irreversible=True
+        is_irreversible=True,
+        phase=3
     ))
 
     # Combine into phases
@@ -716,17 +723,20 @@ def _get_fallback_containment_plan(
         ContainmentPhase(
             name="Phase 1: IMMEDIATE (Execute now)",
             description="Immediate critical actions to isolate threats and stop active execution.",
-            actions=phase1_actions
+            actions=phase1_actions,
+            phase=1
         ),
         ContainmentPhase(
             name="Phase 2: SHORT TERM (Within 24 hours)",
             description="Short-term mitigations to revoke access and secure compromised credentials.",
-            actions=phase2_actions
+            actions=phase2_actions,
+            phase=2
         ),
         ContainmentPhase(
             name="Phase 3: REMEDIATION (Within 72 hours)",
             description="Long-term security posture improvement, credential rotation, and log audits.",
-            actions=phase3_actions
+            actions=phase3_actions,
+            phase=3
         )
     ]
 
@@ -812,7 +822,8 @@ Return a JSON object matching this structure:
         raw_plan = json.loads(content)
         
         phases = []
-        for p_raw in raw_plan.get("phases", []):
+        for idx, p_raw in enumerate(raw_plan.get("phases", [])):
+            phase_num = idx + 1
             actions = []
             for a_raw in p_raw.get("actions", []):
                 try:
@@ -846,14 +857,16 @@ Return a JSON object matching this structure:
                     target=target,
                     containment_spl=rendered["spl"],
                     reversal_spl=reversal_spl,
-                    is_irreversible=is_irreversible
+                    is_irreversible=is_irreversible,
+                    phase=phase_num
                 )
                 actions.append(action)
             
             phases.append(ContainmentPhase(
                 name=p_raw["name"],
                 description=p_raw["description"],
-                actions=actions
+                actions=actions,
+                phase=phase_num
             ))
             
         plan = ContainmentPlan(
