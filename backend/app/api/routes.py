@@ -567,6 +567,77 @@ async def rollback_containment_action(
     return result
 
 
+class ContainmentChatRequest(BaseModel):
+    message: str
+
+
+@router.get("/investigations/{investigation_id}/containment-plan/chat/init", summary="Initialize or fetch containment chat history")
+async def get_containment_chat_init(investigation_id: str):
+    """
+    Fetches existing chat history or generates a deterministic initial message.
+    Zero LLM calls.
+    """
+    from app.services.containment_chat import get_initial_chat_message
+    from app.services.supabase_client import get_containment_plan_sync
+    from app.services.supabase_client import get_supabase_client
+    
+    try:
+        plan = get_containment_plan_sync(investigation_id)
+        if not plan:
+            # Initialize a basic containment plan with empty phases
+            default_plan = {
+                "investigation_id": investigation_id,
+                "phases": [
+                    {"name": "Phase 1: IMMEDIATE (Execute now)", "description": "Immediate actions to isolate threats.", "actions": []},
+                    {"name": "Phase 2: SHORT TERM (Within 24 hours)", "description": "Short-term mitigations.", "actions": []},
+                    {"name": "Phase 3: REMEDIATION (Within 72 hours)", "description": "Long-term recovery actions.", "actions": []}
+                ],
+                "chat_history": []
+            }
+            client = get_supabase_client()
+            response = client.table("investigations").select("report_json").eq("investigation_id", investigation_id).single().execute()
+            existing = response.data or {}
+            report_json = existing.get("report_json") or {}
+            report_json["containment_plan"] = default_plan
+            client.table("investigations").update({"report_json": report_json}).eq("investigation_id", investigation_id).execute()
+            plan = default_plan
+
+        history = plan.get("chat_history") or []
+        if not history:
+            init_msg = get_initial_chat_message()
+            plan["chat_history"] = [init_msg]
+            
+            client = get_supabase_client()
+            response = client.table("investigations").select("report_json").eq("investigation_id", investigation_id).single().execute()
+            existing = response.data or {}
+            report_json = existing.get("report_json") or {}
+            report_json["containment_plan"] = plan
+            client.table("investigations").update({"report_json": report_json}).eq("investigation_id", investigation_id).execute()
+            
+            history = [init_msg]
+        return history
+    except Exception as e:
+        logger.error("[CHAT_INIT] Error initializing containment chat: %s", str(e))
+        return [get_initial_chat_message()]
+
+
+@router.post("/investigations/{investigation_id}/containment-plan/chat", summary="Interact with containment refinement chat assistant")
+async def post_containment_chat(investigation_id: str, body: ContainmentChatRequest):
+    """
+    Conversational containment refinement assistant using structured SSE streaming.
+    """
+    from fastapi.responses import StreamingResponse
+    from app.services.containment_chat import handle_containment_chat_stream
+    
+    if not body or not body.message:
+        raise HTTPException(status_code=400, detail="Missing message parameter")
+    
+    return StreamingResponse(
+        handle_containment_chat_stream(investigation_id, body.message),
+        media_type="text/event-stream"
+    )
+
+
 @router.get("/slo/status")
 async def get_slo_status() -> dict:
     """

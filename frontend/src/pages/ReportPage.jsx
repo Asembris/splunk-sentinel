@@ -1,10 +1,11 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useInvestigation } from '../store/InvestigationContext'
 import { 
   Download, ArrowLeft, FileJson, Printer, 
   Share2, Loader2, AlertCircle, FileText,
-  Zap, Shield, Play, RotateCcw, CheckCircle2, Circle, Clock
+  Zap, Shield, Play, RotateCcw, CheckCircle2, Circle, Clock,
+  Send, Sparkles
 } from 'lucide-react'
 import ExecutiveSummary from '../components/report/ExecutiveSummary'
 import FindingsGrid from '../components/report/FindingsGrid'
@@ -19,10 +20,64 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
   const [progress, setProgress] = useState({}) // { actionId: 'pending' | 'running' | 'success' | 'error' }
   const [localPlan, setLocalPlan] = useState(plan)
 
+  // Chat states
+  const [chatMessages, setChatMessages] = useState([])
+  const [inputValue, setInputValue] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
+  const messagesEndRef = useRef(null)
+
   // Sync local plan with props if props change
   useEffect(() => {
     setLocalPlan(plan)
   }, [plan])
+
+  // Scroll to bottom of chat
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [chatMessages])
+
+  // Fetch initial message and chat history on mount
+  useEffect(() => {
+    const fetchChatInit = async () => {
+      try {
+        const res = await fetch(`/api/investigations/${investigationId}/containment-plan/chat/init`)
+        if (res.ok) {
+          const history = await res.json()
+          setChatMessages(history)
+        }
+      } catch (err) {
+        console.error('Failed to initialize containment chat:', err)
+      }
+    }
+    if (investigationId) {
+      fetchChatInit()
+    }
+  }, [investigationId])
+
+  const getValidationWarning = (text) => {
+    const val = text.toLowerCase().trim()
+    if (!val) return null
+    
+    if (val.includes('127.0.0.1') || val.includes('192.168.1.')) {
+      return "Protected IP Subnet warning: 192.168.1.0/24 and localhost are excluded by policy."
+    }
+    
+    const hosts = ['active-directory-controller', 'domain-controller', 'ad-server', 'auth-server', 'identity-server']
+    if (hosts.some(h => val.includes(h))) {
+      return "Protected Host warning: critical identity and AD infrastructure cannot be isolated."
+    }
+    
+    const users = ['administrator', 'domain-admin', 'root', 'system', 'sa']
+    if (users.some(u => val.includes(u))) {
+      return "Protected User warning: administrative and system identities cannot be modified."
+    }
+    
+    return null
+  }
+
+  const validationWarning = getValidationWarning(inputValue)
 
   const handleTargetChange = (phaseIdx, actionIdx, newTarget) => {
     const updatedPlan = { ...localPlan }
@@ -86,6 +141,112 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       }
     } catch (err) {
       console.error('Rollback failed:', err)
+    }
+  }
+
+  const handleSendMessage = async (e) => {
+    if (e) e.preventDefault()
+    if (!inputValue.trim() || isStreaming) return
+
+    const userText = inputValue.trim()
+    setInputValue('')
+    
+    // Add user message locally
+    const userMsg = {
+      id: `user-${Date.now()}`,
+      sender: 'user',
+      text: userText,
+      timestamp: new Date().toISOString()
+    }
+    
+    setChatMessages(prev => [...prev, userMsg])
+    setIsStreaming(true)
+    
+    // Placeholder for assistant
+    const assistantMsgId = `assistant-${Date.now()}`
+    setChatMessages(prev => [...prev, {
+      id: assistantMsgId,
+      sender: 'assistant',
+      text: '',
+      timestamp: new Date().toISOString()
+    }])
+
+    try {
+      const response = await fetch(`/api/investigations/${investigationId}/containment-plan/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userText })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let accumText = ''
+      let currentEvent = null
+      let buffer = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          
+          if (trimmed.startsWith('event:')) {
+            currentEvent = trimmed.slice(6).trim()
+          } else if (trimmed.startsWith('data:')) {
+            const dataStr = trimmed.slice(5).trim()
+            
+            if (currentEvent === 'response_token') {
+              try {
+                const payload = JSON.parse(dataStr)
+                accumText += payload.token || ''
+                setChatMessages(prev => prev.map(msg => 
+                  msg.id === assistantMsgId ? { ...msg, text: accumText } : msg
+                ))
+              } catch (err) {}
+            } else if (currentEvent === 'response_complete') {
+              try {
+                const payload = JSON.parse(dataStr)
+                setChatMessages(prev => prev.map(msg => 
+                  msg.id === assistantMsgId ? { 
+                    ...msg, 
+                    text: payload.reply || accumText,
+                    added_action: payload.added_action,
+                    deleted_action_id: payload.deleted_action_id
+                  } : msg
+                ))
+              } catch (err) {}
+            } else if (currentEvent === 'plan_updated') {
+              try {
+                const payload = JSON.parse(dataStr)
+                if (payload.plan) {
+                  setLocalPlan(payload.plan)
+                  onUpdate(payload.plan)
+                }
+              } catch (err) {}
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Chat error:', err)
+      setChatMessages(prev => prev.map(msg => 
+        msg.id === assistantMsgId ? { 
+          ...msg, 
+          text: `Error connecting to Sentinel Copilot: ${err.message || 'Unknown error'}` 
+        } : msg
+      ))
+    } finally {
+      setIsStreaming(false)
     }
   }
 
@@ -159,10 +320,10 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 border-b border-sentinel-border pb-4">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-sentinel-accent" />
-          <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Containment Plan</h3>
+          <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Containment Plan & Copilot</h3>
           <span className="text-[10px] text-sentinel-muted bg-sentinel-bg px-2 py-0.5 rounded border border-sentinel-border uppercase">
             3-Phase Remediation
           </span>
@@ -175,96 +336,200 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
         </button>
       </div>
 
-      <div className="space-y-6">
-        {localPlan.phases.map((phase, pIdx) => (
-          <div key={pIdx} className="relative">
-            {pIdx < localPlan.phases.length - 1 && (
-              <div className="absolute left-4 top-10 bottom-0 w-px bg-sentinel-border" />
-            )}
-            
-            <div className="flex items-start gap-4">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 z-10 
-                ${phase.status === 'EXECUTED' ? 'bg-green-500/20 border-green-500 text-green-400' : 
-                  phase.status === 'EXECUTING' ? 'bg-blue-500/20 border-blue-500 text-blue-400 animate-pulse' : 
-                  'bg-sentinel-bg border-sentinel-border text-sentinel-muted'}`}>
-                {phase.status === 'EXECUTED' ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs font-bold">{pIdx + 1}</span>}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h4 className="text-sm font-bold text-white">{phase.name}</h4>
-                    <p className="text-xs text-sentinel-muted">{phase.description}</p>
-                  </div>
-                  {phase.status === 'PENDING' && (
-                    <button 
-                      onClick={() => handleConfirmExecute(pIdx)}
-                      disabled={executingPhase !== null}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-sentinel-accent hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-30"
-                    >
-                      <Play className="w-3 h-3 fill-current" /> EXECUTE PHASE
-                    </button>
-                  )}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left column - Timeline */}
+        <div className="lg:col-span-2 space-y-6">
+          {localPlan.phases.map((phase, pIdx) => (
+            <div key={pIdx} className="relative">
+              {pIdx < localPlan.phases.length - 1 && (
+                <div className="absolute left-4 top-10 bottom-0 w-px bg-sentinel-border" />
+              )}
+              
+              <div className="flex items-start gap-4">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 z-10 
+                  ${phase.status === 'EXECUTED' ? 'bg-green-500/20 border-green-500 text-green-400' : 
+                    phase.status === 'EXECUTING' ? 'bg-blue-500/20 border-blue-500 text-blue-400 animate-pulse' : 
+                    'bg-sentinel-bg border-sentinel-border text-sentinel-muted'}`}>
+                  {phase.status === 'EXECUTED' ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs font-bold">{pIdx + 1}</span>}
                 </div>
 
-                <div className="space-y-2 mt-3">
-                  {phase.actions.map((action, aIdx) => (
-                    <div key={action.id} className="bg-sentinel-bg border border-sentinel-border rounded-lg p-3 group">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          {action.status === 'EXECUTED' ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : 
-                           action.status === 'EXECUTING' || progress[action.id] === 'running' ? <Loader2 className="w-3 h-3 text-blue-400 animate-spin" /> :
-                           <Circle className="w-3 h-3 text-sentinel-muted" />}
-                          <span className="text-xs font-semibold text-white">{action.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {action.status === 'EXECUTED' && action.reversal_spl && (
-                            <button 
-                              onClick={() => handleRollback(action.id)}
-                              className="text-[9px] text-red-400/60 hover:text-red-400 flex items-center gap-1 transition-colors"
-                            >
-                              <RotateCcw className="w-2.5 h-2.5" /> ROLLBACK
-                            </button>
-                          )}
-                          <span className={`text-[9px] font-bold uppercase tracking-tighter px-1.5 py-0.5 rounded
-                            ${action.status === 'EXECUTED' ? 'bg-green-500/10 text-green-400' : 
-                              action.status === 'FAILED' ? 'bg-red-500/10 text-red-400' :
-                              action.status === 'ROLLED_BACK' ? 'bg-amber-500/10 text-amber-400' :
-                              'bg-sentinel-surface text-sentinel-muted'}`}>
-                            {action.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <label className="text-[9px] text-sentinel-muted uppercase block mb-1">Target Entity</label>
-                          <input 
-                            type="text" 
-                            value={action.target}
-                            onChange={(e) => handleTargetChange(pIdx, aIdx, e.target.value)}
-                            disabled={action.status !== 'PENDING'}
-                            className="w-full bg-sentinel-surface border border-sentinel-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-sentinel-accent transition-colors disabled:opacity-50"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <label className="text-[9px] text-sentinel-muted uppercase block mb-1">Remediation Action</label>
-                          <div className="text-xs text-white truncate font-mono opacity-80">{action.type}</div>
-                        </div>
-                      </div>
-                      
-                      {action.error && (
-                        <div className="mt-2 text-[10px] text-red-400 bg-red-400/5 p-1.5 rounded border border-red-400/20">
-                          {action.error}
-                        </div>
-                      )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">{phase.name}</h4>
+                      <p className="text-xs text-sentinel-muted">{phase.description}</p>
                     </div>
-                  ))}
+                    {phase.status === 'PENDING' && (
+                      <button 
+                        onClick={() => handleConfirmExecute(pIdx)}
+                        disabled={executingPhase !== null}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-sentinel-accent hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-30"
+                      >
+                        <Play className="w-3 h-3 fill-current" /> EXECUTE PHASE
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 mt-3">
+                    {phase.actions.map((action, aIdx) => (
+                      <div key={action.id} className="bg-sentinel-bg border border-sentinel-border rounded-lg p-3 group">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {action.status === 'EXECUTED' ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : 
+                             action.status === 'EXECUTING' || progress[action.id] === 'running' ? <Loader2 className="w-3 h-3 text-blue-400 animate-spin" /> :
+                             <Circle className="w-3 h-3 text-sentinel-muted" />}
+                            <span className="text-xs font-semibold text-white">{action.title}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {action.status === 'EXECUTED' && action.reversal_spl && (
+                              <button 
+                                onClick={() => handleRollback(action.id)}
+                                className="text-[9px] text-red-400/60 hover:text-red-400 flex items-center gap-1 transition-colors"
+                              >
+                                <RotateCcw className="w-2.5 h-2.5" /> ROLLBACK
+                              </button>
+                            )}
+                            <span className={`text-[9px] font-bold uppercase tracking-tighter px-1.5 py-0.5 rounded
+                              ${action.status === 'EXECUTED' ? 'bg-green-500/10 text-green-400' : 
+                                action.status === 'FAILED' ? 'bg-red-500/10 text-red-400' :
+                                action.status === 'ROLLED_BACK' ? 'bg-amber-500/10 text-amber-400' :
+                                'bg-sentinel-surface text-sentinel-muted'}`}>
+                              {action.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <label className="text-[9px] text-sentinel-muted uppercase block mb-1">Target Entity</label>
+                            <input 
+                              type="text" 
+                              value={action.target}
+                              onChange={(e) => handleTargetChange(pIdx, aIdx, e.target.value)}
+                              disabled={action.status !== 'PENDING'}
+                              className="w-full bg-sentinel-surface border border-sentinel-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-sentinel-accent transition-colors disabled:opacity-50"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[9px] text-sentinel-muted uppercase block mb-1">Remediation Action</label>
+                            <div className="text-xs text-white truncate font-mono opacity-80">{action.type}</div>
+                          </div>
+                        </div>
+                        
+                        {action.error && (
+                          <div className="mt-2 text-[10px] text-red-400 bg-red-400/5 p-1.5 rounded border border-red-400/20">
+                            {action.error}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
+          ))}
+        </div>
+
+        {/* Right column - Copilot Chat */}
+        <div className="lg:col-span-1 border-t lg:border-t-0 lg:border-l border-sentinel-border/50 pt-6 lg:pt-0 lg:pl-6 flex flex-col h-[550px]">
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-sentinel-border/30">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-sentinel-accent animate-pulse" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">Refinement Copilot</span>
+            </div>
+            {isStreaming && (
+              <span className="flex items-center gap-1 text-[9px] text-sentinel-accent uppercase font-bold tracking-tight">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Streaming
+              </span>
+            )}
           </div>
-        ))}
+
+          <div className="flex-1 overflow-y-auto mb-4 space-y-3 pr-2 custom-scrollbar flex flex-col">
+            {chatMessages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center text-sentinel-muted">
+                <Loader2 className="w-5 h-5 text-sentinel-accent animate-spin mb-2" />
+                <p className="text-xs">Initializing refinement chat...</p>
+              </div>
+            ) : (
+              chatMessages.map((msg, i) => (
+                <div 
+                  key={msg.id || i}
+                  className={`flex flex-col max-w-[85%] ${msg.sender === 'user' ? 'self-end items-end' : 'self-start items-start'}`}
+                >
+                  <div 
+                    className={`rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
+                      msg.sender === 'user'
+                        ? 'bg-sentinel-accent text-white rounded-tr-none'
+                        : 'bg-sentinel-bg/60 border border-sentinel-border text-gray-200 rounded-tl-none'
+                    }`}
+                  >
+                    {msg.text}
+                    
+                    {msg.added_action && (
+                      <div className="mt-2.5 bg-green-500/10 border border-green-500/20 rounded-lg p-2 text-[10px] text-green-400">
+                        <div className="font-bold uppercase tracking-wider mb-1">
+                          ✓ Proposed Action Added:
+                        </div>
+                        <div className="flex justify-between mb-0.5">
+                          <span className="text-white/60">Type:</span>
+                          <span className="font-mono">{msg.added_action.type}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Target:</span>
+                          <span className="font-mono text-white">{msg.added_action.target}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {msg.deleted_action_id && (
+                      <div className="mt-2.5 bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400">
+                        <div className="font-bold uppercase tracking-wider mb-1">
+                          ✗ Proposed Action Removed:
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-white/60">Action ID:</span>
+                          <span className="font-mono text-white">#{msg.deleted_action_id.slice(0, 8)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[9px] text-sentinel-muted mt-1 px-1">
+                    {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                  </span>
+                </div>
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form onSubmit={handleSendMessage} className="mt-auto">
+            {validationWarning && (
+              <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg p-2 mb-2 text-[9px] leading-normal flex items-start gap-1.5 animate-pulse">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{validationWarning}</span>
+              </div>
+            )}
+            
+            <div className="relative">
+              <input 
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                disabled={isStreaming}
+                placeholder={isStreaming ? "AI Copilot is streaming response..." : "Ask Copilot to add/delete/modify actions..."}
+                className="w-full bg-sentinel-bg border border-sentinel-border rounded-xl pl-3 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-sentinel-accent transition-colors disabled:opacity-50"
+              />
+              <button 
+                type="submit"
+                disabled={isStreaming || !inputValue.trim()}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-sentinel-accent hover:bg-blue-500 text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-sentinel-accent flex items-center justify-center"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )

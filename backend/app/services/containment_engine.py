@@ -166,42 +166,62 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
         yield {"data": json.dumps({'event': 'error', 'message': 'Invalid phase index'})}
         return
 
-    phase = plan.phases[phase_idx]
-    phase.status = ContainmentStatus.EXECUTING
-    
-    yield {"data": json.dumps({'event': 'phase_started', 'phase': phase.name})}
+    # Acquire lock
+    plan_dict["plan_locked"] = True
+    plan_dict["lock_acquired_at"] = datetime.now(timezone.utc).isoformat()
+    await patch_containment_plan(investigation_id, plan_dict)
 
-    for i, action in enumerate(phase.actions):
-        if action.status == ContainmentStatus.SKIPPED:
-            yield {"data": json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}
-            continue
-
-        yield {"data": json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}
+    try:
+        phase = plan.phases[phase_idx]
+        phase.status = ContainmentStatus.EXECUTING
         
-        # Artificial delay for UI "vibe"
-        await asyncio.sleep(0.5)
+        yield {"data": json.dumps({'event': 'phase_started', 'phase': phase.name})}
+
+        for i, action in enumerate(phase.actions):
+            if action.status == ContainmentStatus.SKIPPED:
+                yield {"data": json.dumps({'event': 'action_skipped', 'action_id': action.id, 'title': action.title})}
+                continue
+
+            yield {"data": json.dumps({'event': 'action_started', 'action_id': action.id, 'title': action.title})}
+            
+            # Artificial delay for UI "vibe"
+            await asyncio.sleep(0.5)
+            
+            updated_action = await execute_action(action)
+            phase.actions[i] = updated_action
+            
+            event_type = 'action_complete' if updated_action.status == ContainmentStatus.EXECUTED else 'action_failed'
+            yield {"data": json.dumps({'event': event_type, 'action_id': action.id, 'status': updated_action.status, 'error': updated_action.error})}
+
+        # Update phase and plan status
+        if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
+            phase.status = ContainmentStatus.COMPLETE
+        else:
+            phase.status = ContainmentStatus.PARTIAL
         
-        updated_action = await execute_action(action)
-        phase.actions[i] = updated_action
-        
-        event_type = 'action_complete' if updated_action.status == ContainmentStatus.EXECUTED else 'action_failed'
-        yield {"data": json.dumps({'event': event_type, 'action_id': action.id, 'status': updated_action.status, 'error': updated_action.error})}
+        plan.update_status()
+        plan.updated_at = datetime.now(timezone.utc)
 
-    # Update phase and plan status
-    if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
-        phase.status = ContainmentStatus.COMPLETE
-    else:
-        phase.status = ContainmentStatus.PARTIAL
-    
-    plan.update_status()
-    plan.updated_at = datetime.now(timezone.utc)
+        # Persist updated plan — targeted patch, never drops Supabase fields
+        await patch_containment_plan(
+            investigation_id, plan.model_dump(mode="json")
+        )
 
-    # Persist updated plan — targeted patch, never drops Supabase fields
-    await patch_containment_plan(
-        investigation_id, plan.model_dump(mode="json")
-    )
+        yield {"data": json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}
 
-    yield {"data": json.dumps({'event': 'phase_complete', 'status': phase.status, 'plan': plan.model_dump(mode='json')})}
+    finally:
+        # Release lock
+        try:
+            curr_data = await get_investigation_details(investigation_id)
+            if curr_data:
+                curr_report = curr_data.get("report_json", {})
+                curr_plan_dict = curr_report.get("containment_plan") or {}
+                curr_plan_dict["plan_locked"] = False
+                curr_plan_dict["lock_acquired_at"] = None
+                await patch_containment_plan(investigation_id, curr_plan_dict)
+        except Exception as e:
+            logger.error("[LOCK] Failed to auto-release lock inside finally: %s", str(e))
+
 
 
 # ---------------------------------------------------------------------------

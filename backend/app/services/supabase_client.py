@@ -212,3 +212,129 @@ async def get_investigation_details(investigation_id: str) -> Optional[dict]:
             str(e)
         )
         return None
+
+
+def get_containment_plan_sync(investigation_id: str) -> Optional[dict]:
+    """
+    Fetch containment plan synchronously for chat functions.
+    """
+    try:
+        client = get_supabase_client()
+        response = (
+            client.table("investigations")
+            .select("report_json")
+            .eq("investigation_id", investigation_id)
+            .single()
+            .execute()
+        )
+        existing = response.data or {}
+        report_json = existing.get("report_json") or {}
+        return report_json.get("containment_plan")
+    except Exception as e:
+        logger.error("[SUPABASE] get_containment_plan_sync failed | id=%s | error=%s", investigation_id, str(e))
+        return None
+
+
+def get_chat_history(investigation_id: str) -> Optional[dict]:
+    """
+    Retrieve chat_history from inside report_json["containment_plan"]["chat_history"].
+    Returns None if not found.
+    """
+    plan = get_containment_plan_sync(investigation_id)
+    if plan:
+        return plan.get("chat_history")
+    return None
+
+
+def save_chat_history(investigation_id: str, chat_history: dict) -> bool:
+    """
+    Save the chat_history inside report_json["containment_plan"]["chat_history"] synchronously.
+    """
+    try:
+        client = get_supabase_client()
+        response = (
+            client.table("investigations")
+            .select("report_json")
+            .eq("investigation_id", investigation_id)
+            .single()
+            .execute()
+        )
+        existing = response.data or {}
+        report_json = existing.get("report_json") or {}
+        
+        containment_plan = report_json.get("containment_plan") or {}
+        containment_plan["chat_history"] = chat_history
+        report_json["containment_plan"] = containment_plan
+        
+        client.table("investigations").update(
+            {"report_json": report_json}
+        ).eq("investigation_id", investigation_id).execute()
+        
+        logger.info("[SUPABASE] Chat history saved successfully synchronously | id=%s", investigation_id)
+        return True
+    except Exception as e:
+        logger.error("[SUPABASE] save_chat_history failed | id=%s | error=%s", investigation_id, str(e))
+        return False
+
+
+def is_plan_locked(investigation_id: str) -> bool:
+    """
+    Check if a containment plan is currently locked for execution,
+    supporting a 300-second auto-release timeout.
+    """
+    plan = get_containment_plan_sync(investigation_id)
+    if not plan:
+        return False
+    locked = plan.get("plan_locked", False)
+    if not locked:
+        return False
+    
+    # Check 300s timeout auto-release
+    acquired_at_str = plan.get("lock_acquired_at")
+    if acquired_at_str:
+        try:
+            from datetime import datetime, timezone
+            acquired_at = datetime.fromisoformat(acquired_at_str.replace("Z", "+00:00"))
+            delta = (datetime.now(timezone.utc) - acquired_at).total_seconds()
+            if delta > 300:
+                logger.warning("[LOCK] Auto-releasing lock for investigation_id=%s after 300 seconds", investigation_id)
+                release_plan_lock_sync(investigation_id)
+                return False
+        except Exception as e:
+            logger.error("[LOCK] Error checking lock expiry: %s", str(e))
+            pass
+    return True
+
+
+def release_plan_lock_sync(investigation_id: str) -> bool:
+    """
+    Release the containment plan lock synchronously.
+    """
+    try:
+        client = get_supabase_client()
+        response = (
+            client.table("investigations")
+            .select("report_json")
+            .eq("investigation_id", investigation_id)
+            .single()
+            .execute()
+        )
+        existing = response.data or {}
+        report_json = existing.get("report_json") or {}
+        
+        containment_plan = report_json.get("containment_plan") or {}
+        containment_plan["plan_locked"] = False
+        containment_plan["lock_acquired_at"] = None
+        report_json["containment_plan"] = containment_plan
+        
+        client.table("investigations").update(
+            {"report_json": report_json}
+        ).eq("investigation_id", investigation_id).execute()
+        
+        logger.info("[LOCK] Plan lock released successfully | id=%s", investigation_id)
+        return True
+    except Exception as e:
+        logger.error("[LOCK] release_plan_lock_sync failed | id=%s | error=%s", investigation_id, str(e))
+        return False
+
+

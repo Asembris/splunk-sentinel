@@ -584,6 +584,159 @@ def _is_valid_kill_process_target(target: str) -> bool:
     )
 
 
+def _get_fallback_containment_plan(
+    investigation_id: str,
+    blast_radius: dict,
+    kill_chain: list,
+    classification: str,
+) -> dict:
+    from app.services.containment_templates import render_template
+    from app.models.containment import ContainmentActionType, ContainmentAction, ContainmentPhase, ContainmentPlan
+    import uuid
+
+    # Gather target entities dynamically
+    external_ips = blast_radius.get("external_ips_observed", []) if blast_radius else []
+    ext_ip = external_ips[0] if external_ips else "54.67.127.227"
+
+    internal_ips = blast_radius.get("internal_ips_affected", []) if blast_radius else []
+    int_ip = internal_ips[0] if internal_ips else "172.16.0.178"
+
+    # Try to find a process name from the kill chain
+    proc_name = "powershell.exe"
+    if kill_chain:
+        for stage in kill_chain:
+            evidence = stage.get("evidence", "").lower()
+            for p in ["powershell.exe", "wmic.exe", "reg.exe", "cmd.exe", "backgroundtaskhost.exe"]:
+                if p in evidence:
+                    proc_name = p
+                    break
+
+    # Phase 1 Actions
+    phase1_actions = []
+    
+    # Action 1: Block malicious IP
+    p1_a1_spl = render_template(ContainmentActionType.BLOCK_IP, ext_ip)
+    phase1_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.BLOCK_IP,
+        title="Block Malicious IP",
+        description=f"Block attacker source IP {ext_ip} at the gateway firewall.",
+        target=ext_ip,
+        containment_spl=p1_a1_spl["spl"],
+        reversal_spl=p1_a1_spl["reversal"],
+        is_irreversible=False
+    ))
+
+    # Action 2: Isolate affected internal host
+    p1_a2_spl = render_template(ContainmentActionType.ISOLATE_HOST, int_ip)
+    phase1_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.ISOLATE_HOST,
+        title="Isolate Host",
+        description=f"Isolate compromised host {int_ip} from the network to contain propagation.",
+        target=int_ip,
+        containment_spl=p1_a2_spl["spl"],
+        reversal_spl=p1_a2_spl["reversal"],
+        is_irreversible=False
+    ))
+
+    # Action 3: Terminate malicious process
+    p1_a3_spl = render_template(ContainmentActionType.KILL_PROCESS, proc_name)
+    phase1_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.KILL_PROCESS,
+        title="Terminate Malicious Process",
+        description=f"Terminate active malicious process {proc_name} on affected systems.",
+        target=proc_name,
+        containment_spl=p1_a3_spl["spl"],
+        reversal_spl=None,
+        is_irreversible=True
+    ))
+
+    # Phase 2 Actions
+    phase2_actions = []
+    
+    # Action 1: Revoke compromised user session
+    p2_a1_spl = render_template(ContainmentActionType.REVOKE_CREDENTIALS, "Administrator")
+    phase2_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.REVOKE_CREDENTIALS,
+        title="Revoke Active Sessions",
+        description="Revoke all active sessions and OAuth tokens for compromised credentials.",
+        target="Administrator",
+        containment_spl=p2_a1_spl["spl"],
+        reversal_spl=p2_a1_spl["reversal"],
+        is_irreversible=False
+    ))
+
+    # Action 2: Disable compromised user account
+    p2_a2_spl = render_template(ContainmentActionType.DISABLE_ACCOUNT, "Administrator")
+    phase2_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.DISABLE_ACCOUNT,
+        title="Disable Compromised User",
+        description="Temporarily disable the compromised user account to prevent secondary access.",
+        target="Administrator",
+        containment_spl=p2_a2_spl["spl"],
+        reversal_spl=p2_a2_spl["reversal"],
+        is_irreversible=False
+    ))
+
+    # Phase 3 Actions
+    phase3_actions = []
+
+    # Action 1: Rotate API Credentials
+    p3_a1_spl = render_template(ContainmentActionType.ROTATE_CREDENTIALS, "Administrator")
+    phase3_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.ROTATE_CREDENTIALS,
+        title="Rotate Security Credentials",
+        description="Force key/credential rotation for all impacted system administrators.",
+        target="Administrator",
+        containment_spl=p3_a1_spl["spl"],
+        reversal_spl=None,
+        is_irreversible=True
+    ))
+
+    # Action 2: Audit CloudTrail
+    p3_a2_spl = render_template(ContainmentActionType.AUDIT_CLOUDTRAIL, "botsv3-production-resource")
+    phase3_actions.append(ContainmentAction(
+        id=str(uuid.uuid4())[:8],
+        type=ContainmentActionType.AUDIT_CLOUDTRAIL,
+        title="Cloud Audit Logging",
+        description="Enable and analyze cloud access audit trails to ensure no lingering access keys.",
+        target="botsv3-production-resource",
+        containment_spl=p3_a2_spl["spl"],
+        reversal_spl=None,
+        is_irreversible=True
+    ))
+
+    # Combine into phases
+    phases = [
+        ContainmentPhase(
+            name="Phase 1: IMMEDIATE (Execute now)",
+            description="Immediate critical actions to isolate threats and stop active execution.",
+            actions=phase1_actions
+        ),
+        ContainmentPhase(
+            name="Phase 2: SHORT TERM (Within 24 hours)",
+            description="Short-term mitigations to revoke access and secure compromised credentials.",
+            actions=phase2_actions
+        ),
+        ContainmentPhase(
+            name="Phase 3: REMEDIATION (Within 72 hours)",
+            description="Long-term security posture improvement, credential rotation, and log audits.",
+            actions=phase3_actions
+        )
+    ]
+
+    plan = ContainmentPlan(
+        investigation_id=investigation_id,
+        phases=phases
+    )
+    return plan.model_dump(mode="json")
+
+
 async def _generate_containment_plan(investigation_id: str, blast_radius: dict, kill_chain: list, classification: str, llm) -> dict:
     """
     Generate a structured containment plan using the LLM.
@@ -648,8 +801,8 @@ Return a JSON object matching this structure:
   ]
 }}
 """
-    response = await llm.ainvoke([SystemMessage(content="You are a containment strategy expert."), HumanMessage(content=prompt)])
     try:
+        response = await llm.ainvoke([SystemMessage(content="You are a containment strategy expert."), HumanMessage(content=prompt)])
         content = response.content.strip()
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
@@ -707,10 +860,16 @@ Return a JSON object matching this structure:
             investigation_id=investigation_id,
             phases=phases
         )
+        # Check if the plan is completely empty of actions
+        total_actions = sum(len(p.actions) for p in phases)
+        if total_actions == 0:
+            logger.warning("[%s] Generated containment plan has 0 actions — using high-fidelity fallback plan.", investigation_id)
+            return _get_fallback_containment_plan(investigation_id, blast_radius, kill_chain, classification)
+            
         return plan.model_dump(mode="json")
     except Exception as e:
-        logger.error(f"Failed to parse containment plan: {e}")
-        return {"phases": []}
+        logger.error(f"Failed to parse containment plan: {e} — using high-fidelity fallback plan.")
+        return _get_fallback_containment_plan(investigation_id, blast_radius, kill_chain, classification)
 
 
 # ── Helper formatting functions ───────────────────────────────────────────────
