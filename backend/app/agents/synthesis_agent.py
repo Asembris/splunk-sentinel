@@ -742,7 +742,8 @@ def _get_fallback_containment_plan(
 
     plan = ContainmentPlan(
         investigation_id=investigation_id,
-        phases=phases
+        phases=phases,
+        classification=classification
     )
     return plan.model_dump(mode="json")
 
@@ -871,7 +872,8 @@ Return a JSON object matching this structure:
             
         plan = ContainmentPlan(
             investigation_id=investigation_id,
-            phases=phases
+            phases=phases,
+            classification=classification
         )
         # Check if the plan is completely empty of actions
         total_actions = sum(len(p.actions) for p in phases)
