@@ -215,7 +215,9 @@ async def investigate(request: Request, body: InvestigateRequest):
         "threat_intel": {},
         "ttp_mappings": [],
         "confidence_scores": {},
+        "confidence_breakdown": {},
         "final_report": {},
+        "investigation_confidence": 0.0,
         "escalate_to_human": False,
         "report_pdf_path": "",
         "supabase_record_id": "",
@@ -763,6 +765,39 @@ async def get_slo_status() -> dict:
 
 
 @router.get(
+    "/investigations/{investigation_id}/confidence-breakdown",
+    summary="Get explainable confidence breakdown",
+)
+async def get_confidence_breakdown(
+    investigation_id: str,
+) -> dict:
+    """
+    Return the explainable confidence breakdown for an investigation.
+    Reads from report_json in Supabase.
+    """
+    investigation = await get_investigation_details(investigation_id)
+    if not investigation:
+        raise HTTPException(
+            status_code=404,
+            detail="Investigation not found",
+        )
+
+    report_json = investigation.get("report_json", {})
+    breakdown = report_json.get("confidence_breakdown", {})
+
+    if not breakdown:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Confidence breakdown not available "
+                "for this investigation"
+            ),
+        )
+
+    return breakdown
+
+
+@router.get(
     "/investigations/{investigation_id}/detection-gaps"
 )
 async def get_detection_gaps(
@@ -873,4 +908,3 @@ async def deploy_gap_detection(
         )
 
     return result
-

@@ -133,6 +133,9 @@ class AgentState(TypedDict, total=False):
     Populated by ReconstructionAgent.
     """
 
+    confidence_breakdown: dict
+    """Explainable confidence score factors and weighted contributions."""
+
     react_iterations: int
     """Number of ReAct iterations completed by ReconstructionAgent."""
 
@@ -173,6 +176,9 @@ class AgentState(TypedDict, total=False):
     {"executive_summary": "...", "technical_details": {...}, "recommendations": [...]}
     Populated by ReportAgent (future node).
     """
+
+    investigation_confidence: float
+    """Final investigation confidence mirrored from final_report for API clients."""
 
     report_pdf_path: str
     """Path to generated PDF."""

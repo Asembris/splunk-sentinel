@@ -4,6 +4,7 @@ Uses ReportLab to produce structured incident reports.
 """
 import logging
 import os
+import html
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Dict
@@ -370,6 +371,104 @@ def generate_pdf(state: dict) -> str:
     exec_summary = final_report.get("executive_summary", "No executive summary available.")
     story.append(Paragraph(exec_summary, body_style))
     story.append(Spacer(1, 3 * mm))
+
+    confidence_breakdown = final_report.get("confidence_breakdown", {}) or {}
+    confidence_factors = confidence_breakdown.get("factors", [])
+    if confidence_factors:
+        story.append(create_section_header("Confidence Score Breakdown"))
+        story.append(Spacer(1, 2 * mm))
+
+        weakest_name = (
+            confidence_breakdown.get("weakest_factor", {}).get("name")
+        )
+        conf_headers = [
+            Paragraph("Factor", table_header_style),
+            Paragraph("Score", table_header_style),
+            Paragraph("Weight", table_header_style),
+            Paragraph("Contribution", table_header_style),
+            Paragraph("Detail", table_header_style),
+        ]
+        conf_data = [conf_headers]
+        weakest_rows = []
+
+        for idx, factor in enumerate(confidence_factors, 1):
+            raw_score = float(factor.get("raw_score", 0.0) or 0.0)
+            weight = float(factor.get("weight", 0.0) or 0.0)
+            contribution = float(
+                factor.get("contribution", 0.0) or 0.0
+            )
+            factor_name = str(factor.get("name", "Unknown"))
+            if factor_name == weakest_name:
+                weakest_rows.append(idx)
+
+            score_color = (
+                "#10b981" if raw_score >= 0.75
+                else "#f59e0b" if raw_score >= 0.50
+                else "#ef4444"
+            )
+            conf_data.append([
+                Paragraph(
+                    f"<b>{html.escape(factor_name)}</b>",
+                    table_cell_bold_style,
+                ),
+                Paragraph(
+                    f"<font color='{score_color}'><b>"
+                    f"{round(raw_score * 100)}%</b></font>",
+                    table_cell_style,
+                ),
+                Paragraph(f"{round(weight * 100)}%", table_cell_style),
+                Paragraph(
+                    f"{round(contribution * 100)}%",
+                    table_cell_style,
+                ),
+                Paragraph(
+                    html.escape(str(factor.get("detail", ""))),
+                    table_cell_style,
+                ),
+            ])
+
+        conf_table = Table(
+            conf_data,
+            colWidths=[48 * mm, 20 * mm, 20 * mm, 28 * mm, 64 * mm],
+        )
+        conf_style = TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), SURFACE_BG),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ])
+        for row_idx in weakest_rows:
+            conf_style.add(
+                'BACKGROUND',
+                (0, row_idx),
+                (-1, row_idx),
+                colors.HexColor("#fffbeb"),
+            )
+            conf_style.add(
+                'LINELEFT',
+                (0, row_idx),
+                (0, row_idx),
+                3,
+                ACCENT_AMBER,
+            )
+        conf_table.setStyle(conf_style)
+        story.append(conf_table)
+
+        weakest = confidence_breakdown.get("weakest_factor", {})
+        recommendation = weakest.get("recommendation")
+        if recommendation:
+            story.append(Spacer(1, 1.5 * mm))
+            story.append(Paragraph(
+                "<font color='#92400e'><b>Weakest Factor:</b> "
+                f"{html.escape(str(weakest.get('name', 'Unknown')))} - "
+                f"{html.escape(str(recommendation))}</font>",
+                table_cell_style,
+            ))
+        story.append(Spacer(1, 3 * mm))
     
     # Threat Actor Profile Section
     story.append(create_section_header("Threat Actor Profile & Attack Narrative"))

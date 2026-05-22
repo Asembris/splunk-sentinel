@@ -331,6 +331,7 @@ async def synthesis_agent(state: AgentState, config=None) -> AgentState:
     blast_radius = state.get("blast_radius", {})
     attack_narrative = state.get("attack_narrative", "")
     reconstruction_confidence = state.get("reconstruction_confidence", 0.0)
+    confidence_breakdown = state.get("confidence_breakdown", {})
     threat_intel = state.get("threat_intel", {})
     ttp_mappings = state.get("ttp_mappings", [])
 
@@ -498,6 +499,7 @@ data not present in the inputs.
                 "recommended_actions": [],
                 "mitre_techniques_used": [],
                 "investigation_confidence": 0.0,
+                "confidence_breakdown": state.get("confidence_breakdown", {}),
                 "containment_plan": {"phases": []},
             },
         }
@@ -532,6 +534,7 @@ data not present in the inputs.
         "cves_identified": raw.cves_identified,
         "threat_actor_profile": raw.threat_actor_profile,
         "investigation_confidence": raw.investigation_confidence,
+        "confidence_breakdown": confidence_breakdown,
         "patient_zero": patient_zero,
         "blast_radius": blast_radius,
         "attack_window": attack_window,
@@ -560,6 +563,10 @@ data not present in the inputs.
     return {
         **state,
         "final_report": final_report,
+        "investigation_confidence": confidence_breakdown.get(
+            "overall",
+            raw.investigation_confidence,
+        ),
         "containment_plan": containment_plan,
         "counterfactual_reasoning": counterfactual,
         "rag_context": rag_results,

@@ -310,22 +310,197 @@ def compute_reconstruction_confidence(
     has_patient_zero: bool,
     has_blast_radius: bool,
     has_external_ip: bool,
-) -> float:
-    score = 0.0
-    # Evidence breadth: sourcetype diversity (max 0.30)
-    score += min(len(sourcetypes_covered) * 0.075, 0.30)
-    # Kill chain completeness (max 0.35)
-    if total_stages > 0:
-        score += (confirmed_stages / total_stages) * 0.35
-    # Attribution (max 0.20)
-    if has_patient_zero:
-        score += 0.10
-    if has_external_ip:
-        score += 0.10
-    # Blast radius assessed (max 0.15)
-    if has_blast_radius:
-        score += 0.15
-    return round(min(score, 0.95), 3)
+) -> tuple[float, dict]:
+    sourcetypes = sorted(sourcetypes_covered)
+    sourcetype_raw = min(len(sourcetypes) * 0.25, 1.0)
+    kill_chain_raw = (
+        min(max(confirmed_stages / total_stages, 0.0), 1.0)
+        if total_stages > 0
+        else 0.0
+    )
+
+    factor_specs = [
+        {
+            "internal_name": "sourcetype_breadth",
+            "name": "Evidence Variety",
+            "description": "Number of distinct data sources",
+            "raw_score": sourcetype_raw,
+            "weight": 0.30,
+            "detail": (
+                f"{len(sourcetypes)} sourcetypes: {', '.join(sourcetypes)}"
+                if sourcetypes
+                else "No sourcetypes observed"
+            ),
+        },
+        {
+            "internal_name": "kill_chain_completeness",
+            "name": "Kill Chain Completeness",
+            "description": "Confirmed kill chain stages vs total",
+            "raw_score": kill_chain_raw,
+            "weight": 0.35,
+            "detail": (
+                f"{confirmed_stages} of {total_stages} stages confirmed"
+                if total_stages > 0
+                else "No kill chain stages identified"
+            ),
+        },
+        {
+            "internal_name": "patient_zero",
+            "name": "Patient Zero Identification",
+            "description": "Confidence in initial compromise source",
+            "raw_score": 1.0 if has_patient_zero else 0.0,
+            "weight": 0.10,
+            "detail": (
+                "Patient zero identified"
+                if has_patient_zero
+                else "Patient zero not identified"
+            ),
+        },
+        {
+            "internal_name": "external_ip_corroboration",
+            "name": "External Threat Corroboration",
+            "description": "External IP verified by threat intelligence",
+            "raw_score": 1.0 if has_external_ip else 0.0,
+            "weight": 0.10,
+            "detail": (
+                "External IP evidence present"
+                if has_external_ip
+                else "No external IP corroboration"
+            ),
+        },
+        {
+            "internal_name": "blast_radius",
+            "name": "Blast Radius Assessment",
+            "description": "Completeness of impact scope assessment",
+            "raw_score": 1.0 if has_blast_radius else 0.0,
+            "weight": 0.15,
+            "detail": (
+                "Blast radius assessed"
+                if has_blast_radius
+                else "Blast radius not assessed"
+            ),
+        },
+    ]
+
+    uncapped_score = sum(
+        factor["raw_score"] * factor["weight"]
+        for factor in factor_specs
+    )
+    confidence_scalar = round(min(uncapped_score, 0.95), 3)
+    cap_scale = (
+        confidence_scalar / uncapped_score
+        if uncapped_score > 0 and confidence_scalar < uncapped_score
+        else 1.0
+    )
+
+    factors = []
+    for spec in factor_specs:
+        contribution = round(
+            spec["raw_score"] * spec["weight"] * cap_scale,
+            3,
+        )
+        factors.append({
+            "name": spec["name"],
+            "description": spec["description"],
+            "raw_score": round(spec["raw_score"], 3),
+            "weight": spec["weight"],
+            "contribution": contribution,
+            "detail": spec["detail"],
+        })
+
+    contribution_delta = round(
+        confidence_scalar - sum(f["contribution"] for f in factors),
+        3,
+    )
+    if factors and contribution_delta:
+        adjustment_target = max(
+            factors,
+            key=lambda f: f["contribution"],
+        )
+        adjustment_target["contribution"] = round(
+            adjustment_target["contribution"] + contribution_delta,
+            3,
+        )
+
+    recommendation_by_factor = {
+        "Kill Chain Completeness": (
+            "Investigate additional attack stages - kill chain may be incomplete"
+        ),
+        "Evidence Variety": (
+            "Query additional data sources for richer evidence"
+        ),
+        "Patient Zero Identification": (
+            "Run deeper reconstruction to confirm initial compromise source"
+        ),
+        "External Threat Corroboration": (
+            "Perform manual threat intel lookup for unverified external IPs"
+        ),
+        "Blast Radius Assessment": (
+            "Expand blast radius analysis before containment"
+        ),
+    }
+
+    weakest = min(factors, key=lambda f: f["raw_score"])
+    strongest = max(factors, key=lambda f: f["raw_score"])
+    confidence_breakdown = {
+        "overall": confidence_scalar,
+        "factors": factors,
+        "weakest_factor": {
+            "name": weakest["name"],
+            "raw_score": weakest["raw_score"],
+            "recommendation": recommendation_by_factor[weakest["name"]],
+        },
+        "strongest_factor": {
+            "name": strongest["name"],
+            "raw_score": strongest["raw_score"],
+        },
+    }
+
+    return ConfidenceResult(confidence_scalar, confidence_breakdown)
+
+
+class ConfidenceResult(tuple):
+    """
+    Tuple return for new callers, with numeric behavior preserved for
+    legacy deterministic tests and any scalar-only comparisons.
+    """
+
+    def __new__(cls, scalar: float, breakdown: dict):
+        return super().__new__(cls, (scalar, breakdown))
+
+    @property
+    def scalar(self) -> float:
+        return self[0]
+
+    @property
+    def breakdown(self) -> dict:
+        return self[1]
+
+    def __float__(self) -> float:
+        return float(self.scalar)
+
+    def __round__(self, ndigits=None):
+        return round(self.scalar, ndigits) if ndigits is not None else round(self.scalar)
+
+    def __format__(self, format_spec: str) -> str:
+        return format(self.scalar, format_spec)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, tuple):
+            return tuple.__eq__(self, other)
+        return self.scalar == other
+
+    def __lt__(self, other) -> bool:
+        return self.scalar < float(other)
+
+    def __le__(self, other) -> bool:
+        return self.scalar <= float(other)
+
+    def __gt__(self, other) -> bool:
+        return self.scalar > float(other)
+
+    def __ge__(self, other) -> bool:
+        return self.scalar >= float(other)
 
 
 def correct_patient_zero_role(patient_zero: PatientZero) -> PatientZero:
@@ -552,6 +727,7 @@ async def reconstruction_agent(
     executed_queries: set[str] = set()
     consecutive_errors: int = 0
     current_confidence: float = 0.0
+    current_confidence_breakdown: dict = {}
     sourcetypes_seen: set[str] = set()
     iteration: int = 0
     total_injections: int = state.get("prompt_injection_attempts", 0)
@@ -726,7 +902,10 @@ TELEMETRY FROM THIS ITERATION:
 
             # Update confidence using deterministic formula
             confirmed_count = len(accumulated_stage_names)
-            current_confidence = compute_reconstruction_confidence(
+            (
+                current_confidence,
+                current_confidence_breakdown,
+            ) = compute_reconstruction_confidence(
                 confirmed_stages=confirmed_count,
                 total_stages=max(confirmed_count, 1),
                 sourcetypes_covered=sourcetypes_seen,
@@ -879,6 +1058,7 @@ the telemetry above. Do not hallucinate events not in the data.
             "spl_audit_log": list(
                 state.get("spl_audit_log", [])
             ) + splunk.audit_log,
+            "confidence_breakdown": current_confidence_breakdown,
             "prompt_injection_attempts": total_injections,
             "sanitization_log": sanitization_log,
         }
@@ -910,7 +1090,10 @@ the telemetry above. Do not hallucinate events not in the data.
         1 for s in (raw.kill_chain or [])
         if s.confidence == "CONFIRMED"
     )
-    raw.reconstruction_confidence = compute_reconstruction_confidence(
+    (
+        raw.reconstruction_confidence,
+        final_confidence_breakdown,
+    ) = compute_reconstruction_confidence(
         confirmed_stages=confirmed_final,
         total_stages=len(raw.kill_chain or []),
         sourcetypes_covered=sourcetypes_seen,
@@ -1046,6 +1229,7 @@ the telemetry above. Do not hallucinate events not in the data.
         "blast_radius": result.blast_radius.model_dump(),
         "attack_narrative": result.attack_narrative,
         "reconstruction_confidence": result.reconstruction_confidence,
+        "confidence_breakdown": final_confidence_breakdown,
         "react_iterations": iteration,
         "spl_audit_log": updated_audit,
         "prompt_injection_attempts": total_injections,

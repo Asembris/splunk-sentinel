@@ -101,30 +101,52 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
 
   const executePhase = async (phaseIdx) => {
     setExecutingPhase(phaseIdx)
-    const eventSource = new EventSource(`/api/investigations/${investigationId}/containment-plan/execute?phase_idx=${phaseIdx}`)
-    
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      console.debug('[CONTAINMENT SSE]', data)
-
-      if (data.event === 'action_started') {
-        setProgress(prev => ({ ...prev, [data.action_id]: 'running' }))
-      } else if (data.event === 'action_complete') {
-        setProgress(prev => ({ ...prev, [data.action_id]: 'success' }))
-      } else if (data.event === 'action_failed') {
-        setProgress(prev => ({ ...prev, [data.action_id]: 'error' }))
-      } else if (data.event === 'phase_complete') {
-        setExecutingPhase(null)
-        setLocalPlan(data.plan)
-        onUpdate(data.plan)
-        eventSource.close()
+    try {
+      const response = await fetch(
+        `/api/investigations/${investigationId}/containment-plan/execute?phase_idx=${phaseIdx}`,
+        { headers: { Accept: 'text/event-stream' } }
+      )
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`)
       }
-    }
 
-    eventSource.onerror = (err) => {
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+
+        for (const eventText of events) {
+          const dataLine = eventText
+            .split('\n')
+            .find(line => line.trim().startsWith('data:'))
+          if (!dataLine) continue
+
+          const data = JSON.parse(dataLine.slice(dataLine.indexOf(':') + 1).trim())
+          console.debug('[CONTAINMENT SSE]', data)
+
+          if (data.event === 'action_started') {
+            setProgress(prev => ({ ...prev, [data.action_id]: 'running' }))
+          } else if (data.event === 'action_complete') {
+            setProgress(prev => ({ ...prev, [data.action_id]: 'success' }))
+          } else if (data.event === 'action_failed') {
+            setProgress(prev => ({ ...prev, [data.action_id]: 'error' }))
+          } else if (data.event === 'phase_complete') {
+            setLocalPlan(data.plan)
+            onUpdate(data.plan)
+          }
+        }
+      }
+    } catch (err) {
       console.error('SSE Error:', err)
+    } finally {
       setExecutingPhase(null)
-      eventSource.close()
     }
   }
 
@@ -570,6 +592,159 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
           </form>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ConfidenceBreakdownPanel({ investigationId }) {
+  const [breakdown, setBreakdown] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!investigationId) return
+
+    let cancelled = false
+    setLoading(true)
+
+    fetch(`/api/investigations/${investigationId}/confidence-breakdown`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled) return
+        setBreakdown(data)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [investigationId])
+
+  if (loading || !breakdown || !breakdown.factors) return null
+
+  const scoreTone = (score) => {
+    if (score >= 0.75) return 'bg-green-500 text-green-400 border-green-500/30'
+    if (score >= 0.50) return 'bg-amber-500 text-amber-400 border-amber-500/30'
+    return 'bg-red-500 text-red-400 border-red-500/30'
+  }
+
+  const weakestName = breakdown.weakest_factor?.name
+  const strongestName = breakdown.strongest_factor?.name
+
+  return (
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-6">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1.5 h-4 bg-sentinel-accent rounded-full" />
+            <h3 className="text-sm font-semibold text-sentinel-muted uppercase tracking-wider">
+              Confidence Score Breakdown
+            </h3>
+          </div>
+          <p className="text-xs text-sentinel-muted">
+            Deterministic reconstruction confidence, shown by weighted evidence factor.
+          </p>
+        </div>
+
+        <div className="text-left md:text-right">
+          <div className="text-4xl font-bold text-sentinel-accent leading-none">
+            {Math.round((breakdown.overall || 0) * 100)}%
+          </div>
+          <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">
+            overall score
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {breakdown.factors.map((factor) => {
+          const rawScore = factor.raw_score || 0
+          const tone = scoreTone(rawScore)
+          const isWeakest = factor.name === weakestName
+          const isStrongest = factor.name === strongestName
+
+          return (
+            <div
+              key={factor.name}
+              className={`border rounded-lg p-4 bg-sentinel-bg ${
+                isWeakest
+                  ? 'border-amber-500/40'
+                  : isStrongest
+                    ? 'border-green-500/40'
+                    : 'border-sentinel-border'
+              }`}
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold text-white">
+                      {factor.name}
+                    </span>
+                    {isWeakest && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                        Weakest
+                      </span>
+                    )}
+                    {isStrongest && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-green-500/30 bg-green-500/10 text-green-400">
+                        Strongest
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-sentinel-muted leading-relaxed">
+                    {factor.description}
+                  </p>
+                  <p className="text-[11px] text-sentinel-muted/70 mt-1 font-mono">
+                    {factor.detail}
+                  </p>
+                </div>
+
+                <div className="w-full md:w-72">
+                  <div className="flex items-center justify-between text-[10px] uppercase tracking-wider mb-1">
+                    <span className="text-sentinel-muted">Raw score</span>
+                    <span className={`font-mono font-bold ${tone.split(' ')[1]}`}>
+                      {Math.round(rawScore * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
+                    <div
+                      className={`h-full ${tone.split(' ')[0]}`}
+                      style={{ width: `${Math.round(rawScore * 100)}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div className="rounded border border-sentinel-border bg-sentinel-surface px-2 py-1">
+                      <div className="text-[9px] text-sentinel-muted uppercase">Weight</div>
+                      <div className="text-xs font-mono text-white">
+                        {Math.round((factor.weight || 0) * 100)}%
+                      </div>
+                    </div>
+                    <div className="rounded border border-sentinel-border bg-sentinel-surface px-2 py-1">
+                      <div className="text-[9px] text-sentinel-muted uppercase">Contribution</div>
+                      <div className="text-xs font-mono text-white">
+                        {Math.round((factor.contribution || 0) * 100)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {breakdown.weakest_factor?.recommendation && (
+        <div className="mt-4 border border-amber-500/30 bg-amber-500/10 rounded-lg p-4">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1">
+            Recommended Confidence Improvement
+          </div>
+          <p className="text-sm text-white">
+            {breakdown.weakest_factor.name}: {breakdown.weakest_factor.recommendation}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -1566,6 +1741,11 @@ export default function ReportPage() {
     MEDIUM: 'bg-yellow-900/30 text-sentinel-warning border-sentinel-warning',
     LOW: 'bg-green-900/30 text-sentinel-success border-sentinel-success',
   }
+  const reportInvestigationId =
+    report.investigation_id ||
+    activeResult?.investigation_id ||
+    id ||
+    state.investigationId
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 animate-fade-in">
@@ -1720,6 +1900,8 @@ export default function ReportPage() {
       {/* Report sections */}
       <div className="space-y-6">
         <ExecutiveSummary report={report} />
+
+        <ConfidenceBreakdownPanel investigationId={reportInvestigationId} />
         
         <FindingsGrid findings={report.key_findings || []} />
 
@@ -1729,7 +1911,7 @@ export default function ReportPage() {
         </div>
 
         <ContainmentPlanPanel 
-          investigationId={report.investigation_id || id || state.investigationId} 
+          investigationId={reportInvestigationId}
           plan={report.containment_plan}
           onUpdate={(newPlan) => {
             if (state.result) {
@@ -1752,11 +1934,7 @@ export default function ReportPage() {
         />
 
         <DetectionGapPanel
-          investigationId={
-            report?.investigation_id ||
-            activeResult?.investigation_id ||
-            id
-          }
+          investigationId={reportInvestigationId}
         />
         
         <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
