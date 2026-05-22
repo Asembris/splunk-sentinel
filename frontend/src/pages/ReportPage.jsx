@@ -25,16 +25,17 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
   const [inputValue, setInputValue] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef(null)
+  const chatContainerRef = useRef(null)
 
   // Sync local plan with props if props change
   useEffect(() => {
     setLocalPlan(plan)
   }, [plan])
 
-  // Scroll to bottom of chat
+  // Scroll to bottom of chat container only (not the whole page)
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
   }, [chatMessages])
 
@@ -447,7 +448,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto mb-4 space-y-3 pr-2 custom-scrollbar flex flex-col">
+          <div ref={chatContainerRef} className="flex-1 overflow-y-auto mb-4 space-y-3 pr-2 custom-scrollbar flex flex-col">
             {chatMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center text-sentinel-muted">
                 <Loader2 className="w-5 h-5 text-sentinel-accent animate-spin mb-2" />
