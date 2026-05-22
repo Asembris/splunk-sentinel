@@ -36,6 +36,12 @@ from app.services.supabase_client import (
 from app.utils.audit_chain import verify_chain
 from app.models.containment import ContainmentPlan
 from app.services.containment_engine import execute_phase_stream, rollback_action
+from app.services.detection_gap_analyzer import (
+    analyze_detection_gaps,
+    deploy_detection,
+)
+from app.tools.splunk_tools import get_splunk_service
+
 
 logger = logging.getLogger(__name__)
 
@@ -754,3 +760,117 @@ async def get_slo_status() -> dict:
             status_code=500,
             detail=f"SLO status retrieval failed: {str(e)}",
         )
+
+
+@router.get(
+    "/investigations/{investigation_id}/detection-gaps"
+)
+async def get_detection_gaps(
+    investigation_id: str,
+) -> dict:
+    """
+    Analyze detection coverage for an investigation.
+    Lazy evaluation — runs on analyst request only.
+    Returns coverage report with recommended SPL
+    for uncovered techniques.
+    """
+    # Load investigation from Supabase
+    investigation = await get_investigation_details(
+        investigation_id
+    )
+    if not investigation:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Investigation {investigation_id} not found",
+        )
+
+    report_json = investigation.get("report_json", {})
+
+    # Extract data needed for gap analysis
+    ttp_mappings = report_json.get("ttp_mappings", [])
+    kill_chain = report_json.get("kill_chain_stages", [])
+    threat_intel = report_json.get("threat_intel", {})
+    blast_radius = report_json.get("blast_radius", {})
+
+    if not ttp_mappings:
+        # Try alternative key names
+        ttp_mappings = report_json.get("mitre_techniques", [])
+
+    try:
+        splunk_service = get_splunk_service()
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Splunk connection failed: {str(e)}",
+        )
+
+    result = await analyze_detection_gaps(
+        investigation_id=investigation_id,
+        ttp_mappings=ttp_mappings,
+        kill_chain=kill_chain,
+        threat_intel=threat_intel,
+        blast_radius=blast_radius,
+        splunk_service=splunk_service,
+    )
+
+    return result
+
+
+@router.post(
+    "/investigations/{investigation_id}/detection-gaps/deploy"
+)
+async def deploy_gap_detection(
+    investigation_id: str,
+    body: dict,
+) -> dict:
+    """
+    Deploy a recommended detection as a Splunk saved search.
+    Body: {
+        "technique_id": "T1552.005",
+        "spl": "index=botsv3 ...",
+        "name": "Sentinel — T1552.005 Detection"
+    }
+    """
+    technique_id = body.get("technique_id", "")
+    spl = body.get("spl", "")
+    name = body.get(
+        "name",
+        f"Sentinel — {technique_id} Detection",
+    )
+
+    if not technique_id or not spl:
+        raise HTTPException(
+            status_code=400,
+            detail="technique_id and spl are required",
+        )
+
+    if len(spl) > 5000:
+        raise HTTPException(
+            status_code=400,
+            detail="SPL too long (max 5000 chars)",
+        )
+
+    try:
+        splunk_service = get_splunk_service()
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Splunk connection failed: {str(e)}",
+        )
+
+    result = await deploy_detection(
+        technique_id=technique_id,
+        spl=spl,
+        name=name,
+        investigation_id=investigation_id,
+        splunk_service=splunk_service,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=500,
+            detail=result.get("error", "Deploy failed"),
+        )
+
+    return result
+

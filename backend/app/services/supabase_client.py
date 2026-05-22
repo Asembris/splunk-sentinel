@@ -65,6 +65,14 @@ async def persist_investigation(state: dict) -> Optional[str]:
             record["report_json"]["slo_report"] = state["slo_report"]
         if "containment_plan" in state:
             record["report_json"]["containment_plan"] = state["containment_plan"]
+        if "ttp_mappings" in state:
+            record["report_json"]["ttp_mappings"] = state["ttp_mappings"]
+        if "kill_chain" in state:
+            record["report_json"]["kill_chain_stages"] = state["kill_chain"]
+        if "threat_intel" in state:
+            record["report_json"]["threat_intel"] = state["threat_intel"]
+        if "blast_radius" in state:
+            record["report_json"]["blast_radius"] = state["blast_radius"]
 
         response = (
             client.table("investigations")

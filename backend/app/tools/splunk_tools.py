@@ -48,6 +48,13 @@ def get_splunk_client() -> SplunkClient:
     return _splunk_client_instance
 
 
+def get_splunk_service() -> Any:
+    """
+    Get the raw Splunk SDK Service instance.
+    """
+    return get_splunk_client().service
+
+
 class SplunkClient:
     """
     Async wrapper around the synchronous splunklib SDK.

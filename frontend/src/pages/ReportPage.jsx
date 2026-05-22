@@ -990,6 +990,332 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
   )
 }
 
+function DetectionGapPanel({ investigationId }) {
+  const [gaps, setGaps] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [expanded, setExpanded] = useState(true)
+  const [expandedGaps, setExpandedGaps] = useState({})
+  const [copied, setCopied] = useState({})
+  const [deploying, setDeploying] = useState({})
+  const [deployed, setDeployed] = useState({})
+
+  const fetchGaps = async () => {
+    if (!investigationId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/investigations/${investigationId}/detection-gaps`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setGaps(data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCopy = (techId, spl) => {
+    navigator.clipboard.writeText(spl).then(() => {
+      setCopied(prev => ({ ...prev, [techId]: true }))
+      setTimeout(() => setCopied(prev => ({ ...prev, [techId]: false })), 2000)
+    })
+  }
+
+  const handleDeploy = async (gap) => {
+    const techId = gap.technique_id
+    setDeploying(prev => ({ ...prev, [techId]: true }))
+    try {
+      const res = await fetch(
+        `/api/investigations/${investigationId}/detection-gaps/deploy`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            technique_id: techId,
+            spl: gap.recommended_spl,
+            name: gap.recommended_name,
+          }),
+        }
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Deploy failed')
+      setDeployed(prev => ({ ...prev, [techId]: { success: true, message: data.message } }))
+    } catch (err) {
+      setDeployed(prev => ({ ...prev, [techId]: { success: false, error: err.message } }))
+    } finally {
+      setDeploying(prev => ({ ...prev, [techId]: false }))
+    }
+  }
+
+  const toggleGap = (techId) => {
+    setExpandedGaps(prev => ({ ...prev, [techId]: !prev[techId] }))
+  }
+
+  const scoreColor = (score) => {
+    if (score >= 0.75) return 'text-green-400'
+    if (score >= 0.50) return 'text-amber-400'
+    if (score >= 0.25) return 'text-orange-400'
+    return 'text-red-400'
+  }
+
+  const labelBg = (label) => {
+    if (!label) return 'border-sentinel-border text-sentinel-muted'
+    if (label.includes('GOOD')) return 'border-green-500/30 text-green-400 bg-green-500/5'
+    if (label.includes('PARTIAL')) return 'border-amber-500/30 text-amber-400 bg-amber-500/5'
+    if (label.includes('SIGNIFICANT')) return 'border-orange-500/30 text-orange-400 bg-orange-500/5'
+    return 'border-red-500/30 text-red-400 bg-red-500/5'
+  }
+
+  return (
+    <div className="mt-8 border border-sentinel-border rounded-2xl bg-sentinel-surface overflow-hidden">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-6 py-4 cursor-pointer
+                   hover:bg-sentinel-bg/30 transition-colors"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-white uppercase tracking-widest">
+            Detection Gap Analysis
+          </span>
+          {gaps && (
+            <span className={`text-[11px] font-mono font-bold px-2 py-0.5
+                             rounded border ${labelBg(gaps.coverage_label)}`}>
+              {gaps.coverage_label}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {gaps && (
+            <span className={`text-xs font-mono font-bold ${scoreColor(gaps.coverage_score)}`}>
+              {Math.round(gaps.coverage_score * 100)}% COVERED
+            </span>
+          )}
+          {!gaps && !loading && (
+            <button
+              onClick={(e) => { e.stopPropagation(); fetchGaps() }}
+              className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider
+                         bg-sentinel-accent/10 border border-sentinel-accent/30
+                         rounded-lg text-sentinel-accent
+                         hover:bg-sentinel-accent/20 transition-colors"
+            >
+              Analyze Coverage
+            </button>
+          )}
+          {loading && (
+            <span className="text-xs text-sentinel-muted animate-pulse">Analyzing…</span>
+          )}
+          <span className="text-sentinel-muted text-xs">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {/* Body */}
+      {expanded && (
+        <div className="px-6 pb-6 space-y-6 border-t border-sentinel-border">
+
+          {/* Error */}
+          {error && (
+            <div className="mt-4 p-3 rounded-lg border border-red-500/30 bg-red-500/5">
+              <p className="text-xs text-red-400">⚠ {error}</p>
+              <button
+                onClick={fetchGaps}
+                className="mt-2 text-[11px] text-sentinel-accent hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Idle prompt */}
+          {!gaps && !loading && !error && (
+            <div className="mt-4 text-center py-8">
+              <p className="text-sm text-sentinel-muted mb-4">
+                Identify MITRE ATT&amp;CK techniques not covered by existing Splunk saved searches
+                and get recommended detection SPL.
+              </p>
+              <button
+                onClick={fetchGaps}
+                className="px-4 py-2 text-xs font-semibold uppercase tracking-wider
+                           bg-sentinel-accent/10 border border-sentinel-accent/30
+                           rounded-lg text-sentinel-accent
+                           hover:bg-sentinel-accent/20 transition-colors"
+              >
+                Run Detection Gap Analysis
+              </button>
+            </div>
+          )}
+
+          {/* Loading */}
+          {loading && (
+            <div className="mt-4 py-8 flex flex-col items-center gap-3">
+              <div className="w-6 h-6 border-2 border-sentinel-accent border-t-transparent
+                              rounded-full animate-spin" />
+              <p className="text-xs text-sentinel-muted">
+                Checking {gaps?.techniques_analyzed || ''} MITRE techniques against Splunk saved searches…
+              </p>
+            </div>
+          )}
+
+          {/* Results */}
+          {gaps && !loading && (
+            <>
+              {/* Summary row */}
+              <div className="mt-4 grid grid-cols-4 gap-3">
+                {[
+                  { label: 'Techniques Analyzed', value: gaps.techniques_analyzed },
+                  { label: 'Covered', value: gaps.covered, color: 'text-green-400' },
+                  { label: 'Gaps Found', value: gaps.not_covered, color: 'text-red-400' },
+                  { label: 'Saved Searches Checked', value: gaps.saved_searches_checked ?? '—' },
+                ].map(({ label, value, color }) => (
+                  <div key={label}
+                       className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                    <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">{label}</p>
+                    <p className={`text-xl font-bold font-mono ${color || 'text-white'}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Gaps */}
+              {gaps.gaps && gaps.gaps.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3">
+                    Uncovered Techniques — {gaps.gaps.length} Gap{gaps.gaps.length !== 1 ? 's' : ''}
+                  </p>
+                  <div className="space-y-3">
+                    {gaps.gaps.map(gap => (
+                      <div key={gap.technique_id}
+                           className="border border-red-500/20 rounded-xl bg-red-500/5">
+                        {/* Gap header */}
+                        <div
+                          className="flex items-center justify-between px-4 py-3
+                                     cursor-pointer hover:bg-red-500/10 transition-colors rounded-xl"
+                          onClick={() => toggleGap(gap.technique_id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-bold text-red-400 uppercase">GAP</span>
+                            <span className="text-xs font-mono font-bold text-sentinel-accent">
+                              {gap.technique_id}
+                            </span>
+                            <span className="text-xs text-white">{gap.technique_name}</span>
+                            <span className="text-xs text-sentinel-muted">· {gap.tactic}</span>
+                          </div>
+                          <span className="text-sentinel-muted text-xs">
+                            {expandedGaps[gap.technique_id] ? '▲' : '▼'}
+                          </span>
+                        </div>
+
+                        {/* Gap SPL */}
+                        {expandedGaps[gap.technique_id] && gap.recommended_spl && (
+                          <div className="px-4 pb-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] text-sentinel-muted font-mono">
+                                RECOMMENDED SPL ({gap.generation_method})
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleCopy(gap.technique_id, gap.recommended_spl)}
+                                  className="px-2 py-1 text-[10px]
+                                             bg-sentinel-bg border border-sentinel-border
+                                             rounded text-sentinel-muted
+                                             hover:text-white hover:border-sentinel-accent
+                                             transition-colors"
+                                >
+                                  {copied[gap.technique_id] ? 'Copied!' : 'Copy SPL'}
+                                </button>
+                                <button
+                                  onClick={() => handleDeploy(gap)}
+                                  disabled={deploying[gap.technique_id] || deployed[gap.technique_id]?.success}
+                                  className="px-2 py-1 text-[10px]
+                                             bg-amber-500/10 border border-amber-500/30
+                                             rounded text-amber-400
+                                             hover:bg-amber-500/20
+                                             disabled:opacity-50
+                                             transition-colors"
+                                >
+                                  {deploying[gap.technique_id]
+                                    ? 'Deploying…'
+                                    : deployed[gap.technique_id]?.success
+                                      ? 'Deployed ✓'
+                                      : 'Deploy as Saved Search'}
+                                </button>
+                              </div>
+                            </div>
+
+                            <pre className="bg-sentinel-bg border border-sentinel-border
+                                           rounded-lg p-3 text-xs font-mono text-sentinel-accent
+                                           overflow-x-auto whitespace-pre-wrap break-all">
+                              {gap.recommended_spl}
+                            </pre>
+
+                            {deployed[gap.technique_id] && (
+                              <div className="mt-2 text-[11px]">
+                                {deployed[gap.technique_id].success ? (
+                                  <span className="text-green-400">
+                                    ✓ {deployed[gap.technique_id].message || 'Successfully deployed!'}
+                                  </span>
+                                ) : (
+                                  <span className="text-red-400">
+                                    ⚠ Error: {deployed[gap.technique_id].error}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Covered techniques */}
+              {gaps.covered_techniques && gaps.covered_techniques.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-green-400 uppercase tracking-wider mb-3">
+                    Covered Techniques
+                  </p>
+                  <div className="space-y-2">
+                    {gaps.covered_techniques.map(tech => (
+                      <div key={tech.technique_id}
+                           className="border border-green-500/20 rounded-xl p-3
+                                      bg-green-500/5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-green-400">✓ COVERED</span>
+                          <span className="text-xs font-mono text-sentinel-accent">
+                            {tech.technique_id}
+                          </span>
+                          <span className="text-xs text-white">{tech.technique_name}</span>
+                          <span className="text-xs text-sentinel-muted">· {tech.tactic}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-sentinel-muted">Confidence:</span>
+                          <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5
+                                          rounded border
+                                          ${
+                                            tech.match_confidence === 'HIGH'
+                                              ? 'border-green-500/30 text-green-400 bg-green-500/5'
+                                              : tech.match_confidence === 'MEDIUM'
+                                                ? 'border-amber-500/30 text-amber-400 bg-amber-500/5'
+                                                : 'border-sentinel-border text-sentinel-muted bg-sentinel-bg'
+                                          }`}>
+                            {tech.match_confidence}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ReportPage() {
   const { id } = useParams()
   const { state, dispatch } = useInvestigation()
@@ -1422,6 +1748,14 @@ export default function ReportPage() {
         <MitreTable
           techniques={report.mitre_techniques_used || []}
           ttpMappings={activeResult?.ttp_mappings || []}
+        />
+
+        <DetectionGapPanel
+          investigationId={
+            report?.investigation_id ||
+            activeResult?.investigation_id ||
+            id
+          }
         />
         
         <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
