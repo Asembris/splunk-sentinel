@@ -556,6 +556,7 @@ data not present in the inputs.
         "report_confidence": report_confidence,
         "confidence": confidence_summary,
         "confidence_breakdown": confidence_breakdown,
+        "mltk_ttp_validation": state.get("mltk_ttp_validation", {}),
         "patient_zero": patient_zero,
         "blast_radius": blast_radius,
         "attack_window": attack_window,

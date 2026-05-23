@@ -326,6 +326,54 @@ the only defense.
 
 ---
 
+## Finding 7 — MLTK ai Command Latency Incompatible With Inline Pipeline Execution
+
+### Context
+MLTK 5.7.4 with the ai command configured via
+Connection Management (openai_sentinel → gpt-4o-mini)
+was integrated into TTPAgent to validate Qdrant
+technique mappings against real botsv3 evidence.
+
+### Finding
+The MLTK ai command adds 8-25 seconds per invocation
+when called via splunklib service.jobs.oneshot() from
+an external FastAPI process. With 5 techniques to
+validate, cumulative latency (40+ seconds) exceeds
+the TTPAgent time budget within the 120-second
+investigation SLO.
+
+Root cause: the ai command routes through multiple
+layers — Splunk search engine, MLTK ML infrastructure,
+Connection Management, OpenAI API, and back — adding
+significant overhead versus direct OpenAI API calls
+from FastAPI.
+
+### Impact
+MLTK validation is skipped at runtime. TTPAgent falls
+back to Qdrant-only technique mapping gracefully.
+All investigations complete successfully. SLO remains
+green. No data loss.
+
+### Architectural Recommendation
+The correct integration pattern for MLTK ai command
+in a real-time pipeline is asynchronous post-processing:
+run MLTK validation after the investigation completes
+as a background enrichment task, then update the
+stored investigation with MLTK-validated techniques.
+This decouples MLTK latency from the investigation
+SLO budget entirely.
+
+### Current Mitigation
+TTPAgent attempts MLTK validation with per-technique
+timeout of 8 seconds. On timeout, Qdrant mapping is
+preserved unchanged with mltk_validation_run=False
+recorded in state. The infrastructure is fully wired
+and will activate automatically if MLTK latency
+improves or if the async post-processing pattern
+is implemented.
+
+---
+
 *Splunk Sentinel — built for the Splunk Agentic Ops Hackathon 2026.*
 *Full source: github.com/Asembris/splunk-sentinel*
-*6 findings documented. Contributions to the Splunk developer community.*
+*7 findings documented. Contributions to the Splunk developer community.*

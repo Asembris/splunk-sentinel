@@ -258,6 +258,7 @@ async def investigate(request: Request, body: InvestigateRequest):
         "blast_radius": {},
         "threat_intel": {},
         "ttp_mappings": [],
+        "mltk_ttp_validation": {},
         "confidence_scores": {},
         "confidence_breakdown": {},
         "final_report": {},

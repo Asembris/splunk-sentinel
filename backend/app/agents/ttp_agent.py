@@ -12,6 +12,7 @@ Output:
 import asyncio
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from app.models.state import AgentState
@@ -21,6 +22,11 @@ from app.rag.retriever import (
 )
 
 logger = logging.getLogger(__name__)
+
+MLTK_VALIDATION_BUDGET_SECONDS = 12
+MLTK_AVAILABILITY_TIMEOUT_SECONDS = 4
+MLTK_PER_TECHNIQUE_TIMEOUT_SECONDS = 8
+_MLTK_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mltk-ai")
 
 
 def extract_technique_id(mitre_technique_str: str) -> Optional[str]:
@@ -117,6 +123,360 @@ async def enrich_technique(technique_id: str, stage_name: str) -> dict:
         }
 
 
+def _check_mltk_available(splunk_service) -> bool:
+    """
+    Check if the MLTK ai command is available by verifying the app exists.
+    Fast availability probe only; no AI call is made.
+    """
+    try:
+        apps = [a.name for a in splunk_service.apps]
+        mltk_installed = any(
+            "Splunk_ML_Toolkit" in app_name
+            or "mltk" in app_name.lower()
+            for app_name in apps
+        )
+        if not mltk_installed:
+            logger.warning("[MLTK] Splunk_ML_Toolkit app not found")
+            return False
+        return True
+    except Exception as e:
+        logger.warning("[MLTK] Availability check failed: %s", str(e))
+        return False
+
+
+async def _run_mltk_technique_validation(
+    technique_id: str,
+    technique_name: str,
+    evidence_text: str,
+    splunk_service,
+    investigation_id: str,
+) -> dict:
+    """
+    Run a single MLTK ai command validation for one MITRE technique.
+
+    Uses MLTK 5.7.4 syntax:
+    | ai connection="openai_sentinel" prompt="... {field_name} ..."
+    """
+    import json
+
+    # Sanitize fields used inside SPL strings.
+    safe_evidence = re.sub(r'["\\\n\r]', " ", evidence_text)[:400]
+    safe_technique_id = re.sub(r'["\\\n\r]', " ", technique_id)[:40]
+    safe_technique_name = re.sub(r'["\\\n\r]', " ", technique_name)[:120]
+
+    spl = (
+        "| makeresults count=1"
+        f' | eval evidence="{safe_evidence}"'
+        f' | eval qdrant_technique="{safe_technique_id}"'
+        f' | eval qdrant_name="{safe_technique_name}"'
+        ' | ai connection="openai_sentinel"'
+        ' prompt="You are a MITRE ATT&CK expert.'
+        " A security investigation identified this"
+        " technique via semantic search: {qdrant_technique}"
+        " ({qdrant_name})."
+        " Evidence from the investigation: {evidence}."
+        " Validate or correct the technique mapping."
+        " Respond with ONLY valid JSON, no markdown,"
+        " no explanation outside the JSON:"
+        ' {\\"technique_id\\": \\"T1552.005\\",'
+        ' \\"technique_name\\": \\"technique name\\",'
+        ' \\"confidence\\": 0.85,'
+        ' \\"reasoning\\": \\"one sentence\\"}'
+        '"'
+    )
+
+    try:
+        loop = asyncio.get_event_loop()
+        import splunklib.results as splunk_results
+
+        def _execute_mltk_search() -> list[dict]:
+            result = splunk_service.jobs.oneshot(
+                spl,
+                output_mode="json",
+                timeout=25,
+            )
+            reader = splunk_results.JSONResultsReader(result)
+            return [r for r in reader if isinstance(r, dict)]
+
+        rows = await asyncio.wait_for(
+            loop.run_in_executor(
+                _MLTK_EXECUTOR,
+                _execute_mltk_search,
+            ),
+            timeout=MLTK_PER_TECHNIQUE_TIMEOUT_SECONDS,
+        )
+
+        if not rows:
+            return {
+                "success": False,
+                "error": "No results from ai command",
+            }
+
+        ai_response = rows[0].get("ai_result_1", "")
+        if not ai_response:
+            return {
+                "success": False,
+                "error": "ai_result_1 field empty",
+            }
+
+        clean = ai_response.strip()
+        if "```" in clean:
+            parts = clean.split("```")
+            for part in parts:
+                if "{" in part:
+                    clean = part.strip()
+                    if clean.startswith("json"):
+                        clean = clean[4:].strip()
+                    break
+
+        json_match = re.search(r"\{[^{}]+\}", clean, re.DOTALL)
+        if json_match:
+            clean = json_match.group(0)
+
+        parsed = json.loads(clean)
+
+        technique_id_out = str(parsed.get("technique_id", "")).strip()
+        confidence_out = float(parsed.get("confidence", 0.5))
+        reasoning_out = str(parsed.get("reasoning", ""))[:500]
+
+        if not re.match(r"^T\d{4}(\.\d{3})?$", technique_id_out):
+            logger.warning(
+                "[%s] MLTK returned invalid technique_id: %s",
+                investigation_id,
+                technique_id_out,
+            )
+            return {
+                "success": False,
+                "error": f"Invalid technique_id: {technique_id_out}",
+            }
+
+        confidence_out = max(0.0, min(1.0, confidence_out))
+
+        logger.info(
+            "[%s] MLTK returned %s (confidence=%.2f) for %s",
+            investigation_id,
+            technique_id_out,
+            confidence_out,
+            technique_id,
+        )
+
+        return {
+            "success": True,
+            "technique_id": technique_id_out,
+            "confidence": confidence_out,
+            "reasoning": reasoning_out,
+        }
+
+    except json.JSONDecodeError as e:
+        logger.warning(
+            "[%s] MLTK JSON parse failed for %s: %s",
+            investigation_id,
+            technique_id,
+            str(e),
+        )
+        return {
+            "success": False,
+            "error": f"JSON parse failed: {str(e)}",
+        }
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[%s] MLTK validation timed out for %s after %ss",
+            investigation_id,
+            technique_id,
+            MLTK_PER_TECHNIQUE_TIMEOUT_SECONDS,
+        )
+        return {
+            "success": False,
+            "error": (
+                "MLTK validation timed out after "
+                f"{MLTK_PER_TECHNIQUE_TIMEOUT_SECONDS}s"
+            ),
+        }
+    except Exception as e:
+        logger.warning(
+            "[%s] MLTK validation failed for %s: %s",
+            investigation_id,
+            technique_id,
+            str(e),
+        )
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+async def _validate_techniques_with_mltk(
+    kill_chain: list[dict],
+    ttp_mappings: list[dict],
+    splunk_service,
+    investigation_id: str,
+) -> list[dict]:
+    """
+    Validate Qdrant-mapped MITRE techniques using MLTK ai command against
+    real botsv3 evidence.
+
+    Never raises; individual mapping failures preserve the Qdrant result.
+    """
+    if not ttp_mappings or not kill_chain:
+        logger.info(
+            "[%s] MLTK validation skipped - no TTP mappings or kill chain",
+            investigation_id,
+        )
+        return ttp_mappings
+
+    try:
+        mltk_available = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                _MLTK_EXECUTOR,
+                _check_mltk_available,
+                splunk_service,
+            ),
+            timeout=MLTK_AVAILABILITY_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[%s] MLTK availability check timed out after %ss",
+            investigation_id,
+            MLTK_AVAILABILITY_TIMEOUT_SECONDS,
+        )
+        mltk_available = False
+
+    if not mltk_available:
+        logger.warning(
+            "[%s] MLTK ai command not available - skipping validation, "
+            "using Qdrant only",
+            investigation_id,
+        )
+        for mapping in ttp_mappings:
+            mapping["mltk_validation_run"] = False
+            mapping["mltk_unavailable"] = True
+            mapping["confidence_source"] = "qdrant_only_mltk_unavailable"
+        return ttp_mappings
+
+    enriched = []
+
+    for mapping in ttp_mappings:
+        technique_id = mapping.get("technique_id", "")
+        technique_name = mapping.get("technique_name", "")
+        qdrant_confidence = mapping.get("confidence", 0.0)
+
+        stage = next(
+            (
+                s for s in kill_chain
+                if s.get("mitre_technique", "")
+                .startswith(technique_id.split(".")[0])
+                or technique_id in s.get("mitre_technique", "")
+            ),
+            None,
+        )
+
+        if not stage:
+            evidence_text = (
+                f"Technique {technique_id} {technique_name} identified"
+            )
+        else:
+            evidence_parts = []
+
+            tactic = stage.get("tactic", "") or stage.get("mitre_tactic", "")
+            if tactic:
+                evidence_parts.append(f"Tactic: {tactic}")
+
+            stage_evidence = stage.get("evidence", "")
+            if stage_evidence:
+                evidence_parts.append(f"Evidence: {stage_evidence[:300]}")
+
+            assets = stage.get("affected_assets", [])
+            if assets:
+                evidence_parts.append(
+                    f"Assets: {', '.join(str(a) for a in assets[:3])}"
+                )
+
+            timestamp = stage.get("timestamp", "")
+            if timestamp:
+                evidence_parts.append(f"Timestamp: {timestamp}")
+
+            evidence_text = " | ".join(evidence_parts)
+            if not evidence_text:
+                evidence_text = (
+                    f"Kill chain stage: "
+                    f"{stage.get('stage_name', technique_id)}"
+                )
+
+        mltk_result = await _run_mltk_technique_validation(
+            technique_id=technique_id,
+            technique_name=technique_name,
+            evidence_text=evidence_text,
+            splunk_service=splunk_service,
+            investigation_id=investigation_id,
+        )
+
+        enriched_mapping = dict(mapping)
+
+        if mltk_result.get("success"):
+            mltk_technique_id = mltk_result.get("technique_id", "")
+            mltk_confidence = float(mltk_result.get("confidence", 0.0))
+            mltk_reasoning = mltk_result.get("reasoning", "")
+
+            qdrant_parent = technique_id.split(".")[0]
+            mltk_parent = mltk_technique_id.split(".")[0]
+            agrees = (
+                mltk_technique_id == technique_id
+                or mltk_parent == qdrant_parent
+            )
+
+            enriched_mapping.update({
+                "mltk_technique_id": mltk_technique_id,
+                "mltk_confidence": mltk_confidence,
+                "mltk_reasoning": mltk_reasoning,
+                "mltk_agrees": agrees,
+                "mltk_validation_run": True,
+                "mltk_unavailable": False,
+            })
+
+            if agrees:
+                boosted = qdrant_confidence * 0.6 + mltk_confidence * 0.4
+                enriched_mapping["confidence"] = round(min(boosted, 0.95), 3)
+                enriched_mapping["confidence_source"] = (
+                    "qdrant_mltk_agreement"
+                )
+            else:
+                enriched_mapping["confidence"] = round(
+                    qdrant_confidence * 0.75,
+                    3,
+                )
+                enriched_mapping["confidence_source"] = (
+                    "qdrant_mltk_disagreement"
+                )
+                enriched_mapping["mltk_alternative"] = mltk_technique_id
+                logger.warning(
+                    "[%s] MLTK disagreement for %s: Qdrant=%s MLTK=%s",
+                    investigation_id,
+                    technique_id,
+                    technique_id,
+                    mltk_technique_id,
+                )
+
+        else:
+            enriched_mapping["mltk_validation_run"] = False
+            enriched_mapping["mltk_error"] = mltk_result.get(
+                "error",
+                "unknown",
+            )
+            enriched_mapping["confidence_source"] = "qdrant_only_mltk_failed"
+
+        enriched.append(enriched_mapping)
+        logger.info(
+            "[%s] MLTK validated %s | agrees=%s | confidence: %.3f -> %.3f",
+            investigation_id,
+            technique_id,
+            enriched_mapping.get("mltk_agrees", "N/A"),
+            qdrant_confidence,
+            enriched_mapping.get("confidence", qdrant_confidence),
+        )
+
+    return enriched
+
+
 async def ttp_agent(state: AgentState, config=None) -> AgentState:
     """
     TTPAgent: enriches kill chain MITRE mappings via Qdrant RAG.
@@ -135,7 +495,17 @@ async def ttp_agent(state: AgentState, config=None) -> AgentState:
             "[%s] TTPAgent: empty kill chain — skipping",
             investigation_id,
         )
-        return {"ttp_mappings": []}
+        return {
+            "ttp_mappings": [],
+            "mltk_ttp_validation": {
+                "ran": False,
+                "agreements": 0,
+                "disagreements": 0,
+                "failed": 0,
+                "connection": "openai_sentinel",
+                "mltk_version": "5.7.4",
+            },
+        }
 
     # Extract unique technique IDs from kill chain stages
     seen_techniques: set[str] = set()
@@ -163,7 +533,17 @@ async def ttp_agent(state: AgentState, config=None) -> AgentState:
             "[%s] TTPAgent: no extractable technique IDs in kill chain",
             investigation_id,
         )
-        return {"ttp_mappings": []}
+        return {
+            "ttp_mappings": [],
+            "mltk_ttp_validation": {
+                "ran": False,
+                "agreements": 0,
+                "disagreements": 0,
+                "failed": 0,
+                "connection": "openai_sentinel",
+                "mltk_version": "5.7.4",
+            },
+        }
 
     logger.info(
         "[%s] TTPAgent: enriching %d unique techniques via RAG",
@@ -199,13 +579,88 @@ async def ttp_agent(state: AgentState, config=None) -> AgentState:
             else:
                 rag_misses += 1
 
+    try:
+        from app.tools.splunk_tools import get_splunk_service
+
+        splunk_service = get_splunk_service()
+        ttp_mappings = await asyncio.wait_for(
+            _validate_techniques_with_mltk(
+                kill_chain=state.get("kill_chain", []),
+                ttp_mappings=ttp_mappings,
+                splunk_service=splunk_service,
+                investigation_id=investigation_id,
+            ),
+            timeout=MLTK_VALIDATION_BUDGET_SECONDS,
+        )
+        mltk_ran = any(
+            m.get("mltk_validation_run", False)
+            for m in ttp_mappings
+        )
+        logger.info(
+            "[%s] MLTK TTP validation complete | techniques=%d | mltk_ran=%s",
+            investigation_id,
+            len(ttp_mappings),
+            mltk_ran,
+        )
+    except asyncio.TimeoutError:
+        error_message = (
+            "MLTK validation budget exhausted after "
+            f"{MLTK_VALIDATION_BUDGET_SECONDS}s"
+        )
+        for mapping in ttp_mappings:
+            mapping.setdefault("mltk_validation_run", False)
+            mapping.setdefault("mltk_error", error_message)
+            mapping.setdefault("confidence_source", "qdrant_only_mltk_timeout")
+        logger.warning(
+            "[%s] MLTK TTP validation timed out - continuing with "
+            "Qdrant only after %ss",
+            investigation_id,
+            MLTK_VALIDATION_BUDGET_SECONDS,
+        )
+    except Exception as e:
+        for mapping in ttp_mappings:
+            mapping.setdefault("mltk_validation_run", False)
+            mapping.setdefault("mltk_error", str(e))
+            mapping.setdefault("confidence_source", "qdrant_only_mltk_error")
+        logger.warning(
+            "[%s] MLTK TTP validation error - continuing with Qdrant only: %s",
+            investigation_id,
+            str(e),
+        )
+
+    mltk_summary = {
+        "ran": any(
+            m.get("mltk_validation_run", False)
+            for m in ttp_mappings
+        ),
+        "agreements": sum(
+            1 for m in ttp_mappings
+            if m.get("mltk_agrees", False)
+        ),
+        "disagreements": sum(
+            1 for m in ttp_mappings
+            if m.get("mltk_validation_run", False)
+            and not m.get("mltk_agrees", False)
+        ),
+        "failed": sum(
+            1 for m in ttp_mappings
+            if not m.get("mltk_validation_run", False)
+        ),
+        "connection": "openai_sentinel",
+        "mltk_version": "5.7.4",
+    }
+
     logger.info(
         "[%s] TTPAgent complete | techniques=%d | "
-        "rag_hits=%d | rag_misses=%d",
+        "rag_hits=%d | rag_misses=%d | mltk_ran=%s",
         investigation_id,
         len(ttp_mappings),
         rag_hits,
         rag_misses,
+        mltk_summary["ran"],
     )
 
-    return {"ttp_mappings": ttp_mappings}
+    return {
+        "ttp_mappings": ttp_mappings,
+        "mltk_ttp_validation": mltk_summary,
+    }

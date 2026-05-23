@@ -156,6 +156,9 @@ class AgentState(TypedDict, total=False):
     Populated by TTPAgent (future node).
     """
 
+    mltk_ttp_validation: dict
+    """MLTK ai command validation summary for TTPAgent mappings."""
+
     rag_context: dict
     """
     Consolidated RAG retrieval results (MITRE, CVE, Playbooks, BOTSv3).

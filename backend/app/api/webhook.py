@@ -232,6 +232,7 @@ async def run_investigation_from_webhook(
         "react_iterations": 0,
         "threat_intel": {},
         "ttp_mappings": [],
+        "mltk_ttp_validation": {},
         "rag_context": {},
         "final_report": {},
         "confidence_scores": {},

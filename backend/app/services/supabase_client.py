@@ -109,6 +109,10 @@ async def persist_investigation(state: dict) -> Optional[str]:
             record["report_json"]["containment_plan"] = state["containment_plan"]
         if "ttp_mappings" in state:
             record["report_json"]["ttp_mappings"] = state["ttp_mappings"]
+        if "mltk_ttp_validation" in state:
+            record["report_json"]["mltk_ttp_validation"] = state[
+                "mltk_ttp_validation"
+            ]
         if "kill_chain" in state:
             record["report_json"]["kill_chain_stages"] = state["kill_chain"]
         if "threat_intel" in state:
@@ -386,4 +390,3 @@ def release_plan_lock_sync(investigation_id: str) -> bool:
     except Exception as e:
         logger.error("[LOCK] release_plan_lock_sync failed | id=%s | error=%s", investigation_id, str(e))
         return False
-
