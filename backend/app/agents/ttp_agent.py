@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 MLTK_VALIDATION_BUDGET_SECONDS = 12
 MLTK_AVAILABILITY_TIMEOUT_SECONDS = 4
-MLTK_PER_TECHNIQUE_TIMEOUT_SECONDS = 8
+MLTK_PER_TECHNIQUE_TIMEOUT_SECONDS = 60
 _MLTK_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mltk-ai")
 
 
@@ -178,10 +178,10 @@ async def _run_mltk_technique_validation(
         " Validate or correct the technique mapping."
         " Respond with ONLY valid JSON, no markdown,"
         " no explanation outside the JSON:"
-        ' {\\"technique_id\\": \\"T1552.005\\",'
+        ' {{\\"technique_id\\": \\"T1552.005\\",'
         ' \\"technique_name\\": \\"technique name\\",'
         ' \\"confidence\\": 0.85,'
-        ' \\"reasoning\\": \\"one sentence\\"}'
+        ' \\"reasoning\\": \\"one sentence\\"}}'
         '"'
     )
 
@@ -190,10 +190,16 @@ async def _run_mltk_technique_validation(
         import splunklib.results as splunk_results
 
         def _execute_mltk_search() -> list[dict]:
+            logger.info(
+                "[%s] MLTK SPL for %s: %s",
+                investigation_id,
+                technique_id,
+                spl[:500],
+            )
             result = splunk_service.jobs.oneshot(
                 spl,
                 output_mode="json",
-                timeout=25,
+                timeout=60,
             )
             reader = splunk_results.JSONResultsReader(result)
             return [r for r in reader if isinstance(r, dict)]
@@ -495,17 +501,7 @@ async def ttp_agent(state: AgentState, config=None) -> AgentState:
             "[%s] TTPAgent: empty kill chain — skipping",
             investigation_id,
         )
-        return {
-            "ttp_mappings": [],
-            "mltk_ttp_validation": {
-                "ran": False,
-                "agreements": 0,
-                "disagreements": 0,
-                "failed": 0,
-                "connection": "openai_sentinel",
-                "mltk_version": "5.7.4",
-            },
-        }
+        return {"ttp_mappings": []}
 
     # Extract unique technique IDs from kill chain stages
     seen_techniques: set[str] = set()
@@ -533,17 +529,7 @@ async def ttp_agent(state: AgentState, config=None) -> AgentState:
             "[%s] TTPAgent: no extractable technique IDs in kill chain",
             investigation_id,
         )
-        return {
-            "ttp_mappings": [],
-            "mltk_ttp_validation": {
-                "ran": False,
-                "agreements": 0,
-                "disagreements": 0,
-                "failed": 0,
-                "connection": "openai_sentinel",
-                "mltk_version": "5.7.4",
-            },
-        }
+        return {"ttp_mappings": []}
 
     logger.info(
         "[%s] TTPAgent: enriching %d unique techniques via RAG",
@@ -579,88 +565,13 @@ async def ttp_agent(state: AgentState, config=None) -> AgentState:
             else:
                 rag_misses += 1
 
-    try:
-        from app.tools.splunk_tools import get_splunk_service
-
-        splunk_service = get_splunk_service()
-        ttp_mappings = await asyncio.wait_for(
-            _validate_techniques_with_mltk(
-                kill_chain=state.get("kill_chain", []),
-                ttp_mappings=ttp_mappings,
-                splunk_service=splunk_service,
-                investigation_id=investigation_id,
-            ),
-            timeout=MLTK_VALIDATION_BUDGET_SECONDS,
-        )
-        mltk_ran = any(
-            m.get("mltk_validation_run", False)
-            for m in ttp_mappings
-        )
-        logger.info(
-            "[%s] MLTK TTP validation complete | techniques=%d | mltk_ran=%s",
-            investigation_id,
-            len(ttp_mappings),
-            mltk_ran,
-        )
-    except asyncio.TimeoutError:
-        error_message = (
-            "MLTK validation budget exhausted after "
-            f"{MLTK_VALIDATION_BUDGET_SECONDS}s"
-        )
-        for mapping in ttp_mappings:
-            mapping.setdefault("mltk_validation_run", False)
-            mapping.setdefault("mltk_error", error_message)
-            mapping.setdefault("confidence_source", "qdrant_only_mltk_timeout")
-        logger.warning(
-            "[%s] MLTK TTP validation timed out - continuing with "
-            "Qdrant only after %ss",
-            investigation_id,
-            MLTK_VALIDATION_BUDGET_SECONDS,
-        )
-    except Exception as e:
-        for mapping in ttp_mappings:
-            mapping.setdefault("mltk_validation_run", False)
-            mapping.setdefault("mltk_error", str(e))
-            mapping.setdefault("confidence_source", "qdrant_only_mltk_error")
-        logger.warning(
-            "[%s] MLTK TTP validation error - continuing with Qdrant only: %s",
-            investigation_id,
-            str(e),
-        )
-
-    mltk_summary = {
-        "ran": any(
-            m.get("mltk_validation_run", False)
-            for m in ttp_mappings
-        ),
-        "agreements": sum(
-            1 for m in ttp_mappings
-            if m.get("mltk_agrees", False)
-        ),
-        "disagreements": sum(
-            1 for m in ttp_mappings
-            if m.get("mltk_validation_run", False)
-            and not m.get("mltk_agrees", False)
-        ),
-        "failed": sum(
-            1 for m in ttp_mappings
-            if not m.get("mltk_validation_run", False)
-        ),
-        "connection": "openai_sentinel",
-        "mltk_version": "5.7.4",
-    }
-
     logger.info(
         "[%s] TTPAgent complete | techniques=%d | "
-        "rag_hits=%d | rag_misses=%d | mltk_ran=%s",
+        "rag_hits=%d | rag_misses=%d",
         investigation_id,
         len(ttp_mappings),
         rag_hits,
         rag_misses,
-        mltk_summary["ran"],
     )
 
-    return {
-        "ttp_mappings": ttp_mappings,
-        "mltk_ttp_validation": mltk_summary,
-    }
+    return {"ttp_mappings": ttp_mappings}

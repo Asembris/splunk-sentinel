@@ -820,6 +820,38 @@ async def get_slo_status() -> dict:
 
 
 @router.get(
+    "/investigations/{investigation_id}/ttp-enrichment"
+)
+async def get_ttp_enrichment(
+    investigation_id: str,
+) -> dict:
+    """
+    Get MLTK enrichment status and results.
+    Frontend polls this until status=complete.
+    """
+    investigation = await get_investigation_details(investigation_id)
+    if not investigation:
+        raise HTTPException(
+            status_code=404,
+            detail="Investigation not found",
+        )
+
+    report_json = investigation.get("report_json", {})
+    status = report_json.get("mltk_enrichment_status", "pending")
+    summary = report_json.get("mltk_enrichment_summary", {})
+    ttp_mappings = report_json.get("ttp_mappings", [])
+    error = report_json.get("mltk_enrichment_error")
+
+    return {
+        "status": status,
+        "summary": summary,
+        "ttp_mappings": ttp_mappings if status == "complete" else [],
+        "error": error,
+        "investigation_id": investigation_id,
+    }
+
+
+@router.get(
     "/investigations/{investigation_id}/confidence-breakdown",
     summary="Get explainable confidence breakdown",
 )

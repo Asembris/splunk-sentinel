@@ -75,6 +75,7 @@ async def persist_investigation(state: dict) -> Optional[str]:
             state.get("final_report", {}),
             state,
         )
+        final_report.setdefault("mltk_enrichment_status", "pending")
         kill_chain = state.get("kill_chain", [])
         patient_zero = state.get("patient_zero", {})
         blast_radius = state.get("blast_radius", {})

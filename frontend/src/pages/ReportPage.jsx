@@ -749,6 +749,104 @@ function ConfidenceBreakdownPanel({ investigationId }) {
   )
 }
 
+function MltkEnrichmentStatus({
+  investigationId,
+  onEnrichmentComplete,
+}) {
+  const [status, setStatus] = useState('pending')
+  const [summary, setSummary] = useState(null)
+  const intervalRef = useRef(null)
+
+  useEffect(() => {
+    if (!investigationId) return
+
+    const pollOnce = async () => {
+      try {
+        const res = await fetch(
+          `/api/investigations/${investigationId}/ttp-enrichment`
+        )
+        if (!res.ok) return
+
+        const data = await res.json()
+        setStatus(data.status)
+
+        if (data.status === 'complete') {
+          setSummary(data.summary || {})
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+          if (onEnrichmentComplete && data.ttp_mappings?.length) {
+            onEnrichmentComplete(data.ttp_mappings)
+          }
+          return
+        }
+
+        if (data.status === 'pending' || data.status === 'running') {
+          if (!intervalRef.current) {
+            intervalRef.current = setInterval(pollOnce, 3000)
+          }
+          return
+        }
+
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+      } catch {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+      }
+    }
+
+    pollOnce()
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [investigationId, onEnrichmentComplete])
+
+  if (status === 'pending' || status === 'running') {
+    return (
+      <div className="flex items-center gap-2 mt-2">
+        <div
+          className="w-3 h-3 border-2 border-blue-500 border-t-transparent
+                     rounded-full animate-spin"
+        />
+        <span className="text-xs text-sentinel-muted">
+          Validating techniques with Splunk MLTK...
+        </span>
+      </div>
+    )
+  }
+
+  if (status === 'complete' && summary) {
+    const hasDisagreements = (summary.disagreements || 0) > 0
+    return (
+      <div className="flex items-center gap-3 mt-2">
+        <span className="text-xs text-green-400">
+          ✓ MLTK validated {summary.techniques_validated || 0} techniques
+        </span>
+        <span className="text-xs text-sentinel-muted">
+          {summary.agreements || 0} agreements
+        </span>
+        {hasDisagreements && (
+          <span className="text-xs text-amber-400">
+            {summary.disagreements} disagreements
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
 function FeedbackCard({
   feedbackRating,
   setFeedbackRating,
@@ -1511,10 +1609,12 @@ export default function ReportPage() {
   const [auditChain, setAuditChain] = useState(null)
   // null = loading, object = result
   const [auditExpanded, setAuditExpanded] = useState(false)
+  const [enrichedTtpMappings, setEnrichedTtpMappings] = useState(null)
 
   // Use state.result if available, otherwise use historicalData
   const activeResult = state.result || historicalData
   const report = activeResult?.final_report
+  const ttpData = enrichedTtpMappings || activeResult?.ttp_mappings || []
 
   useEffect(() => {
     // If we have an ID in the URL and no live state, fetch from backend
@@ -1754,6 +1854,10 @@ export default function ReportPage() {
   const confidenceLabel =
     report.confidence?.primary_label || 'Evidence Confidence'
 
+  const handleEnrichmentComplete = (enrichedMappings) => {
+    setEnrichedTtpMappings(enrichedMappings)
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 animate-fade-in">
       {/* Report header */}
@@ -1935,9 +2039,14 @@ export default function ReportPage() {
           }}
         />
 
+        <MltkEnrichmentStatus
+          investigationId={reportInvestigationId}
+          onEnrichmentComplete={handleEnrichmentComplete}
+        />
+
         <MitreTable
           techniques={report.mitre_techniques_used || []}
-          ttpMappings={activeResult?.ttp_mappings || []}
+          ttpMappings={ttpData}
         />
 
         <DetectionGapPanel

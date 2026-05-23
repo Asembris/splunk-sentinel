@@ -192,6 +192,20 @@ async def report_agent(state: AgentState, config=None) -> AgentState:
         record_id = await persist_investigation(state_with_updates)
         updates["supabase_record_id"] = record_id or ""
         logger.info("[%s] Supabase record created | record_id=%s", investigation_id, record_id)
+
+        # Fire async MLTK enrichment outside the pipeline/SLO path.
+        import asyncio
+        from app.services.mltk_enrichment import enrich_ttp_with_mltk
+
+        try:
+            asyncio.create_task(enrich_ttp_with_mltk(investigation_id))
+            logger.info("[%s] MLTK enrichment task fired", investigation_id)
+        except Exception as e:
+            logger.warning(
+                "[%s] Failed to fire MLTK task: %s",
+                investigation_id,
+                str(e),
+            )
     except Exception as e:
         logger.error("[%s] Supabase persistence failed | error=%s", investigation_id, str(e))
         updates["supabase_record_id"] = ""

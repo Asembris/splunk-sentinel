@@ -15,6 +15,9 @@ export default function MitreTable({ techniques, ttpMappings }) {
       mitigation: mapping?.mitigations || null,
       confidence: mapping?.confidence || null,
       cves: mapping?.cves || [],
+      mltkValidationRun: mapping?.mltk_validation_run === true,
+      mltkAgrees: mapping?.mltk_agrees,
+      mltkAlternative: mapping?.mltk_alternative || null,
     }
   })
 
@@ -47,7 +50,25 @@ export default function MitreTable({ techniques, ttpMappings }) {
                   </a>
                 </td>
                 <td className="py-3 pr-4">
-                  <div className="font-medium text-white text-sm">{t.name}</div>
+                  <div className="font-medium text-white text-sm flex items-center gap-2 flex-wrap">
+                    <span>{t.name}</span>
+                    {t.mltkValidationRun && (
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded border ${
+                          t.mltkAgrees
+                            ? 'text-green-400 border-green-500/30'
+                            : 'text-amber-400 border-amber-500/30'
+                        }`}
+                      >
+                        {t.mltkAgrees ? 'MLTK ✓' : 'MLTK !'}
+                      </span>
+                    )}
+                  </div>
+                  {t.mltkAgrees === false && t.mltkAlternative && (
+                    <div className="text-xs text-amber-400/70 mt-0.5">
+                      MLTK suggests: {t.mltkAlternative}
+                    </div>
+                  )}
                   {t.cves.length > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
                       {t.cves.slice(0, 2).map(c => (
