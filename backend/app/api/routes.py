@@ -837,10 +837,20 @@ async def get_ttp_enrichment(
         )
 
     report_json = investigation.get("report_json", {})
-    status = report_json.get("mltk_enrichment_status", "pending")
+    status = report_json.get("mltk_enrichment_status")
     summary = report_json.get("mltk_enrichment_summary", {})
     ttp_mappings = report_json.get("ttp_mappings", [])
     error = report_json.get("mltk_enrichment_error")
+
+    # Legacy investigations may not have MLTK enrichment metadata.
+    # Return a terminal status to prevent infinite frontend polling.
+    if not status:
+        has_any_mltk_data = any(
+            mapping.get("mltk_validation_run") is not None
+            for mapping in ttp_mappings
+            if isinstance(mapping, dict)
+        )
+        status = "not_started" if not has_any_mltk_data else "complete"
 
     return {
         "status": status,

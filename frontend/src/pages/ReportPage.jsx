@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useInvestigation } from '../store/InvestigationContext'
 import { 
   Download, ArrowLeft, FileJson, Printer, 
@@ -756,21 +756,44 @@ function MltkEnrichmentStatus({
   const [status, setStatus] = useState('pending')
   const [summary, setSummary] = useState(null)
   const intervalRef = useRef(null)
+  const pollCountRef = useRef(0)
+  const consecutiveErrorCountRef = useRef(0)
+  const hasCompletedRef = useRef(false)
+  const MAX_POLLS = 40
+  const MAX_CONSECUTIVE_ERRORS = 3
 
   useEffect(() => {
     if (!investigationId) return
+    pollCountRef.current = 0
+    consecutiveErrorCountRef.current = 0
+    hasCompletedRef.current = false
 
     const pollOnce = async () => {
+      if (hasCompletedRef.current) return
       try {
+        pollCountRef.current += 1
         const res = await fetch(
           `/api/investigations/${investigationId}/ttp-enrichment`
         )
-        if (!res.ok) return
+        if (!res.ok) {
+          consecutiveErrorCountRef.current += 1
+          if (
+            consecutiveErrorCountRef.current >= MAX_CONSECUTIVE_ERRORS &&
+            intervalRef.current
+          ) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+            setStatus('failed')
+          }
+          return
+        }
 
         const data = await res.json()
+        consecutiveErrorCountRef.current = 0
         setStatus(data.status)
 
         if (data.status === 'complete') {
+          hasCompletedRef.current = true
           setSummary(data.summary || {})
           if (intervalRef.current) {
             clearInterval(intervalRef.current)
@@ -783,6 +806,14 @@ function MltkEnrichmentStatus({
         }
 
         if (data.status === 'pending' || data.status === 'running') {
+          if (pollCountRef.current >= MAX_POLLS) {
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current)
+              intervalRef.current = null
+            }
+            setStatus('timed_out')
+            return
+          }
           if (!intervalRef.current) {
             intervalRef.current = setInterval(pollOnce, 3000)
           }
@@ -794,9 +825,14 @@ function MltkEnrichmentStatus({
           intervalRef.current = null
         }
       } catch {
-        if (intervalRef.current) {
+        consecutiveErrorCountRef.current += 1
+        if (
+          consecutiveErrorCountRef.current >= MAX_CONSECUTIVE_ERRORS &&
+          intervalRef.current
+        ) {
           clearInterval(intervalRef.current)
           intervalRef.current = null
+          setStatus('failed')
         }
       }
     }
@@ -1854,9 +1890,9 @@ export default function ReportPage() {
   const confidenceLabel =
     report.confidence?.primary_label || 'Evidence Confidence'
 
-  const handleEnrichmentComplete = (enrichedMappings) => {
+  const handleEnrichmentComplete = useCallback((enrichedMappings) => {
     setEnrichedTtpMappings(enrichedMappings)
-  }
+  }, [])
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 animate-fade-in">
