@@ -99,15 +99,20 @@ async def enrich_ttp_with_mltk(investigation_id: str) -> None:
         failed = 0
         skipped = len(ttp_mappings) - len(techniques_to_validate)
 
-        for mapping in techniques_to_validate:
-            enriched = await _enrich_single_technique(
-                mapping=mapping,
-                kill_chain=kill_chain,
-                splunk_service=splunk_service,
-                investigation_id=investigation_id,
-            )
-            enriched_mappings.append(enriched)
+        enriched_results = await asyncio.gather(
+            *[
+                _enrich_single_technique(
+                    mapping=mapping,
+                    kill_chain=kill_chain,
+                    splunk_service=splunk_service,
+                    investigation_id=investigation_id,
+                )
+                for mapping in techniques_to_validate
+            ]
+        )
+        enriched_mappings.extend(enriched_results)
 
+        for enriched in enriched_results:
             if enriched.get("mltk_validation_run"):
                 if enriched.get("mltk_agrees"):
                     agreements += 1
