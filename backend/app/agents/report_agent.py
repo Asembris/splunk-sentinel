@@ -20,6 +20,48 @@ from app.services.slo_engine import get_monitor, cleanup_monitor
 logger = logging.getLogger(__name__)
 
 
+def _normalize_confidence_payload(state: AgentState) -> tuple[dict, float]:
+    """
+    Make deterministic reconstruction confidence the canonical headline
+    score while preserving synthesis confidence as report_confidence.
+    """
+    final_report = dict(state.get("final_report", {}) or {})
+    breakdown = (
+        final_report.get("confidence_breakdown")
+        or state.get("confidence_breakdown", {})
+        or {}
+    )
+    primary_confidence = (
+        breakdown.get("overall")
+        or state.get("reconstruction_confidence")
+        or final_report.get("investigation_confidence")
+        or 0.0
+    )
+    report_confidence = (
+        final_report.get("report_confidence")
+        or final_report.get("investigation_confidence")
+        or primary_confidence
+    )
+
+    final_report["investigation_confidence"] = primary_confidence
+    final_report["report_confidence"] = report_confidence
+    final_report["confidence_breakdown"] = breakdown
+    final_report["confidence"] = {
+        "version": "confidence-v1",
+        "primary": primary_confidence,
+        "primary_label": "Evidence Confidence",
+        "reconstruction": {
+            "score": primary_confidence,
+            "breakdown": breakdown,
+        },
+        "report": {
+            "score": report_confidence,
+            "source": "SynthesisAgent",
+        },
+    }
+    return final_report, float(primary_confidence)
+
+
 def _build_splunk_notable_event(state: AgentState) -> dict:
     """
     Build the Splunk notable event payload.
@@ -102,6 +144,14 @@ async def report_agent(state: AgentState, config=None) -> AgentState:
     investigation_id = state.get("investigation_id", "unknown")
     logger.info("[%s] ReportAgent starting", investigation_id)
 
+    normalized_report, primary_confidence = _normalize_confidence_payload(
+        state
+    )
+    state = {
+        **state,
+        "final_report": normalized_report,
+        "investigation_confidence": primary_confidence,
+    }
     updates = {}
 
     # ── STEP 1: Generate SLO Compliance Report ───────────────────────
@@ -180,4 +230,8 @@ async def report_agent(state: AgentState, config=None) -> AgentState:
     if not updates:
         return {"slo_breaches": []}
 
-    return updates
+    return {
+        **updates,
+        "final_report": normalized_report,
+        "investigation_confidence": primary_confidence,
+    }

@@ -50,6 +50,50 @@ router = APIRouter(prefix="/api")
 AUDIT_LOG_PATH = Path("logs") / "spl_audit.log"
 
 
+def _normalize_report_confidence(report: dict, state: dict | None = None) -> dict:
+    """
+    Normalize historical and live report payloads so the headline
+    confidence is the explainable evidence confidence.
+    """
+    state = state or {}
+    normalized = dict(report or {})
+    breakdown = (
+        normalized.get("confidence_breakdown")
+        or state.get("confidence_breakdown", {})
+        or {}
+    )
+    primary = (
+        breakdown.get("overall")
+        or state.get("investigation_confidence")
+        or state.get("reconstruction_confidence")
+        or normalized.get("investigation_confidence")
+        or 0.0
+    )
+    report_confidence = (
+        normalized.get("report_confidence")
+        or normalized.get("investigation_confidence")
+        or primary
+    )
+
+    normalized["investigation_confidence"] = primary
+    normalized["report_confidence"] = report_confidence
+    normalized["confidence_breakdown"] = breakdown
+    normalized["confidence"] = {
+        "version": "confidence-v1",
+        "primary": primary,
+        "primary_label": "Evidence Confidence",
+        "reconstruction": {
+            "score": primary,
+            "breakdown": breakdown,
+        },
+        "report": {
+            "score": report_confidence,
+            "source": "SynthesisAgent",
+        },
+    }
+    return normalized
+
+
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
@@ -272,6 +316,13 @@ async def investigate(request: Request, body: InvestigateRequest):
         final_state.get("blast_radius", {}).get("containment_priority", "N/A"),
         final_state.get("slo_report", {}).get("overall_slo_status", "N/A"),
     )
+    final_state["final_report"] = _normalize_report_confidence(
+        final_state.get("final_report", {}),
+        final_state,
+    )
+    final_state["investigation_confidence"] = final_state[
+        "final_report"
+    ].get("investigation_confidence", 0.0)
     return JSONResponse(content=final_state)
 
 
@@ -418,7 +469,10 @@ async def get_investigation(investigation_id: str):
         "severity": data.get("severity"),
         "trigger": data.get("trigger_text"),
         "kill_chain": [{} for _ in range(data.get("kill_chain_stages", 0))],
-        "final_report": data.get("report_json"),
+        "final_report": _normalize_report_confidence(
+            data.get("report_json", {}),
+            data,
+        ),
         "report_pdf_path": data.get("pdf_path"),
         "splunk_notable_event_id": data.get("splunk_notable_id"),
         "escalate_to_human": data.get("escalate_to_human"),

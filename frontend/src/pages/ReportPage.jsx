@@ -1746,6 +1746,13 @@ export default function ReportPage() {
     activeResult?.investigation_id ||
     id ||
     state.investigationId
+  const primaryConfidence =
+    report.confidence?.primary ??
+    report.confidence_breakdown?.overall ??
+    report.investigation_confidence ??
+    0
+  const confidenceLabel =
+    report.confidence?.primary_label || 'Evidence Confidence'
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 animate-fade-in">
@@ -1785,9 +1792,9 @@ export default function ReportPage() {
         <div className="flex items-center gap-4">
           <div className="text-right mr-4 border-r border-sentinel-border pr-6">
             <div className="text-3xl font-bold text-sentinel-accent leading-none">
-              {Math.round((report.investigation_confidence || 0) * 100)}%
+              {Math.round(primaryConfidence * 100)}%
             </div>
-            <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">confidence</div>
+            <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">{confidenceLabel}</div>
             
             {/* SLO Status Pill */}
             {report.slo_report && (

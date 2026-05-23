@@ -521,6 +521,25 @@ data not present in the inputs.
     )
 
     # ── Build final_report dict ────────────────────────────────────────────
+    primary_confidence = confidence_breakdown.get(
+        "overall",
+        reconstruction_confidence,
+    )
+    report_confidence = raw.investigation_confidence
+    confidence_summary = {
+        "version": "confidence-v1",
+        "primary": primary_confidence,
+        "primary_label": "Evidence Confidence",
+        "reconstruction": {
+            "score": primary_confidence,
+            "breakdown": confidence_breakdown,
+        },
+        "report": {
+            "score": report_confidence,
+            "source": "SynthesisAgent",
+        },
+    }
+
     final_report = {
         "investigation_id": investigation_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -533,7 +552,9 @@ data not present in the inputs.
         "mitre_techniques_used": raw.mitre_techniques_used,
         "cves_identified": raw.cves_identified,
         "threat_actor_profile": raw.threat_actor_profile,
-        "investigation_confidence": raw.investigation_confidence,
+        "investigation_confidence": primary_confidence,
+        "report_confidence": report_confidence,
+        "confidence": confidence_summary,
         "confidence_breakdown": confidence_breakdown,
         "patient_zero": patient_zero,
         "blast_radius": blast_radius,
@@ -563,10 +584,7 @@ data not present in the inputs.
     return {
         **state,
         "final_report": final_report,
-        "investigation_confidence": confidence_breakdown.get(
-            "overall",
-            raw.investigation_confidence,
-        ),
+        "investigation_confidence": primary_confidence,
         "containment_plan": containment_plan,
         "counterfactual_reasoning": counterfactual,
         "rag_context": rag_results,

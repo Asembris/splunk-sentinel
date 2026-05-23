@@ -24,6 +24,45 @@ def get_supabase_client() -> Client:
     return _client
 
 
+def _normalize_report_confidence(report: dict, state: dict) -> dict:
+    normalized = dict(report or {})
+    breakdown = (
+        normalized.get("confidence_breakdown")
+        or state.get("confidence_breakdown", {})
+        or {}
+    )
+    primary = (
+        breakdown.get("overall")
+        or state.get("investigation_confidence")
+        or state.get("reconstruction_confidence")
+        or normalized.get("investigation_confidence")
+        or 0.0
+    )
+    report_confidence = (
+        normalized.get("report_confidence")
+        or normalized.get("investigation_confidence")
+        or primary
+    )
+
+    normalized["investigation_confidence"] = primary
+    normalized["report_confidence"] = report_confidence
+    normalized["confidence_breakdown"] = breakdown
+    normalized["confidence"] = {
+        "version": "confidence-v1",
+        "primary": primary,
+        "primary_label": "Evidence Confidence",
+        "reconstruction": {
+            "score": primary,
+            "breakdown": breakdown,
+        },
+        "report": {
+            "score": report_confidence,
+            "source": "SynthesisAgent",
+        },
+    }
+    return normalized
+
+
 async def persist_investigation(state: dict) -> Optional[str]:
     """
     Persist a completed investigation to Supabase.
@@ -32,7 +71,10 @@ async def persist_investigation(state: dict) -> Optional[str]:
     try:
         client = get_supabase_client()
 
-        final_report = state.get("final_report", {})
+        final_report = _normalize_report_confidence(
+            state.get("final_report", {}),
+            state,
+        )
         kill_chain = state.get("kill_chain", [])
         patient_zero = state.get("patient_zero", {})
         blast_radius = state.get("blast_radius", {})
@@ -344,5 +386,4 @@ def release_plan_lock_sync(investigation_id: str) -> bool:
     except Exception as e:
         logger.error("[LOCK] release_plan_lock_sync failed | id=%s | error=%s", investigation_id, str(e))
         return False
-
 

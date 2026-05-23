@@ -69,6 +69,18 @@ def get_confidence_tier(confidence: float) -> str:
     else:
         return "ESCALATE_TO_HUMAN"
 
+
+def get_primary_confidence(final_report: dict) -> float:
+    confidence = final_report.get("confidence", {}) or {}
+    breakdown = final_report.get("confidence_breakdown", {}) or {}
+    return float(
+        confidence.get("primary")
+        or breakdown.get("overall")
+        or final_report.get("investigation_confidence", 0.0)
+        or 0.0
+    )
+
+
 def get_cve_details(cve_id: str) -> Optional[dict]:
     for cve in EXPANDED_CVES:
         if cve.get("cve_id") == cve_id:
@@ -126,7 +138,7 @@ def create_cover_banner(state: dict) -> Table:
     severity = state.get("severity", "UNKNOWN") or "UNKNOWN"
     classification = state.get("attack_classification", "UNKNOWN") or "UNKNOWN"
     final_report = state.get("final_report", {}) or {}
-    confidence = float(final_report.get("investigation_confidence", 0.0) or 0.0)
+    confidence = get_primary_confidence(final_report)
     confidence_pct = f"{round(confidence * 100)}%"
     confidence_tier = get_confidence_tier(confidence)
     
@@ -154,7 +166,7 @@ def create_cover_banner(state: dict) -> Table:
             "BadgeClass", fontName="Helvetica-Bold", fontSize=9, leading=12, textColor=TEXT_PRIMARY, alignment=TA_RIGHT
         )),
         Spacer(1, 2 * mm),
-        Paragraph(f"CONFIDENCE: <font color='#8b5cf6'><b>{confidence_pct}</b></font> ({confidence_tier})", ParagraphStyle(
+        Paragraph(f"EVIDENCE CONFIDENCE: <font color='#8b5cf6'><b>{confidence_pct}</b></font> ({confidence_tier})", ParagraphStyle(
             "BadgeConf", fontName="Helvetica", fontSize=8, leading=11, textColor=TEXT_SECONDARY, alignment=TA_RIGHT
         ))
     ]
