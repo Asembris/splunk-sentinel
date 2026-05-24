@@ -230,6 +230,11 @@ class AgentState(TypedDict, total=False):
     sanitization_log: list           # detailed sanitization event log
 
     counterfactual_reasoning: dict  # why alternatives were ruled out
+    narrative: dict                 # synthesized narrative section
+    structured_findings: dict       # synthesized structured findings
+    counterfactual: dict            # synthesized counterfactual payload
+    synthesis_degraded: bool        # synthesis fallback indicator
+    degraded_sections: list[str]    # synthesis sections that degraded
 
     containment_plan: dict
     """

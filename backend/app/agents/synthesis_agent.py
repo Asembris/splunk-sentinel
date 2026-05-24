@@ -276,6 +276,165 @@ _LLM_NARRATIVE = _LLM.with_structured_output(NarrativeSection)
 _LLM_STRUCTURED = _LLM.with_structured_output(StructuredSection)
 
 
+async def _safe_call(coro, fallback, label: str):
+    """
+    Run a coroutine safely.
+    Returns fallback value on any exception or None result.
+    Never raises.
+    """
+    try:
+        result = await coro
+        if result is None:
+            logger.error(
+                "[SynthesisAgent] %s returned None - using fallback",
+                label,
+            )
+            return fallback
+        return result
+    except Exception as e:
+        logger.error(
+            "[SynthesisAgent] %s failed: %s - using fallback",
+            label,
+            str(e),
+        )
+        return fallback
+
+
+def _fallback_narrative(state: dict) -> str:
+    """Minimal narrative when LLM call fails."""
+    classification = state.get("attack_classification", "UNKNOWN")
+    inv_id = state.get("investigation_id", "unknown")
+    return (
+        f"Automated investigation {inv_id} identified "
+        f"a {classification} attack pattern. "
+        f"Narrative generation encountered an error - "
+        f"please review the structured findings below "
+        f"for full investigation details."
+    )
+
+
+def _fallback_structured(state: dict) -> dict:
+    """Minimal structured findings when LLM call fails."""
+    return {
+        "executive_summary": _fallback_narrative(state),
+        "attack_vector": "See kill chain stages",
+        "impact_assessment": "See blast radius data",
+        "key_findings": [
+            "Automated reconstruction completed",
+            "See TTP mappings for technique details",
+            "See threat intel for IP analysis",
+        ],
+        "recommendations": [
+            "Review kill chain stages",
+            "Execute containment plan",
+            "Monitor sentinel_findings index",
+        ],
+        "error": "structured_findings_generation_failed",
+    }
+
+
+def _fallback_counterfactual(state: dict) -> dict:
+    """Minimal counterfactual when LLM call fails."""
+    classification = state.get("attack_classification", "UNKNOWN")
+    return {
+        "alternatives_ruled_out": [
+            {
+                "classification": "ALTERNATIVE",
+                "reason": (
+                    "Counterfactual analysis unavailable. "
+                    f"Investigation classified as "
+                    f"{classification} based on "
+                    f"kill chain evidence."
+                ),
+                "missing_indicators": [],
+            }
+        ],
+        "error": "counterfactual_generation_failed",
+    }
+
+
+def _fallback_containment(state: dict):
+    """
+    Return existing containment plan from state if
+    available, otherwise minimal valid plan.
+    """
+    existing = state.get("containment_plan")
+    if existing:
+        return existing
+
+    from app.models.containment import ContainmentPlan, ContainmentPhase
+
+    return ContainmentPlan(
+        investigation_id=state.get("investigation_id", "unknown"),
+        phases=[
+            ContainmentPhase(
+                phase=1,
+                name="Phase 1: IMMEDIATE",
+                label="Phase 1: IMMEDIATE (Execute now)",
+                description=(
+                    "Containment plan generation failed. "
+                    "Review kill chain and apply manual "
+                    "IR procedures."
+                ),
+                timeframe="Immediate",
+                actions=[],
+                status="PENDING",
+            ),
+            ContainmentPhase(
+                phase=2,
+                name="Phase 2: SHORT TERM",
+                label="Phase 2: SHORT TERM (Within 24 hours)",
+                description="Manual review required.",
+                timeframe="Within 24 hours",
+                actions=[],
+                status="PENDING",
+            ),
+            ContainmentPhase(
+                phase=3,
+                name="Phase 3: REMEDIATION",
+                label="Phase 3: REMEDIATION (Within 72 hours)",
+                description="Manual review required.",
+                timeframe="Within 72 hours",
+                actions=[],
+                status="PENDING",
+            ),
+        ],
+        classification=state.get("attack_classification", "UNKNOWN"),
+        confidence=0.0,
+        status="PENDING",
+    ).model_dump(mode="json")
+
+
+async def _generate_narrative(
+    narrative_prompt: str,
+    synthesis_context: str,
+    investigation_id: str,
+):
+    """Generate narrative section with structured output."""
+    return await _LLM_NARRATIVE.with_config({
+        "run_name": "synthesis_narrative_call",
+        "metadata": {"investigation_id": investigation_id},
+    }).ainvoke([
+        SystemMessage(content=narrative_prompt),
+        HumanMessage(content=synthesis_context),
+    ])
+
+
+async def _generate_structured(
+    narrative_prompt: str,
+    synthesis_context: str,
+    investigation_id: str,
+):
+    """Generate structured findings section with structured output."""
+    return await _LLM_STRUCTURED.with_config({
+        "run_name": "synthesis_structured_call",
+        "metadata": {"investigation_id": investigation_id},
+    }).ainvoke([
+        SystemMessage(content=narrative_prompt),
+        HumanMessage(content=synthesis_context),
+    ])
+
+
 # ── Counterfactual reasoning helpers ──────────────────────────────────────────
 
 def _get_alternative_classifications(
@@ -383,7 +542,16 @@ Only respond with valid JSON. No preamble or explanation outside JSON."""
                 text = text[4:]
         text = text.strip()
         
-        parsed = json.loads(text)
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(
+                "[SynthesisAgent] JSON parse failed: %s "
+                "Response preview: %s",
+                str(e),
+                str(response.content)[:200],
+            )
+            return None
         
         return {
             "confirmed_classification": classification,
@@ -538,41 +706,109 @@ data not present in the inputs.
     )
     try:
         (
-            narrative,
-            structured,
-            counterfactual,
-            containment_plan,
+            narrative_result,
+            structured_result,
+            counterfactual_result,
+            containment_result,
         ) = await asyncio.gather(
-            _LLM_NARRATIVE.with_config({
-                "run_name": "synthesis_narrative_call",
-                "metadata": {"investigation_id": investigation_id},
-            }).ainvoke([
-                SystemMessage(content=narrative_prompt),
-                HumanMessage(content=synthesis_context),
-            ]),
-            _LLM_STRUCTURED.with_config({
-                "run_name": "synthesis_structured_call",
-                "metadata": {"investigation_id": investigation_id},
-            }).ainvoke([
-                SystemMessage(content=narrative_prompt),
-                HumanMessage(content=synthesis_context),
-            ]),
-            _generate_counterfactual_reasoning(
-                classification=classification,
-                kill_chain=kill_chain,
-                key_indicators=key_indicators,
-                triage_summary=triage_summary,
-                attack_narrative=attack_narrative,
-                llm=_LLM,
+            _safe_call(
+                _generate_narrative(
+                    narrative_prompt=narrative_prompt,
+                    synthesis_context=synthesis_context,
+                    investigation_id=investigation_id,
+                ),
+                _fallback_narrative(state),
+                "narrative",
             ),
-            _generate_containment_plan(
-                investigation_id=investigation_id,
-                blast_radius=blast_radius,
-                kill_chain=kill_chain,
-                classification=classification,
-                llm=_LLM,
+            _safe_call(
+                _generate_structured(
+                    narrative_prompt=narrative_prompt,
+                    synthesis_context=synthesis_context,
+                    investigation_id=investigation_id,
+                ),
+                _fallback_structured(state),
+                "structured",
+            ),
+            _safe_call(
+                _generate_counterfactual_reasoning(
+                    classification=classification,
+                    kill_chain=kill_chain,
+                    key_indicators=key_indicators,
+                    triage_summary=triage_summary,
+                    attack_narrative=attack_narrative,
+                    llm=_LLM,
+                ),
+                _fallback_counterfactual(state),
+                "counterfactual",
+            ),
+            _safe_call(
+                _generate_containment_plan(
+                    investigation_id=investigation_id,
+                    blast_radius=blast_radius,
+                    kill_chain=kill_chain,
+                    classification=classification,
+                    llm=_LLM,
+                ),
+                _fallback_containment(state),
+                "containment",
             ),
         )
+
+        narrative_used_fallback = isinstance(narrative_result, str)
+        structured_used_fallback = isinstance(structured_result, dict)
+        counterfactual_used_fallback = (
+            isinstance(counterfactual_result, dict)
+            and bool(counterfactual_result.get("error"))
+        )
+
+        if narrative_used_fallback:
+            narrative = NarrativeSection(
+                executive_summary=narrative_result,
+                attack_overview=(
+                    "Attack overview generation failed - "
+                    "review kill chain stages for chronology."
+                ),
+                threat_actor_profile=(
+                    "Threat actor profile generation failed - "
+                    "manual analyst review recommended."
+                ),
+            )
+        else:
+            narrative = narrative_result
+
+        if structured_used_fallback:
+            structured = StructuredSection(
+                key_findings=[
+                    FindingWithConfidence(
+                        finding=finding,
+                        evidence="Fallback structured synthesis output",
+                        confidence=0.5,
+                        source="telemetry",
+                    )
+                    for finding in structured_result.get("key_findings", [])
+                ],
+                recommended_actions=[
+                    RecommendedAction(
+                        priority="IMMEDIATE",
+                        action=action,
+                        rationale=(
+                            "Fallback structured synthesis output "
+                            "after generation failure"
+                        ),
+                        mitre_technique="T0000",
+                    )
+                    for action in structured_result.get("recommendations", [])
+                ],
+                mitre_techniques_used=[],
+                cves_identified=[],
+                investigation_confidence=0.0,
+            )
+        else:
+            structured = structured_result
+
+        counterfactual = counterfactual_result
+        containment_plan = containment_result
+
         logger.info(
             "[%s] All 4 parallel LLM calls complete | "
             "counterfactual_alternatives=%d | containment_phases=%d",
@@ -586,6 +822,9 @@ data not present in the inputs.
             "[%s] SynthesisAgent parallel LLM gather failed: %s",
             investigation_id, exc,
         )
+        narrative_used_fallback = True
+        structured_used_fallback = True
+        counterfactual_used_fallback = True
         return {
             **state,
             "error": f"SynthesisAgent: LLM gather failed — {exc}",
@@ -609,6 +848,14 @@ data not present in the inputs.
                 "containment_plan": {"phases": []},
             },
         }
+
+    degraded_sections = []
+    if narrative_used_fallback:
+        degraded_sections.append("narrative")
+    if structured_used_fallback:
+        degraded_sections.append("structured_findings")
+    if counterfactual_used_fallback:
+        degraded_sections.append("counterfactual")
 
     # ── Field injection — gpt-4o-mini drops fields on sparse input data ────
     raw = FinalReportRaw(
@@ -674,7 +921,16 @@ data not present in the inputs.
         },
         "counterfactual_reasoning": counterfactual,
         "containment_plan": containment_plan,
+        "degraded_sections": degraded_sections,
+        "synthesis_degraded": bool(degraded_sections),
     }
+
+    if degraded_sections:
+        logger.warning(
+            "[%s] SynthesisAgent degraded sections: %s",
+            investigation_id,
+            degraded_sections,
+        )
 
     logger.info(
         "[%s] SynthesisAgent complete | findings=%d | actions=%d | "
@@ -694,6 +950,21 @@ data not present in the inputs.
         "investigation_confidence": primary_confidence,
         "containment_plan": containment_plan,
         "counterfactual_reasoning": counterfactual,
+        "narrative": {
+            "executive_summary": raw.executive_summary,
+            "attack_overview": raw.attack_overview,
+            "threat_actor_profile": raw.threat_actor_profile,
+        },
+        "structured_findings": {
+            "key_findings": [f.model_dump() for f in raw.key_findings],
+            "recommended_actions": [a.model_dump() for a in raw.recommended_actions],
+            "mitre_techniques_used": raw.mitre_techniques_used,
+            "cves_identified": raw.cves_identified,
+            "investigation_confidence": raw.investigation_confidence,
+        },
+        "counterfactual": counterfactual,
+        "synthesis_degraded": bool(degraded_sections),
+        "degraded_sections": degraded_sections,
         "rag_context": rag_results,
         "error": None,
     }
@@ -965,7 +1236,16 @@ Return a JSON object matching this structure:
         elif "```" in content:
             content = content.split("```")[1].split("```")[0]
         
-        raw_plan = json.loads(content)
+        try:
+            raw_plan = json.loads(content)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(
+                "[SynthesisAgent] JSON parse failed: %s "
+                "Response preview: %s",
+                str(e),
+                str(response.content)[:200],
+            )
+            return None
         
         phases = []
         for idx, p_raw in enumerate(raw_plan.get("phases", [])):
@@ -1015,11 +1295,18 @@ Return a JSON object matching this structure:
                 phase=phase_num
             ))
             
-        plan = ContainmentPlan(
-            investigation_id=investigation_id,
-            phases=phases,
-            classification=classification
-        )
+        try:
+            plan = ContainmentPlan(
+                investigation_id=investigation_id,
+                phases=phases,
+                classification=classification
+            )
+        except Exception as e:
+            logger.error(
+                "[SynthesisAgent] Pydantic validation failed: %s",
+                str(e),
+            )
+            return None
         # Check if the plan is completely empty of actions
         total_actions = sum(len(p.actions) for p in phases)
         if total_actions == 0:
@@ -1028,8 +1315,8 @@ Return a JSON object matching this structure:
             
         return plan.model_dump(mode="json")
     except Exception as e:
-        logger.error(f"Failed to parse containment plan: {e} — using high-fidelity fallback plan.")
-        return _get_fallback_containment_plan(investigation_id, blast_radius, kill_chain, classification)
+        logger.error("Failed to parse containment plan: %s", str(e))
+        return None
 
 
 # ── Helper formatting functions ───────────────────────────────────────────────
