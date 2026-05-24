@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from app.models.state import AgentState
 from app.rag.retriever import retrieve_for_synthesis
+from app.utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class FinalReportRaw(BaseModel):
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
-_SYNTHESIS_SYSTEM_PROMPT = """You are a senior threat intelligence \
+_SYNTHESIS_NARRATIVE_FALLBACK = """You are a senior threat intelligence \
 analyst producing the final incident report for a security investigation.
 You have received outputs from multiple specialized AI agents:
 - TriageAgent: attack classification and initial telemetry
@@ -176,6 +177,97 @@ Each action must have:
 Only include actions for entities confirmed as malicious in the kill chain or blast radius.
 """
 
+_SYNTHESIS_COUNTERFACTUAL_FALLBACK = """You are a senior forensic analyst explaining an 
+automated investigation result to a SOC team.
+
+The attack was classified as: {classification}
+Confidence: Based on confirmed kill chain stages and telemetry.
+
+Confirmed kill chain: {kill_chain_summary}
+
+Key indicators present in the telemetry:
+{indicators_text}
+
+Triage summary: {triage_summary}
+
+For each alternative classification below, explain specifically 
+what evidence is ABSENT from the telemetry that would be required 
+to make that classification. Be specific - cite EventCodes, 
+sourcetypes, process names, IP patterns, or behavioral indicators 
+that are missing. Keep each explanation to 2-3 sentences maximum.
+
+Alternative classifications to rule out: {alternatives}
+
+Respond in this exact JSON format:
+{{
+  "alternatives_ruled_out": [
+    {{
+      "classification": "CLASSIFICATION_NAME",
+      "reason": "2-3 sentence explanation of what is absent",
+      "missing_indicators": ["specific indicator 1", "specific indicator 2"]
+    }}
+  ]
+}}
+
+Only respond with valid JSON. No preamble or explanation outside JSON."""
+
+_SYNTHESIS_CONTAINMENT_FALLBACK = """Generate a 3-phase containment plan for a {classification} investigation.
+Blast Radius: {blast_radius}
+Kill Chain: {kill_chain}
+
+You MUST generate exactly 3 phases with these exact names:
+- "Phase 1: IMMEDIATE (Execute now)"
+- "Phase 2: SHORT TERM (Within 24 hours)"
+- "Phase 3: REMEDIATION (Within 72 hours)"
+
+For each action, you MUST ONLY choose one of these exact action types:
+- BLOCK_IP
+- ISOLATE_HOST
+- KILL_PROCESS
+- REVOKE_CREDENTIALS
+- DISABLE_ACCOUNT
+- ROTATE_CREDENTIALS
+- AUDIT_CLOUDTRAIL
+
+CRITICAL: Do NOT invent or use any other action type under any circumstances. If an action does not map to one of these 7 types, do NOT include it.
+
+kill_process: ONLY use if you have confirmed malicious process names from the kill chain stages.
+Target must be a specific process name like:
+"backgroundTaskHost.exe", "cmd.exe", "WMIC.exe", "reg.exe", "powershell.exe"
+Use EventCode 4688 evidence from the kill chain.
+If you have no confirmed process name from the evidence, DO NOT include a kill_process action.
+Never use placeholder targets like "suspicious_process_id" or "malicious_process".
+
+Return a JSON object matching this structure:
+{{
+  "phases": [
+    {{
+      "name": "Phase 1: IMMEDIATE (Execute now)",
+      "description": "Immediate blocks...",
+      "actions": [
+        {{
+          "type": "BLOCK_IP | ISOLATE_HOST | KILL_PROCESS | REVOKE_CREDENTIALS",
+          "target": "the entity",
+          "title": "Action Title",
+          "description": "Why...",
+          "is_irreversible": false
+        }}
+      ]
+    }},
+    {{
+      "name": "Phase 2: SHORT TERM (Within 24 hours)",
+      "description": "Short-term mitigations...",
+      "actions": []
+    }},
+    {{
+      "name": "Phase 3: REMEDIATION (Within 72 hours)",
+      "description": "Long-term recovery...",
+      "actions": []
+    }}
+  ]
+}}
+"""
+
 
 # ── LLM setup ─────────────────────────────────────────────────────────────────
 
@@ -267,6 +359,16 @@ Respond in this exact JSON format:
 }}
 
 Only respond with valid JSON. No preamble or explanation outside JSON."""
+
+    prompt = get_prompt(
+        name="synthesis-counterfactual",
+        fallback=_SYNTHESIS_COUNTERFACTUAL_FALLBACK,
+        classification=classification,
+        kill_chain_summary=kill_chain_summary,
+        indicators_text=indicators_text,
+        triage_summary=triage_summary,
+        alternatives=", ".join(alternatives),
+    )
 
     try:
         from langchain_core.messages import HumanMessage
@@ -430,6 +532,10 @@ data not present in the inputs.
         "[%s] SynthesisAgent: launching 4 parallel LLM calls",
         investigation_id,
     )
+    narrative_prompt = get_prompt(
+        name="synthesis-narrative",
+        fallback=_SYNTHESIS_NARRATIVE_FALLBACK,
+    )
     try:
         (
             narrative,
@@ -441,14 +547,14 @@ data not present in the inputs.
                 "run_name": "synthesis_narrative_call",
                 "metadata": {"investigation_id": investigation_id},
             }).ainvoke([
-                SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
+                SystemMessage(content=narrative_prompt),
                 HumanMessage(content=synthesis_context),
             ]),
             _LLM_STRUCTURED.with_config({
                 "run_name": "synthesis_structured_call",
                 "metadata": {"investigation_id": investigation_id},
             }).ainvoke([
-                SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
+                SystemMessage(content=narrative_prompt),
                 HumanMessage(content=synthesis_context),
             ]),
             _generate_counterfactual_reasoning(
@@ -838,6 +944,19 @@ Return a JSON object matching this structure:
   ]
 }}
 """
+    blast_radius_str = (
+        blast_radius
+        if isinstance(blast_radius, str)
+        else json.dumps(blast_radius)
+    )
+    kill_chain_str = json.dumps(kill_chain[:5])
+    prompt = get_prompt(
+        name="synthesis-containment",
+        fallback=_SYNTHESIS_CONTAINMENT_FALLBACK,
+        classification=classification,
+        blast_radius=blast_radius_str,
+        kill_chain=kill_chain_str,
+    )
     try:
         response = await llm.ainvoke([SystemMessage(content="You are a containment strategy expert."), HumanMessage(content=prompt)])
         content = response.content.strip()

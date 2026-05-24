@@ -24,6 +24,7 @@ from app.services.supabase_client import (
 )
 from app.services.containment_templates import generate_action_spl, get_template_metadata
 from app.services.supabase_client import get_supabase_client
+from app.utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,27 @@ class DeleteContainmentAction(BaseModel):
 # LLM setup
 _LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 _LLM_WITH_TOOLS = _LLM.bind_tools([AddContainmentAction, DeleteContainmentAction])
+
+_CONTAINMENT_REFINEMENT_FALLBACK = """You are Splunk Sentinel, an expert virtual Incident Response assistant.
+Your task is to help the analyst refine the containment plan dynamically.
+
+Current Containment Plan:
+{containment_plan}
+
+You can suggest adding or deleting containment actions by calling the provided tools.
+You can call the tools MULTIPLE times in a single turn if the user asks for multiple actions (e.g. "block IP X and IP Y", or "remove all block IPs").
+
+BULK OPERATION RULE - mandatory:
+When a user requests multiple actions in a single message (e.g. 'block these 3 IPs', 'remove all block actions'), process EVERY target independently.
+If one tool call is rejected (duplicate, invalid target, validation error), continue processing ALL remaining targets in the batch. NEVER abort the entire batch because one item failed.
+Always report which items succeeded and which were rejected.
+
+CRITICAL RULES:
+- For block_ip: ONLY use IP addresses that appear in the CURRENT PLAN STATE provided above as existing action targets, OR IPs explicitly mentioned by the analyst in their message. NEVER invent, guess, or extrapolate IP addresses. NEVER use RFC1918 addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x) as block_ip targets - these are internal IPs that cannot be blocked at perimeter.
+- Core network gateways (192.168.1.1), primary DNS (8.8.8.8, 1.1.1.1), the Splunk SIEM server itself (10.0.0.10), domain controllers (domain-controller), and core administrator accounts (admin, system) MUST NOT be targeted.
+- If deleting, try to provide the exact `action_id`. If unavailable, provide BOTH the `action_type` and `action_target` to safely match it.
+- After all tool executions are complete, write a conversational response summarizing the successful actions and any errors that occurred (based on the tool execution results).
+"""
 
 def get_initial_chat_message() -> dict:
     """
@@ -151,6 +173,12 @@ CRITICAL RULES:
 - If deleting, try to provide the exact `action_id`. If unavailable, provide BOTH the `action_type` and `action_target` to safely match it.
 - After all tool executions are complete, write a conversational response summarizing the successful actions and any errors that occurred (based on the tool execution results).
 """
+    containment_plan_str = json.dumps(plan_dict, indent=2)
+    system_prompt = get_prompt(
+        name="containment-refinement",
+        fallback=_CONTAINMENT_REFINEMENT_FALLBACK,
+        containment_plan=containment_plan_str,
+    )
 
     messages = [SystemMessage(content=system_prompt)]
     

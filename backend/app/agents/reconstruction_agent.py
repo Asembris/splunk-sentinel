@@ -27,6 +27,7 @@ from app.guardrails.spl_guardrail import SPLGuardrail
 from app.utils.audit_chain import append_chained_entry
 from app.services.slo_engine import get_monitor
 from app.services.telemetry_sanitizer import sanitize_telemetry
+from app.utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ _SYNTHESIS_STRUCTURED = _SYNTHESIS_LLM.with_structured_output(ReconstructionResu
 # System Prompts
 # ---------------------------------------------------------------------------
 
-_REASONING_SYSTEM_PROMPT = """You are a senior threat intelligence 
+_RECONSTRUCTION_FALLBACK_PROMPT = """You are a senior threat intelligence 
 analyst performing iterative forensic reconstruction of a cyber attack.
 
 CORE BEHAVIORAL DIRECTIVES:
@@ -882,7 +883,12 @@ TELEMETRY FROM THIS ITERATION:
                         "iteration": iteration,
                     }
                 }).ainvoke([
-                    SystemMessage(content=_REASONING_SYSTEM_PROMPT),
+                    SystemMessage(
+                        content=get_prompt(
+                            name="reconstruction-agent",
+                            fallback=_RECONSTRUCTION_FALLBACK_PROMPT,
+                        )
+                    ),
                     HumanMessage(content=reasoning_context),
                 ])
 

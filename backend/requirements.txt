@@ -20,3 +20,4 @@ pydantic-settings
 openai>=1.0.0
 reportlab==4.2.2
 truststore==0.10.4
+langfuse==3.14.6

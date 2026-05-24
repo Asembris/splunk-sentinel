@@ -28,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
+from app.utils.prompt_loader import validate_prompts_on_startup
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -76,6 +77,15 @@ logging.config.dictConfig(
 
 logger = logging.getLogger(__name__)
 
+LANGFUSE_PROMPTS = [
+    "triage-agent",
+    "reconstruction-agent",
+    "synthesis-narrative",
+    "synthesis-containment",
+    "synthesis-counterfactual",
+    "containment-refinement",
+]
+
 # ---------------------------------------------------------------------------
 # Startup / shutdown lifecycle
 # ---------------------------------------------------------------------------
@@ -108,6 +118,8 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Splunk connection verified. Version: %s", version)
     except Exception as exc:
         logger.warning("⚠️ Splunk connection check FAILED: %s", exc)
+
+    validate_prompts_on_startup(LANGFUSE_PROMPTS)
 
     yield
     logger.info("Splunk Sentinel shutting down.")

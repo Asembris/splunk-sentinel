@@ -33,6 +33,7 @@ from app.models.state import AgentState
 from app.tools.splunk_tools import get_splunk_client
 from app.config import settings
 from app.utils.audit_chain import append_chained_entry
+from app.utils.prompt_loader import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ _LLM_STRUCTURED = _LLM.with_structured_output(TriageResult)
 # Output format is enforced natively by the OpenAI function-calling API.
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = (
+_TRIAGE_FALLBACK_PROMPT = (
     "You are a senior SOC analyst at a Fortune 500 company investigating a "
     "live security incident. You will be given telemetry extracted directly "
     "from Splunk logs. Your job is to classify the attack, assess its "
@@ -749,7 +750,12 @@ TRIGGER: {trigger}
     # The model is physically constrained to return a valid TriageResult.
     # OutputParserException is impossible with this pattern.
     messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
+        SystemMessage(
+            content=get_prompt(
+                name="triage-agent",
+                fallback=_TRIAGE_FALLBACK_PROMPT,
+            )
+        ),
         HumanMessage(content=context),
     ]
 

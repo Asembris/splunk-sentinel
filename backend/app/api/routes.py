@@ -41,6 +41,7 @@ from app.services.detection_gap_analyzer import (
     deploy_detection,
 )
 from app.tools.splunk_tools import get_splunk_service
+from app.utils.prompt_loader import get_prompt_version_info
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,8 @@ class HealthResponse(BaseModel):
     status: str
     splunk_connected: bool
     splunk_version: str
+    prompt_versions: dict
+    promptops: str
 
 
 class FeedbackRequest(BaseModel):
@@ -360,10 +363,21 @@ async def health_check() -> HealthResponse:
     except Exception as exc:
         logger.warning("Health check: Splunk unreachable — %s", exc)
 
+    prompt_versions = {
+        name: get_prompt_version_info(name)
+        for name in [
+            "triage-agent",
+            "synthesis-narrative",
+            "containment-refinement",
+        ]
+    }
+
     return HealthResponse(
         status="ok",
         splunk_connected=splunk_connected,
         splunk_version=splunk_version,
+        prompt_versions=prompt_versions,
+        promptops="langfuse",
     )
 
 
