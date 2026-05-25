@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,7 @@ from app.guardrails import spl_guardrail
 logger = logging.getLogger(__name__)
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="splunk-worker")
+_RECONNECT_LOCK = threading.Lock()
 
 AUDIT_LOG_PATH = Path("logs") / "spl_audit.log"
 
@@ -96,6 +98,24 @@ class SplunkClient:
                 logger.info("Index 'sentinel_actions' created successfully.")
         except Exception as e:
             logger.warning("Could not check/create index 'sentinel_actions': %s", e)
+
+    def _reconnect_service(self) -> None:
+        """
+        Re-establish Splunk SDK session.
+        Thread-safe because queries may fail concurrently.
+        """
+        with _RECONNECT_LOCK:
+            logger.warning("Splunk session appears invalid; reconnecting...")
+            self.service = splunk_client.connect(
+                host=settings.SPLUNK_HOST,
+                port=settings.SPLUNK_PORT,
+                username=settings.SPLUNK_USERNAME,
+                password=settings.SPLUNK_PASSWORD,
+            )
+            logger.info(
+                "Splunk reconnection established. Version: %s",
+                self.service.info.get("version", "unknown"),
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -198,6 +218,16 @@ class SplunkClient:
             normalized_spl = f"search {normalized_spl}"
 
         loop = asyncio.get_event_loop()
+
+        def _looks_like_session_error(exc: Exception) -> bool:
+            msg = str(exc).lower()
+            return (
+                "session is not logged in" in msg
+                or "unauthorized" in msg
+                or "not logged in" in msg
+                or "http 401" in msg
+            )
+
         try:
             results = await loop.run_in_executor(
                 _EXECUTOR,
@@ -208,8 +238,34 @@ class SplunkClient:
                 max_results,
             )
         except Exception as exc:
-            logger.error("Splunk search failed | spl=%r | error=%s", spl[:120], exc)
-            raise RuntimeError(f"Splunk search failed: {exc}") from exc
+            # Self-heal once on expired/invalid Splunk sessions.
+            if _looks_like_session_error(exc):
+                try:
+                    await loop.run_in_executor(
+                        _EXECUTOR, self._reconnect_service
+                    )
+                    results = await loop.run_in_executor(
+                        _EXECUTOR,
+                        self._run_oneshot,
+                        normalized_spl,
+                        earliest,
+                        latest,
+                        max_results,
+                    )
+                except Exception as retry_exc:
+                    logger.error(
+                        "Splunk search failed after reconnect retry | spl=%r | error=%s",
+                        spl[:120],
+                        retry_exc,
+                    )
+                    raise RuntimeError(
+                        f"Splunk search failed: {retry_exc}"
+                    ) from retry_exc
+            else:
+                logger.error(
+                    "Splunk search failed | spl=%r | error=%s", spl[:120], exc
+                )
+                raise RuntimeError(f"Splunk search failed: {exc}") from exc
 
         logger.info(
             "Splunk search returned %d rows | spl=%r",
@@ -278,4 +334,3 @@ class SplunkClient:
         except Exception as e:
             logger.error(f"get_top_source_ips failed: {e}")
             return []
-
