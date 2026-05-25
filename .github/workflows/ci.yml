@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: pytest — 370 unit tests
+    name: pytest - 397 unit tests
     runs-on: ubuntu-latest
 
     steps:
