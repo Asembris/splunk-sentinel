@@ -165,7 +165,7 @@ producing variance that is inherent to the stochastic nature of LLMs.
 for agent quality. A passing score in one run meant nothing without
 running the eval multiple times and averaging.
 
-**Solution:** We rely primarily on 186 deterministic unit tests that
+**Solution:** We rely primarily on 397 deterministic unit tests that
 check factual properties: kill_chain_not_empty, patient_zero_present,
 containment_priority_correct, required_evidence_keywords_present,
 RFC1918_role_correct. These tests are 100% reproducible and directly
@@ -326,54 +326,203 @@ the only defense.
 
 ---
 
-## Finding 7 — MLTK ai Command Latency Incompatible With Inline Pipeline Execution
+## Finding 7 - MLTK ai Command Requires Async Post-Processing Architecture
 
 ### Context
 MLTK 5.7.4 with the ai command configured via
-Connection Management (openai_sentinel → gpt-4o-mini)
-was integrated into TTPAgent to validate Qdrant
-technique mappings against real botsv3 evidence.
+Connection Management (openai_sentinel - gpt-4o-mini)
+was integrated to validate Qdrant MITRE technique
+mappings against real botsv3 evidence using
+Splunk-native AI infrastructure.
 
-### Finding
+### Initial Finding
 The MLTK ai command adds 8-25 seconds per invocation
-when called via splunklib service.jobs.oneshot() from
-an external FastAPI process. With 5 techniques to
-validate, cumulative latency (40+ seconds) exceeds
+when called via `splunklib.service.jobs.oneshot()`
+from an external FastAPI process. With 5 techniques
+to validate in parallel, inline execution exceeded
 the TTPAgent time budget within the 120-second
 investigation SLO.
 
 Root cause: the ai command routes through multiple
-layers — Splunk search engine, MLTK ML infrastructure,
-Connection Management, OpenAI API, and back — adding
+layers - Splunk search engine, MLTK ML infrastructure,
+Connection Management, OpenAI API, and back - adding
 significant overhead versus direct OpenAI API calls
-from FastAPI.
+from FastAPI. This is not a bug - it is the correct
+architecture for Splunk-native AI governance, adding
+auditability and Connection Management at the cost
+of latency.
 
-### Impact
-MLTK validation is skipped at runtime. TTPAgent falls
-back to Qdrant-only technique mapping gracefully.
-All investigations complete successfully. SLO remains
-green. No data loss.
+### Solution - Async Post-Processing Pattern
 
-### Architectural Recommendation
-The correct integration pattern for MLTK ai command
-in a real-time pipeline is asynchronous post-processing:
-run MLTK validation after the investigation completes
-as a background enrichment task, then update the
-stored investigation with MLTK-validated techniques.
-This decouples MLTK latency from the investigation
-SLO budget entirely.
+The correct integration pattern decouples MLTK latency
+from the investigation SLO entirely:
 
-### Current Mitigation
-TTPAgent attempts MLTK validation with per-technique
-timeout of 8 seconds. On timeout, Qdrant mapping is
-preserved unchanged with mltk_validation_run=False
-recorded in state. The infrastructure is fully wired
-and will activate automatically if MLTK latency
-improves or if the async post-processing pattern
-is implemented.
+1. Investigation pipeline completes and report persists
+   to Supabase (~100 seconds, SLO compliant)
+2. `report_agent.py` fires `asyncio.create_task(enrich_ttp_with_mltk(id))`
+   -> a background task outside the pipeline
+3. `mltk_enrichment.py` runs all technique validations
+   in parallel via `asyncio.gather()` (~30 seconds)
+4. Results patch `report_json["ttp_mappings"]` in
+   Supabase permanently - never reruns
+5. Frontend polls `GET /api/investigations/{id}/ttp-enrichment`
+   every 3 seconds until status = "complete"
+6. MITRE table updates in place with MLTK badges
+
+### Verification Results
+
+All 4 techniques validated in parallel:
+- T1190: Qdrant + MLTK agreement, confidence boosted
+  to 0.826 (Qdrant 60% + MLTK 40% weighted average)
+- T1552.005: Agreement confirmed, confidence 0.856
+- T1082: Agreement confirmed, confidence 0.842
+- T1021: Agreement confirmed, confidence 0.814
+
+Summary: agreements=4, disagreements=0, failed=0
+Enrichment time: ~30s parallel (was 86s sequential)
+SLO: green at 100.7s for investigation pipeline
+
+### Architectural Principle Established
+
+Post-pipeline enrichment services must never block
+investigation delivery. The pattern:
+Investigation complete -> persist -> fire background task
+Background task -> enrich -> patch Supabase -> frontend polls
+
+This principle applies to all post-pipeline services:
+containment_verifier, detection_gap_analyzer, and
+mltk_enrichment all follow this pattern.
+
+### MLTK 5.7.4 Syntax Discovery
+
+The correct ai command syntax changed between versions.
+For 5.7.4:
+
+```spl
+| ai connection="openai_sentinel"
+    prompt="... {field_name} inline references ..."
+```
+
+NOT:
+- `provider=` (wrong - use `connection=`)
+- `field=` (wrong - inline as `{field_name}`)
+- `input_field=` (wrong)
+
+Output appears in field: `ai_result_1`
+
+This syntax difference is not documented clearly in
+MLTK 5.7.4 release notes and caused significant
+debugging time. See SPLUNK_SDK_USAGE.md for complete
+integration documentation.
+
+---
+
+## Finding 8 - Production PromptOps Requires External Versioning Not File-Based Storage
+
+### Context
+Splunk Sentinel uses 6 agent prompts across the
+investigation pipeline and post-pipeline services.
+Initial implementation stored prompts as hardcoded
+strings in Python agent files, with v1/v2 versioning
+via filename (`triage_v1.md`, `triage_v2.md`).
+
+### Problem With File-Based Versioning
+As the number of agents and prompt iterations grew,
+file-based storage created several production risks:
+
+1. **Version proliferation** - v1, v2, v3 per agent
+   across 6 agents creates 18+ files with no diff view
+2. **No deployment separation** - changing a prompt
+   requires a code deploy, coupling prompt iteration
+   to software releases
+3. **No rollback UI** - reverting to a previous prompt
+   requires git history archaeology
+4. **No startup validation** - a missing or corrupted
+   prompt file causes a runtime crash mid-investigation,
+   not a clean startup failure
+5. **No auditability** - no record of which prompt
+   version ran on which investigation
+
+### Solution - Langfuse PromptOps Layer
+
+We implemented a production-grade PromptOps layer
+using Langfuse (`backend/app/utils/prompt_loader.py`):
+
+**Architecture:**
+Langfuse Cloud (source of truth)
+-> 5-min TTL cache (Langfuse SDK) - in-memory fallback (last successful fetch) - hardcoded fallback (always present in agent file)
+
+**Key design decisions:**
+
+1. **Three-layer fallback** - Langfuse unavailable
+   never crashes the pipeline. The hardcoded string
+   in each agent file is the airbag - always present,
+   hopefully never needed.
+
+2. **Startup validation** - `validate_prompts_on_startup()`
+   called once in FastAPI lifespan. All 6 prompts
+   validated with version and length logged:
+[PromptLoader] - triage-agent (version=1, length=3487 chars)
+[PromptLoader] - synthesis-narrative (version=1, length=2164 chars)
+...
+[PromptLoader] All 6 prompts validated - 
+3. **Health endpoint transparency** - `GET /api/health`
+   returns prompt versions in production:
+```json
+   {
+     "promptops": "langfuse",
+     "prompt_versions": {
+       "triage-agent": {"version": 1, "label": "production"},
+       "synthesis-narrative": {"version": 1, "label": "production"}
+     }
+   }
+```
+
+4. **Variable interpolation** - prompts use
+   `{{variable_name}}` placeholders compiled at
+   runtime with investigation context. Dynamic content
+   stays inside the prompt file not scattered in agent code.
+
+5. **Deployment without code release** - promoting
+   a new prompt to production requires changing the
+   Langfuse label from `staging` to `production`.
+   No git commit, no deploy, no restart.
+
+### Prompts Managed
+
+| Prompt | Variables | Length |
+|--------|-----------|--------|
+| triage-agent | none (context via HumanMessage) | 3,487 chars |
+| reconstruction-agent | none (context via HumanMessage) | 2,658 chars |
+| synthesis-narrative | none (context via HumanMessage) | 2,164 chars |
+| synthesis-containment | classification, blast_radius, kill_chain | 1,777 chars |
+| synthesis-counterfactual | classification, kill_chain_summary, indicators_text, triage_summary, alternatives | 1,073 chars |
+| containment-refinement | containment_plan | 1,782 chars |
+
+### Recommendation
+
+Any multi-agent LLM system with more than 2-3 prompts
+should use external prompt management from day one.
+The operational cost of file-based versioning grows
+non-linearly with the number of agents and prompt
+iterations. Langfuse, LangChain Hub, or equivalent
+should be part of the initial architecture not a
+retrofit.
+
+For incident response tools specifically, prompt
+versioning is a compliance requirement: you must be
+able to answer "which prompt version produced this
+investigation report?" for any historical investigation.
+Langfuse provides this auditability natively.
 
 ---
 
 *Splunk Sentinel — built for the Splunk Agentic Ops Hackathon 2026.*
 *Full source: github.com/Asembris/splunk-sentinel*
-*7 findings documented. Contributions to the Splunk developer community.*
+*8 findings documented. Contributions to the Splunk developer community.*
+
+
+
+
+
+
