@@ -1,5 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom'
-import { useState, useEffect, useRef, useCallback } from 'react'
+﻿import { useParams, useNavigate } from 'react-router-dom'
+import { Component, useState, useEffect, useRef, useCallback } from 'react'
 import { useInvestigation } from '../store/InvestigationContext'
 import { 
   Download, ArrowLeft, FileJson, Printer, 
@@ -14,9 +14,58 @@ import ThreatIntelCards from '../components/report/ThreatIntelCards'
 import RecommendedActions from '../components/report/RecommendedActions'
 import CveList from '../components/report/CveList'
 
+const asArray = (value) => (Array.isArray(value) ? value : [])
+
+const normalizeContainmentPlan = (plan) => {
+  if (!plan || typeof plan !== 'object') {
+    return { phases: [], chat_history: [] }
+  }
+
+  return {
+    ...plan,
+    phases: asArray(plan.phases).map((phase) => ({
+      ...phase,
+      actions: asArray(phase?.actions),
+    })),
+    chat_history: asArray(plan.chat_history),
+  }
+}
+
+class RouteSectionErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error) {
+    console.error(
+      `[ReportPage] Section crash: ${this.props.sectionName || 'unknown'}`,
+      error
+    )
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-4">
+          <p className="text-xs text-sentinel-muted">
+            This section is temporarily unavailable for this investigation.
+          </p>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 
 function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
   const [executingPhase, setExecutingPhase] = useState(null)
+  const [executing, setExecuting] = useState(false)
   const [progress, setProgress] = useState({}) // { actionId: 'pending' | 'running' | 'success' | 'error' }
   const [localPlan, setLocalPlan] = useState(plan)
 
@@ -29,7 +78,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
 
   // Sync local plan with props if props change
   useEffect(() => {
-    setLocalPlan(plan)
+    setLocalPlan(normalizeContainmentPlan(plan))
   }, [plan])
 
   const fetchContainmentPlan = async () => {
@@ -39,8 +88,9 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       )
       if (!res.ok) return
       const refreshed = await res.json()
-      setLocalPlan(refreshed)
-      onUpdate(refreshed)
+      const normalized = normalizeContainmentPlan(refreshed)
+      setLocalPlan(normalized)
+      onUpdate(normalized)
     } catch (err) {
       console.error('Failed to refresh containment plan:', err)
     }
@@ -71,17 +121,57 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
     }
   }, [investigationId])
 
-  const hasVerifying = localPlan?.phases?.some(phase =>
-    phase.actions?.some(a => a.status === 'VERIFYING')
-  )
-
+  // Authoritative reconciliation polling while execution is active
   useEffect(() => {
-    if (!investigationId || !hasVerifying) return
-    const interval = setInterval(() => {
-      fetchContainmentPlan()
-    }, 5000)
+    if (!executing || !investigationId) return
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/investigations/${investigationId}/containment-plan`
+        )
+        if (!res.ok) return
+        const data = normalizeContainmentPlan(await res.json())
+
+        // Always reconcile from backend while a phase is executing.
+        setLocalPlan(data)
+        onUpdate(data)
+
+        if (executingPhase === null) {
+          setExecuting(false)
+          clearInterval(interval)
+          return
+        }
+
+        const currentPhase = asArray(data.phases)[executingPhase]
+        if (!currentPhase) {
+          setExecuting(false)
+          setExecutingPhase(null)
+          clearInterval(interval)
+          return
+        }
+
+        const unresolvedStatuses = new Set([
+          'PENDING',
+          'EXECUTING',
+          'VERIFYING',
+        ])
+        const hasUnresolved = asArray(currentPhase.actions).some(action =>
+          unresolvedStatuses.has(action.status || 'PENDING')
+        )
+
+        if (!hasUnresolved) {
+          setExecuting(false)
+          setExecutingPhase(null)
+          clearInterval(interval)
+        }
+      } catch (err) {
+        // Network errors are transient here; keep polling.
+      }
+    }, 3000)
+
     return () => clearInterval(interval)
-  }, [investigationId, hasVerifying])
+  }, [executing, investigationId, executingPhase])
 
   const getValidationWarning = (text) => {
     const val = text.toLowerCase().trim()
@@ -127,6 +217,42 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
 
   const executePhase = async (phaseIdx) => {
     setExecutingPhase(phaseIdx)
+    setExecuting(true)
+    setLocalPlan(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        phases: asArray(prev.phases).map((phase, idx) => {
+          if (idx !== phaseIdx) return phase
+          return {
+            ...phase,
+            actions: asArray(phase.actions).map(action => ({
+              ...action,
+              status: action.status === 'PENDING' ? 'EXECUTING' : action.status,
+            })),
+          }
+        }),
+      }
+    })
+
+    const updateActionStatus = (actionId, newStatus) => {
+      setLocalPlan(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          phases: asArray(prev.phases).map(phase => ({
+            ...phase,
+            actions: asArray(phase.actions).map(action =>
+              (action.action_id === actionId ||
+               action.id === actionId)
+                ? { ...action, status: newStatus }
+                : action
+            )
+          }))
+        }
+      })
+    }
+
     try {
       const response = await fetch(
         `/api/investigations/${investigationId}/containment-plan/execute?phase_idx=${phaseIdx}`,
@@ -145,12 +271,12 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
-        const events = buffer.split('\n\n')
+        const events = buffer.split(/\r?\n\r?\n/)
         buffer = events.pop() || ''
 
         for (const eventText of events) {
           const dataLine = eventText
-            .split('\n')
+            .split(/\r?\n/)
             .find(line => line.trim().startsWith('data:'))
           if (!dataLine) continue
 
@@ -159,21 +285,44 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
 
           if (data.event === 'action_started') {
             setProgress(prev => ({ ...prev, [data.action_id]: 'running' }))
+            updateActionStatus(data.action_id, 'EXECUTING')
           } else if (data.event === 'action_complete') {
             setProgress(prev => ({ ...prev, [data.action_id]: 'success' }))
+            updateActionStatus(data.action_id, 'VERIFYING')
           } else if (data.event === 'action_failed') {
             setProgress(prev => ({ ...prev, [data.action_id]: 'error' }))
+            updateActionStatus(data.action_id, 'FAILED')
           } else if (data.event === 'phase_complete') {
-            setLocalPlan(data.plan)
-            onUpdate(data.plan)
+            const normalizedPlan = normalizeContainmentPlan(data.plan)
+            setLocalPlan(normalizedPlan)
+            onUpdate(normalizedPlan)
+            // Keep executing/polling active until async verification settles.
           }
         }
       }
     } catch (err) {
       console.error('SSE Error:', err)
     } finally {
-      setExecutingPhase(null)
+      // Do not clear phase tracking here; reconciliation polling decides
+      // when the phase has fully settled (post-verification).
     }
+  }
+
+  const canRollback = (action) => {
+    const rollbackEligibleStatuses = new Set([
+      'EXECUTED',
+      'VERIFYING',
+      'VERIFIED_EFFECTIVE',
+      'PARTIAL_EFFECT',
+      'VERIFICATION_FAILED',
+      'ROLLBACK_RECOMMENDED',
+      'VERIFICATION_SKIPPED',
+    ])
+    return (
+      rollbackEligibleStatuses.has(action.status) &&
+      action.reversal_spl &&
+      !action.rolled_back_at
+    )
   }
 
   const handleRollback = async (actionId) => {
@@ -197,57 +346,57 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       'PENDING': {
         color: 'text-sentinel-muted border-sentinel-border',
         label: 'PENDING',
-        icon: '○'
+        icon: 'â—‹'
       },
       'EXECUTING': {
         color: 'text-blue-400 border-blue-500/30',
         label: 'EXECUTING',
-        icon: '◌'
+        icon: 'â—Œ'
       },
       'VERIFYING': {
         color: 'text-blue-400 border-blue-500/30',
         label: 'VERIFYING...',
-        icon: '⟳'
+        icon: 'âŸ³'
       },
       'VERIFIED_EFFECTIVE': {
         color: 'text-green-400 border-green-500/30',
-        label: 'VERIFIED ✓',
-        icon: '●'
+        label: 'VERIFIED âœ“',
+        icon: 'â—'
       },
       'PARTIAL_EFFECT': {
         color: 'text-amber-400 border-amber-500/30',
         label: 'PARTIAL EFFECT',
-        icon: '◐'
+        icon: 'â—'
       },
       'VERIFICATION_FAILED': {
         color: 'text-red-400 border-red-500/30',
         label: 'VERIFY FAILED',
-        icon: '✗'
+        icon: 'âœ—'
       },
       'ROLLBACK_RECOMMENDED': {
         color: 'text-red-400 border-red-500/30',
         label: 'ROLLBACK RECOMMENDED',
-        icon: '⚠'
+        icon: 'âš '
       },
       'VERIFICATION_SKIPPED': {
         color: 'text-sentinel-muted border-sentinel-border',
         label: 'EXECUTED',
-        icon: '●'
+        icon: 'â—'
       },
       'EXECUTED': {
         color: 'text-green-400 border-green-500/30',
         label: 'EXECUTED',
-        icon: '●'
+        icon: 'â—'
       },
       'ROLLED_BACK': {
         color: 'text-sentinel-muted border-sentinel-border',
         label: 'ROLLED BACK',
-        icon: '↩'
+        icon: 'â†©'
       },
       'FAILED': {
         color: 'text-red-400 border-red-500/30',
         label: 'FAILED',
-        icon: '✗'
+        icon: 'âœ—'
       },
     }
 
@@ -261,7 +410,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
 
         {verResult && verResult.before_count !== undefined && (
           <div className="text-xs text-sentinel-muted mt-1">
-            Before: {verResult.before_count} events →
+            Before: {verResult.before_count} events â†’
             After: {verResult.after_count} events
             {verResult.delta_pct !== undefined && (
               <span className={
@@ -280,13 +429,13 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
 
         {status === 'ROLLBACK_RECOMMENDED' && (
           <div className="text-xs text-red-400 mt-1">
-            ⚠ Events increased after execution - consider rollback
+            âš  Events increased after execution - consider rollback
           </div>
         )}
 
         {status === 'PARTIAL_EFFECT' && (
           <div className="text-xs text-amber-400 mt-1">
-            ◐ Partial containment - some events still present
+            â— Partial containment - some events still present
           </div>
         )}
       </div>
@@ -421,14 +570,14 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       {showConfirm !== null && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-sentinel-surface border border-sentinel-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-sentinel-border">
+          <div className="p-6 border-b border-sentinel-border">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-full bg-sentinel-accent/10 flex items-center justify-center">
                   <Shield className="w-5 h-5 text-sentinel-accent" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">Execute Phase {showConfirm + 1}</h3>
-                  <p className="text-xs text-sentinel-muted">{localPlan.phases[showConfirm].name}</p>
+                  <p className="text-xs text-sentinel-muted">{localPlan.phases?.[showConfirm]?.name || 'Unknown Phase'}</p>
                 </div>
               </div>
             </div>
@@ -439,14 +588,14 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
               </p>
               
               <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                {localPlan.phases[showConfirm].actions.map((action) => (
+                {asArray(localPlan.phases?.[showConfirm]?.actions).map((action) => (
                   <div key={action.id} className="bg-sentinel-bg rounded-lg p-3 border border-sentinel-border/50">
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-sentinel-accent" />
                       <span className="text-[10px] font-bold text-white uppercase">{action.title}</span>
                     </div>
                     <code className="text-[10px] font-mono text-sentinel-accent/90 break-all leading-relaxed block bg-black/20 p-2 rounded">
-                      {action.containment_spl.replace('{{target}}', action.target)}
+                      {String(action.containment_spl || '').replace('{{target}}', action.target || '')}
                     </code>
                   </div>
                 ))}
@@ -490,7 +639,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left column - Timeline */}
         <div className="lg:col-span-2 space-y-6">
-          {localPlan.phases.map((phase, pIdx) => (
+          {asArray(localPlan.phases).map((phase, pIdx) => (
             <div key={pIdx} className="relative">
               {pIdx < localPlan.phases.length - 1 && (
                 <div className="absolute left-4 top-10 bottom-0 w-px bg-sentinel-border" />
@@ -522,8 +671,8 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                   </div>
 
                   <div className="space-y-2 mt-3">
-                    {phase.actions.map((action, aIdx) => (
-                      <div key={action.id} className="bg-sentinel-bg border border-sentinel-border rounded-lg p-3 group">
+                    {asArray(phase.actions).map((action, aIdx) => (
+                      <div key={action.action_id || action.id || `${pIdx}-${aIdx}`} className="bg-sentinel-bg border border-sentinel-border rounded-lg p-3 group">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             {action.status === 'EXECUTED' ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : 
@@ -532,9 +681,9 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                             <span className="text-xs font-semibold text-white">{action.title}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {action.status === 'EXECUTED' && action.reversal_spl && (
+                            {canRollback(action) && (
                               <button 
-                                onClick={() => handleRollback(action.id)}
+                                onClick={() => handleRollback(action.action_id || action.id)}
                                 className="text-[9px] text-red-400/60 hover:text-red-400 flex items-center gap-1 transition-colors"
                               >
                                 <RotateCcw className="w-2.5 h-2.5" /> ROLLBACK
@@ -615,7 +764,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                     {msg.added_action && !msg.added_actions?.length && (
                       <div className="mt-2.5 bg-green-500/10 border border-green-500/20 rounded-lg p-2 text-[10px] text-green-400">
                         <div className="font-bold uppercase tracking-wider mb-1">
-                          ✓ Proposed Action Added:
+                          âœ“ Proposed Action Added:
                         </div>
                         <div className="flex justify-between mb-0.5">
                           <span className="text-white/60">Type:</span>
@@ -632,7 +781,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                     {msg.added_actions && msg.added_actions.map((act, idx) => (
                       <div key={`add-${idx}`} className="mt-2.5 bg-green-500/10 border border-green-500/20 rounded-lg p-2 text-[10px] text-green-400">
                         <div className="font-bold uppercase tracking-wider mb-1">
-                          ✓ Proposed Action Added:
+                          âœ“ Proposed Action Added:
                         </div>
                         <div className="flex justify-between mb-0.5">
                           <span className="text-white/60">Type:</span>
@@ -649,7 +798,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                     {msg.deleted_action_id && !msg.deleted_actions?.length && (
                       <div className="mt-2.5 bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400">
                         <div className="font-bold uppercase tracking-wider mb-1">
-                          ✗ Proposed Action Removed:
+                          âœ— Proposed Action Removed:
                         </div>
                         <div className="flex justify-between">
                           <span className="text-white/60">Action ID:</span>
@@ -662,7 +811,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                     {msg.deleted_actions && msg.deleted_actions.map((act, idx) => (
                       <div key={`del-${idx}`} className="mt-2.5 bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400">
                         <div className="font-bold uppercase tracking-wider mb-1">
-                          ✗ Proposed Action Removed:
+                          âœ— Proposed Action Removed:
                         </div>
                         <div className="flex justify-between mb-0.5">
                           <span className="text-white/60">Type:</span>
@@ -986,7 +1135,7 @@ function MltkEnrichmentStatus({
     return (
       <div className="flex items-center gap-3 mt-2">
         <span className="text-xs text-green-400">
-          ✓ MLTK validated {summary.techniques_validated || 0} techniques
+          âœ“ MLTK validated {summary.techniques_validated || 0} techniques
         </span>
         <span className="text-xs text-sentinel-muted">
           {summary.agreements || 0} agreements
@@ -1015,7 +1164,7 @@ function FeedbackCard({
     {
       key: 'correct',
       label: 'Correct',
-      icon: '✓',
+      icon: 'âœ“',
       activeClass: 'border-green-500 bg-green-500/10 text-green-400',
       inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-green-500/50',
     },
@@ -1029,7 +1178,7 @@ function FeedbackCard({
     {
       key: 'incorrect',
       label: 'Incorrect',
-      icon: '✗',
+      icon: 'âœ—',
       activeClass: 'border-red-500 bg-red-500/10 text-red-400',
       inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-red-500/50',
     },
@@ -1042,7 +1191,7 @@ function FeedbackCard({
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-green-500/20 rounded-full 
                           flex items-center justify-center flex-shrink-0">
-            <span className="text-green-400 font-bold">✓</span>
+            <span className="text-green-400 font-bold">âœ“</span>
           </div>
           <div>
             <p className="text-sm font-semibold text-green-400">
@@ -1069,7 +1218,7 @@ function FeedbackCard({
           Analyst Feedback
         </h3>
         <span className="text-xs text-sentinel-muted opacity-50 ml-1">
-          — contributes to evaluation dataset
+          â€” contributes to evaluation dataset
         </span>
       </div>
 
@@ -1100,13 +1249,13 @@ function FeedbackCard({
         ))}
       </div>
 
-      {/* Notes input — only shown when rating selected */}
+      {/* Notes input â€” only shown when rating selected */}
       {feedbackRating && (
         <div className="mb-4">
           <textarea
             value={feedbackNotes}
             onChange={(e) => setFeedbackNotes(e.target.value)}
-            placeholder="Optional: describe what was correct or incorrect (e.g. 'Patient zero IP was wrong — actual source was 54.67.127.227')"
+            placeholder="Optional: describe what was correct or incorrect (e.g. 'Patient zero IP was wrong â€” actual source was 54.67.127.227')"
             disabled={feedbackStatus === 'submitting'}
             rows={3}
             className="w-full bg-sentinel-bg border border-sentinel-border 
@@ -1195,7 +1344,7 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
                             CLASSIFICATION_COLORS[confirmedClassification]
                             || CLASSIFICATION_COLORS.UNKNOWN
                           }`}>
-          ✓ {confirmedClassification}
+          âœ“ {confirmedClassification}
         </span>
       </div>
 
@@ -1213,7 +1362,7 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
                                   CLASSIFICATION_COLORS[alt.classification]
                                   || CLASSIFICATION_COLORS.UNKNOWN
                                 }`}>
-                ✗ Not {alt.classification}
+                âœ— Not {alt.classification}
               </span>
             </div>
 
@@ -1265,7 +1414,7 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
       <div className="flex items-center gap-1.5 px-3 py-1.5
                       bg-sentinel-surface border border-sentinel-border
                       rounded-lg text-xs text-sentinel-muted">
-        ◌ Audit verification unavailable
+        â—Œ Audit verification unavailable
       </div>
     )
   }
@@ -1317,15 +1466,15 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
                       : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
                     }`}
       >
-        <span>{isValid ? '🔒' : '⚠️'}</span>
+        <span>{isValid ? 'ðŸ”’' : 'âš ï¸'}</span>
         <span>
           {isValid
-            ? `Audit Chain Verified · ${totalEntries} entries`
-            : `Chain Integrity Failure · Entry ${brokenIndex} modified`
+            ? `Audit Chain Verified Â· ${totalEntries} entries`
+            : `Chain Integrity Failure Â· Entry ${brokenIndex} modified`
           }
         </span>
         <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
-          ▾
+          â–¾
         </span>
       </button>
 
@@ -1343,7 +1492,7 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
             <span className={`text-xs font-bold ${
               isValid ? 'text-green-400' : 'text-red-400'
             }`}>
-              {isValid ? '✓ INTACT' : '✗ BROKEN'}
+              {isValid ? 'âœ“ INTACT' : 'âœ— BROKEN'}
             </span>
           </div>
 
@@ -1388,7 +1537,7 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
                           ? 'text-amber-400'
                           : 'text-green-400'
                       }`}>
-                        {entry.was_corrected ? '⟳ corrected' : '✓ clean'}
+                        {entry.was_corrected ? 'âŸ³ corrected' : 'âœ“ clean'}
                       </span>
                       <span className="text-xs text-sentinel-muted">
                         {entry.rows_returned ?? '?'} rows
@@ -1535,9 +1684,9 @@ function DetectionGapPanel({ investigationId }) {
             </button>
           )}
           {loading && (
-            <span className="text-xs text-sentinel-muted animate-pulse">Analyzing…</span>
+            <span className="text-xs text-sentinel-muted animate-pulse">Analyzingâ€¦</span>
           )}
-          <span className="text-sentinel-muted text-xs">{expanded ? '▲' : '▼'}</span>
+          <span className="text-sentinel-muted text-xs">{expanded ? 'â–²' : 'â–¼'}</span>
         </div>
       </div>
 
@@ -1548,7 +1697,7 @@ function DetectionGapPanel({ investigationId }) {
           {/* Error */}
           {error && (
             <div className="mt-4 p-3 rounded-lg border border-red-500/30 bg-red-500/5">
-              <p className="text-xs text-red-400">⚠ {error}</p>
+              <p className="text-xs text-red-400">âš  {error}</p>
               <button
                 onClick={fetchGaps}
                 className="mt-2 text-[11px] text-sentinel-accent hover:underline"
@@ -1583,7 +1732,7 @@ function DetectionGapPanel({ investigationId }) {
               <div className="w-6 h-6 border-2 border-sentinel-accent border-t-transparent
                               rounded-full animate-spin" />
               <p className="text-xs text-sentinel-muted">
-                Checking {gaps?.techniques_analyzed || ''} MITRE techniques against Splunk saved searches…
+                Checking {gaps?.techniques_analyzed || ''} MITRE techniques against Splunk saved searchesâ€¦
               </p>
             </div>
           )}
@@ -1597,7 +1746,7 @@ function DetectionGapPanel({ investigationId }) {
                   { label: 'Techniques Analyzed', value: gaps.techniques_analyzed },
                   { label: 'Covered', value: gaps.covered, color: 'text-green-400' },
                   { label: 'Gaps Found', value: gaps.not_covered, color: 'text-red-400' },
-                  { label: 'Saved Searches Checked', value: gaps.saved_searches_checked ?? '—' },
+                  { label: 'Saved Searches Checked', value: gaps.saved_searches_checked ?? 'â€”' },
                 ].map(({ label, value, color }) => (
                   <div key={label}
                        className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
@@ -1611,7 +1760,7 @@ function DetectionGapPanel({ investigationId }) {
               {gaps.gaps && gaps.gaps.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3">
-                    Uncovered Techniques — {gaps.gaps.length} Gap{gaps.gaps.length !== 1 ? 's' : ''}
+                    Uncovered Techniques â€” {gaps.gaps.length} Gap{gaps.gaps.length !== 1 ? 's' : ''}
                   </p>
                   <div className="space-y-3">
                     {gaps.gaps.map(gap => (
@@ -1629,10 +1778,10 @@ function DetectionGapPanel({ investigationId }) {
                               {gap.technique_id}
                             </span>
                             <span className="text-xs text-white">{gap.technique_name}</span>
-                            <span className="text-xs text-sentinel-muted">· {gap.tactic}</span>
+                            <span className="text-xs text-sentinel-muted">Â· {gap.tactic}</span>
                           </div>
                           <span className="text-sentinel-muted text-xs">
-                            {expandedGaps[gap.technique_id] ? '▲' : '▼'}
+                            {expandedGaps[gap.technique_id] ? 'â–²' : 'â–¼'}
                           </span>
                         </div>
 
@@ -1665,9 +1814,9 @@ function DetectionGapPanel({ investigationId }) {
                                              transition-colors"
                                 >
                                   {deploying[gap.technique_id]
-                                    ? 'Deploying…'
+                                    ? 'Deployingâ€¦'
                                     : deployed[gap.technique_id]?.success
-                                      ? 'Deployed ✓'
+                                      ? 'Deployed âœ“'
                                       : 'Deploy as Saved Search'}
                                 </button>
                               </div>
@@ -1683,11 +1832,11 @@ function DetectionGapPanel({ investigationId }) {
                               <div className="mt-2 text-[11px]">
                                 {deployed[gap.technique_id].success ? (
                                   <span className="text-green-400">
-                                    ✓ {deployed[gap.technique_id].message || 'Successfully deployed!'}
+                                    âœ“ {deployed[gap.technique_id].message || 'Successfully deployed!'}
                                   </span>
                                 ) : (
                                   <span className="text-red-400">
-                                    ⚠ Error: {deployed[gap.technique_id].error}
+                                    âš  Error: {deployed[gap.technique_id].error}
                                   </span>
                                 )}
                               </div>
@@ -1712,12 +1861,12 @@ function DetectionGapPanel({ investigationId }) {
                            className="border border-green-500/20 rounded-xl p-3
                                       bg-green-500/5 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-green-400">✓ COVERED</span>
+                          <span className="text-xs font-bold text-green-400">âœ“ COVERED</span>
                           <span className="text-xs font-mono text-sentinel-accent">
                             {tech.technique_id}
                           </span>
                           <span className="text-xs text-white">{tech.technique_name}</span>
-                          <span className="text-xs text-sentinel-muted">· {tech.tactic}</span>
+                          <span className="text-xs text-sentinel-muted">Â· {tech.tactic}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-sentinel-muted">Confidence:</span>
@@ -1948,6 +2097,10 @@ export default function ReportPage() {
     }
   }
 
+  const handleEnrichmentComplete = useCallback((enrichedMappings) => {
+    setEnrichedTtpMappings(enrichedMappings)
+  }, [])
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-57px)]">
@@ -2009,10 +2162,13 @@ export default function ReportPage() {
     0
   const confidenceLabel =
     report.confidence?.primary_label || 'Evidence Confidence'
-
-  const handleEnrichmentComplete = useCallback((enrichedMappings) => {
-    setEnrichedTtpMappings(enrichedMappings)
-  }, [])
+  const safeContainmentPlan = normalizeContainmentPlan(report.containment_plan)
+  const safeMitreTechniques = asArray(report.mitre_techniques_used).filter(
+    (technique) => typeof technique === 'string' && technique.trim().length > 0
+  )
+  const safeRecommendedActions = asArray(report.recommended_actions)
+  const safeKeyFindings = asArray(report.key_findings)
+  const safeCves = asArray(report.cves_identified)
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 animate-fade-in">
@@ -2045,7 +2201,7 @@ export default function ReportPage() {
           <h1 className="text-3xl font-bold text-white tracking-tight">Automated Investigation Report</h1>
           <p className="text-xs text-sentinel-muted font-mono mt-1 flex items-center gap-2">
             <span className="bg-sentinel-border px-1.5 py-0.5 rounded text-gray-400">{report.investigation_id || state.investigationId}</span>
-            <span>·</span>
+            <span>Â·</span>
             <span>{report.generated_at ? new Date(report.generated_at).toLocaleString() : 'Just now'}</span>
           </p>
         </div>
@@ -2166,75 +2322,101 @@ export default function ReportPage() {
 
       {/* Report sections */}
       <div className="space-y-6">
-        <ExecutiveSummary report={report} />
+        <RouteSectionErrorBoundary sectionName="ExecutiveSummary">
+          <ExecutiveSummary report={report} />
+        </RouteSectionErrorBoundary>
 
-        <ConfidenceBreakdownPanel investigationId={reportInvestigationId} />
+        <RouteSectionErrorBoundary sectionName="ConfidenceBreakdown">
+          <ConfidenceBreakdownPanel investigationId={reportInvestigationId} />
+        </RouteSectionErrorBoundary>
         
-        <FindingsGrid findings={report.key_findings || []} />
+        <RouteSectionErrorBoundary sectionName="FindingsGrid">
+          <FindingsGrid findings={safeKeyFindings} />
+        </RouteSectionErrorBoundary>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <RecommendedActions actions={report.recommended_actions || []} />
-          <CveList cves={report.cves_identified || []} />
+          <RouteSectionErrorBoundary sectionName="RecommendedActions">
+            <RecommendedActions actions={safeRecommendedActions} />
+          </RouteSectionErrorBoundary>
+          <RouteSectionErrorBoundary sectionName="CveList">
+            <CveList cves={safeCves} />
+          </RouteSectionErrorBoundary>
         </div>
 
-        <ContainmentPlanPanel 
-          investigationId={reportInvestigationId}
-          plan={report.containment_plan}
-          onUpdate={(newPlan) => {
-            if (state.result) {
-              dispatch({ type: 'UPDATE_CONTAINMENT_PLAN', plan: newPlan })
-            } else if (historicalData) {
-              setHistoricalData(prev => ({
-                ...prev,
-                final_report: {
-                  ...prev.final_report,
-                  containment_plan: newPlan
-                }
-              }))
-            }
-          }}
-        />
+        <RouteSectionErrorBoundary sectionName="ContainmentPlanPanel">
+          <ContainmentPlanPanel 
+            investigationId={reportInvestigationId}
+            plan={safeContainmentPlan}
+            onUpdate={(newPlan) => {
+              if (state.result) {
+                dispatch({ type: 'UPDATE_CONTAINMENT_PLAN', plan: newPlan })
+              } else if (historicalData) {
+                setHistoricalData(prev => ({
+                  ...prev,
+                  final_report: {
+                    ...prev.final_report,
+                    containment_plan: newPlan
+                  }
+                }))
+              }
+            }}
+          />
+        </RouteSectionErrorBoundary>
 
-        <MltkEnrichmentStatus
-          investigationId={reportInvestigationId}
-          onEnrichmentComplete={handleEnrichmentComplete}
-        />
+        <RouteSectionErrorBoundary sectionName="MltkEnrichmentStatus">
+          <MltkEnrichmentStatus
+            investigationId={reportInvestigationId}
+            onEnrichmentComplete={handleEnrichmentComplete}
+          />
+        </RouteSectionErrorBoundary>
 
-        <MitreTable
-          techniques={report.mitre_techniques_used || []}
-          ttpMappings={ttpData}
-        />
+        <RouteSectionErrorBoundary sectionName="MitreTable">
+          <MitreTable
+            techniques={safeMitreTechniques}
+            ttpMappings={ttpData}
+          />
+        </RouteSectionErrorBoundary>
 
-        <DetectionGapPanel
-          investigationId={reportInvestigationId}
-        />
+        <RouteSectionErrorBoundary sectionName="DetectionGapPanel">
+          <DetectionGapPanel
+            investigationId={reportInvestigationId}
+          />
+        </RouteSectionErrorBoundary>
         
-        <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
+        <RouteSectionErrorBoundary sectionName="ThreatIntelCards">
+          <ThreatIntelCards threatIntel={activeResult?.threat_intel || {}} />
+        </RouteSectionErrorBoundary>
         
         {/* Counterfactual Reasoning */}
         {report?.counterfactual_reasoning && (
-          <CounterfactualCard
-            counterfactual={report.counterfactual_reasoning}
-            confirmedClassification={report.classification}
-          />
+          <RouteSectionErrorBoundary sectionName="CounterfactualCard">
+            <CounterfactualCard
+              counterfactual={report.counterfactual_reasoning}
+              confirmedClassification={report.classification}
+            />
+          </RouteSectionErrorBoundary>
         )}
 
         {/* Analyst Feedback */}
-        <FeedbackCard
-          feedbackRating={feedbackRating}
-          setFeedbackRating={setFeedbackRating}
-          feedbackNotes={feedbackNotes}
-          setFeedbackNotes={setFeedbackNotes}
-          feedbackStatus={feedbackStatus}
-          onSubmit={handleSubmitFeedback}
-        />
+        <RouteSectionErrorBoundary sectionName="FeedbackCard">
+          <FeedbackCard
+            feedbackRating={feedbackRating}
+            setFeedbackRating={setFeedbackRating}
+            feedbackNotes={feedbackNotes}
+            setFeedbackNotes={setFeedbackNotes}
+            feedbackStatus={feedbackStatus}
+            onSubmit={handleSubmitFeedback}
+          />
+        </RouteSectionErrorBoundary>
         
         <div className="pt-8 text-center border-t border-sentinel-border opacity-30">
           <p className="text-[10px] text-sentinel-muted uppercase tracking-[0.2em]">
-            End of Automated Incident Report — Splunk Sentinel
+            End of Automated Incident Report â€” Splunk Sentinel
           </p>
         </div>
       </div>
     </div>
   )
 }
+
+
