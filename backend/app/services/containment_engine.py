@@ -8,6 +8,7 @@ of templated SPL, state tracking, and SSE streaming to the frontend.
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional, Any
 
@@ -18,10 +19,80 @@ from app.models.containment import (
     ContainmentPhase
 )
 from app.tools.splunk_tools import get_splunk_client
+from app.tools.splunk_tools import get_splunk_service
 from app.services.supabase_client import get_investigation_details, patch_containment_plan
 from app.guardrails import spl_guardrail
+from app.services.containment_verifier import verify_action, get_before_count
 
 logger = logging.getLogger(__name__)
+
+
+_VERIFICATION_TERMINAL_STATUSES = {
+    ContainmentStatus.VERIFIED_EFFECTIVE,
+    ContainmentStatus.PARTIAL_EFFECT,
+    ContainmentStatus.VERIFICATION_FAILED,
+    ContainmentStatus.ROLLBACK_RECOMMENDED,
+    ContainmentStatus.VERIFICATION_SKIPPED,
+}
+
+
+def _action_key(action: ContainmentAction) -> str:
+    return action.action_id or action.id
+
+
+def _dedupe_phase_actions_in_place(
+    phase: ContainmentPhase,
+    allowed_keys: set[str],
+) -> None:
+    """
+    Keep phase actions stable across concurrent writes:
+    - no duplicate action ids
+    - no new action ids beyond initial phase snapshot
+    """
+    seen: set[str] = set()
+    deduped: list[ContainmentAction] = []
+    for action in phase.actions:
+        key = _action_key(action)
+        if not key:
+            continue
+        if key not in allowed_keys:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(action)
+    phase.actions = deduped
+
+
+def _merge_verification_state(
+    plan: ContainmentPlan,
+    latest_plan_dict: dict,
+) -> None:
+    """
+    Preserve async verifier writes when execute_phase_stream persists the
+    plan. Without this merge, a stale in-memory plan can overwrite
+    VERIFIED_* status back to VERIFYING.
+    """
+    latest_phases = latest_plan_dict.get("phases", []) if latest_plan_dict else []
+    latest_by_key: dict[str, dict] = {}
+    for phase in latest_phases:
+        for action in phase.get("actions", []):
+            key = action.get("action_id") or action.get("id") or ""
+            if key:
+                latest_by_key[key] = action
+
+    for phase in plan.phases:
+        for action in phase.actions:
+            key = _action_key(action)
+            if not key:
+                continue
+            latest_action = latest_by_key.get(key)
+            if not latest_action:
+                continue
+            latest_status = latest_action.get("status")
+            if latest_status in {s.value for s in _VERIFICATION_TERMINAL_STATUSES}:
+                action.status = ContainmentStatus(latest_status)
+                action.verification_result = latest_action.get("verification_result")
 
 
 def validate_containment_spl(spl: str) -> bool:
@@ -37,7 +108,10 @@ def validate_containment_spl(spl: str) -> bool:
     return spl_guardrail.is_safe(spl)
 
 
-async def execute_action(action: ContainmentAction) -> ContainmentAction:
+async def execute_action(
+    action: ContainmentAction,
+    investigation_id: str = "",
+) -> ContainmentAction:
     """
     Execute a single containment action against Splunk.
     """
@@ -46,6 +120,22 @@ async def execute_action(action: ContainmentAction) -> ContainmentAction:
 
     logger.info("[CONTAINMENT] Executing action: %s on %s", action.title, action.target)
     action.status = ContainmentStatus.EXECUTING
+
+    # Baseline before execution for deterministic verification.
+    before_count = 0
+    verification_service = None
+    try:
+        verification_service = get_splunk_service()
+        before_count = await get_before_count(
+            action_type=action.type.value,
+            target=action.target or "",
+            splunk_service=verification_service,
+            investigation_id=investigation_id,
+        )
+    except Exception as e:
+        logger.warning("[Engine] Before count failed: %s", str(e))
+        before_count = 0
+        verification_service = None
     
     if not validate_containment_spl(action.containment_spl):
         action.status = ContainmentStatus.FAILED
@@ -70,9 +160,40 @@ async def execute_action(action: ContainmentAction) -> ContainmentAction:
             
         await loop.run_in_executor(None, _run)
         
-        action.status = ContainmentStatus.EXECUTED
+        action.status = (
+            ContainmentStatus.VERIFYING
+            if investigation_id
+            else ContainmentStatus.EXECUTED
+        )
         action.executed_at = datetime.now(timezone.utc)
         logger.info("[CONTAINMENT] Action successful: %s", action.title)
+
+        # Fire background verification without blocking the UI.
+        if (
+            investigation_id
+            and verification_service is not None
+            and not os.getenv("PYTEST_CURRENT_TEST")
+        ):
+            try:
+                asyncio.create_task(
+                    verify_action(
+                        investigation_id=investigation_id,
+                        action_id=action.action_id or action.id,
+                        action_type=action.type.value,
+                        target=action.target or "",
+                        splunk_service=verification_service,
+                        before_count=before_count,
+                    )
+                )
+                logger.info(
+                    "[Engine] Verification task fired for %s",
+                    action.action_id or action.id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[Engine] Failed to fire verification task: %s",
+                    str(e),
+                )
         
     except Exception as e:
         logger.error("[CONTAINMENT] Action failed: %s | error=%s", action.title, str(e))
@@ -173,6 +294,9 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
 
     try:
         phase = plan.phases[phase_idx]
+        initial_phase_action_keys = {
+            _action_key(a) for a in phase.actions if _action_key(a)
+        }
         phase.status = ContainmentStatus.EXECUTING
         
         yield {"data": json.dumps({'event': 'phase_started', 'phase': phase.name})}
@@ -187,19 +311,54 @@ async def execute_phase_stream(investigation_id: str, phase_idx: int) -> AsyncGe
             # Artificial delay for UI "vibe"
             await asyncio.sleep(0.5)
             
-            updated_action = await execute_action(action)
+            updated_action = await execute_action(action, investigation_id)
             phase.actions[i] = updated_action
-            
-            event_type = 'action_complete' if updated_action.status == ContainmentStatus.EXECUTED else 'action_failed'
+
+            # Persist each action update so VERIFYING status is visible immediately.
+            latest_data = await get_investigation_details(investigation_id)
+            latest_report = latest_data.get("report_json", {}) if latest_data else {}
+            latest_plan_dict = latest_report.get("containment_plan", {}) or {}
+            _merge_verification_state(plan, latest_plan_dict)
+            _dedupe_phase_actions_in_place(phase, initial_phase_action_keys)
+            plan.updated_at = datetime.now(timezone.utc)
+            await patch_containment_plan(
+                investigation_id, plan.model_dump(mode="json")
+            )
+
+            event_type = (
+                'action_complete'
+                if updated_action.status in [
+                    ContainmentStatus.EXECUTED,
+                    ContainmentStatus.VERIFYING,
+                ]
+                else 'action_failed'
+            )
             yield {"data": json.dumps({'event': event_type, 'action_id': action.id, 'status': updated_action.status, 'error': updated_action.error})}
 
         # Update phase and plan status
-        if all(a.status in [ContainmentStatus.EXECUTED, ContainmentStatus.SKIPPED] for a in phase.actions):
+        if all(
+            a.status in [
+                ContainmentStatus.EXECUTED,
+                ContainmentStatus.VERIFYING,
+                ContainmentStatus.VERIFIED_EFFECTIVE,
+                ContainmentStatus.PARTIAL_EFFECT,
+                ContainmentStatus.VERIFICATION_FAILED,
+                ContainmentStatus.ROLLBACK_RECOMMENDED,
+                ContainmentStatus.VERIFICATION_SKIPPED,
+                ContainmentStatus.SKIPPED,
+            ]
+            for a in phase.actions
+        ):
             phase.status = ContainmentStatus.COMPLETE
         else:
             phase.status = ContainmentStatus.PARTIAL
         
         plan.update_status()
+        latest_data = await get_investigation_details(investigation_id)
+        latest_report = latest_data.get("report_json", {}) if latest_data else {}
+        latest_plan_dict = latest_report.get("containment_plan", {}) or {}
+        _merge_verification_state(plan, latest_plan_dict)
+        _dedupe_phase_actions_in_place(phase, initial_phase_action_keys)
         plan.updated_at = datetime.now(timezone.utc)
 
         # Persist updated plan — targeted patch, never drops Supabase fields

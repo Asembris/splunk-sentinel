@@ -987,6 +987,30 @@ def _is_valid_kill_process_target(target: str) -> bool:
     )
 
 
+def _dedupe_actions(actions: list) -> list:
+    """
+    Deduplicate containment actions by (type, target), preserving order.
+    Supports both Pydantic model instances and plain dicts.
+    """
+    seen = set()
+    deduped = []
+    for action in actions:
+        a_type = getattr(action, "type", None)
+        if a_type is None and isinstance(action, dict):
+            a_type = action.get("type", "")
+        a_target = getattr(action, "target", None)
+        if a_target is None and isinstance(action, dict):
+            a_target = action.get("target", "")
+
+        type_value = getattr(a_type, "value", a_type) or ""
+        key = (str(type_value), str(a_target or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(action)
+    return deduped
+
+
 def _get_fallback_containment_plan(
     investigation_id: str,
     blast_radius: dict,
@@ -1126,19 +1150,19 @@ def _get_fallback_containment_plan(
         ContainmentPhase(
             name="Phase 1: IMMEDIATE (Execute now)",
             description="Immediate critical actions to isolate threats and stop active execution.",
-            actions=phase1_actions,
+            actions=_dedupe_actions(phase1_actions),
             phase=1
         ),
         ContainmentPhase(
             name="Phase 2: SHORT TERM (Within 24 hours)",
             description="Short-term mitigations to revoke access and secure compromised credentials.",
-            actions=phase2_actions,
+            actions=_dedupe_actions(phase2_actions),
             phase=2
         ),
         ContainmentPhase(
             name="Phase 3: REMEDIATION (Within 72 hours)",
             description="Long-term security posture improvement, credential rotation, and log audits.",
-            actions=phase3_actions,
+            actions=_dedupe_actions(phase3_actions),
             phase=3
         )
     ]
@@ -1287,6 +1311,8 @@ Return a JSON object matching this structure:
                     phase=phase_num
                 )
                 actions.append(action)
+
+            actions = _dedupe_actions(actions)
             
             phases.append(ContainmentPhase(
                 name=p_raw["name"],

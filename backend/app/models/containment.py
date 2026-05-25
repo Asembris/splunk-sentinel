@@ -10,6 +10,12 @@ class ContainmentStatus(str, Enum):
     PENDING = "PENDING"
     EXECUTING = "EXECUTING"
     EXECUTED = "EXECUTED"
+    VERIFYING = "VERIFYING"
+    VERIFIED_EFFECTIVE = "VERIFIED_EFFECTIVE"
+    PARTIAL_EFFECT = "PARTIAL_EFFECT"
+    VERIFICATION_FAILED = "VERIFICATION_FAILED"
+    ROLLBACK_RECOMMENDED = "ROLLBACK_RECOMMENDED"
+    VERIFICATION_SKIPPED = "VERIFICATION_SKIPPED"
     FAILED = "FAILED"
     ROLLED_BACK = "ROLLED_BACK"
     SKIPPED = "SKIPPED"
@@ -57,6 +63,7 @@ class ContainmentAction(BaseModel):
     is_irreversible: bool = False
     rolled_back_at: Optional[str] = None
     rollback_result: Optional[Dict[str, Any]] = None
+    verification_result: Optional[Dict[str, Any]] = None
     
     # Test Compatibility Fields
     phase: int = 1

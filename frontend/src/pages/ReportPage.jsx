@@ -32,6 +32,20 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
     setLocalPlan(plan)
   }, [plan])
 
+  const fetchContainmentPlan = async () => {
+    try {
+      const res = await fetch(
+        `/api/investigations/${investigationId}/containment-plan`
+      )
+      if (!res.ok) return
+      const refreshed = await res.json()
+      setLocalPlan(refreshed)
+      onUpdate(refreshed)
+    } catch (err) {
+      console.error('Failed to refresh containment plan:', err)
+    }
+  }
+
   // Scroll to bottom of chat container only (not the whole page)
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -56,6 +70,18 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       fetchChatInit()
     }
   }, [investigationId])
+
+  const hasVerifying = localPlan?.phases?.some(phase =>
+    phase.actions?.some(a => a.status === 'VERIFYING')
+  )
+
+  useEffect(() => {
+    if (!investigationId || !hasVerifying) return
+    const interval = setInterval(() => {
+      fetchContainmentPlan()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [investigationId, hasVerifying])
 
   const getValidationWarning = (text) => {
     const val = text.toLowerCase().trim()
@@ -156,15 +182,115 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
         method: 'POST'
       })
       if (res.ok) {
-        // Refresh plan
-        const planRes = await fetch(`/api/investigations/${investigationId}/containment-plan`)
-        const updatedPlan = await planRes.json()
-        setLocalPlan(updatedPlan)
-        onUpdate(updatedPlan)
+        await fetchContainmentPlan()
       }
     } catch (err) {
       console.error('Rollback failed:', err)
     }
+  }
+
+  const getStatusBadge = (action) => {
+    const status = action.status || 'PENDING'
+    const verResult = action.verification_result
+
+    const badges = {
+      'PENDING': {
+        color: 'text-sentinel-muted border-sentinel-border',
+        label: 'PENDING',
+        icon: '○'
+      },
+      'EXECUTING': {
+        color: 'text-blue-400 border-blue-500/30',
+        label: 'EXECUTING',
+        icon: '◌'
+      },
+      'VERIFYING': {
+        color: 'text-blue-400 border-blue-500/30',
+        label: 'VERIFYING...',
+        icon: '⟳'
+      },
+      'VERIFIED_EFFECTIVE': {
+        color: 'text-green-400 border-green-500/30',
+        label: 'VERIFIED ✓',
+        icon: '●'
+      },
+      'PARTIAL_EFFECT': {
+        color: 'text-amber-400 border-amber-500/30',
+        label: 'PARTIAL EFFECT',
+        icon: '◐'
+      },
+      'VERIFICATION_FAILED': {
+        color: 'text-red-400 border-red-500/30',
+        label: 'VERIFY FAILED',
+        icon: '✗'
+      },
+      'ROLLBACK_RECOMMENDED': {
+        color: 'text-red-400 border-red-500/30',
+        label: 'ROLLBACK RECOMMENDED',
+        icon: '⚠'
+      },
+      'VERIFICATION_SKIPPED': {
+        color: 'text-sentinel-muted border-sentinel-border',
+        label: 'EXECUTED',
+        icon: '●'
+      },
+      'EXECUTED': {
+        color: 'text-green-400 border-green-500/30',
+        label: 'EXECUTED',
+        icon: '●'
+      },
+      'ROLLED_BACK': {
+        color: 'text-sentinel-muted border-sentinel-border',
+        label: 'ROLLED BACK',
+        icon: '↩'
+      },
+      'FAILED': {
+        color: 'text-red-400 border-red-500/30',
+        label: 'FAILED',
+        icon: '✗'
+      },
+    }
+
+    const badge = badges[status] || badges.PENDING
+
+    return (
+      <div>
+        <span className={`text-xs px-2 py-1 rounded border font-medium ${badge.color}`}>
+          {badge.icon} {badge.label}
+        </span>
+
+        {verResult && verResult.before_count !== undefined && (
+          <div className="text-xs text-sentinel-muted mt-1">
+            Before: {verResult.before_count} events →
+            After: {verResult.after_count} events
+            {verResult.delta_pct !== undefined && (
+              <span className={
+                verResult.delta_pct >= 0.8
+                  ? ' text-green-400'
+                  : verResult.delta_pct >= 0.2
+                  ? ' text-amber-400'
+                  : ' text-red-400'
+              }>
+                {' '}({Math.round(verResult.delta_pct * 100)}%
+                reduction)
+              </span>
+            )}
+          </div>
+        )}
+
+        {status === 'ROLLBACK_RECOMMENDED' && (
+          <div className="text-xs text-red-400 mt-1">
+            ⚠ Events increased after execution - consider rollback
+          </div>
+        )}
+
+        {status === 'PARTIAL_EFFECT' && (
+          <div className="text-xs text-amber-400 mt-1">
+            ◐ Partial containment - some events still present
+          </div>
+        )}
+      </div>
+    )
   }
 
   const handleSendMessage = async (e) => {
@@ -414,13 +540,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                                 <RotateCcw className="w-2.5 h-2.5" /> ROLLBACK
                               </button>
                             )}
-                            <span className={`text-[9px] font-bold uppercase tracking-tighter px-1.5 py-0.5 rounded
-                              ${action.status === 'EXECUTED' ? 'bg-green-500/10 text-green-400' : 
-                                action.status === 'FAILED' ? 'bg-red-500/10 text-red-400' :
-                                action.status === 'ROLLED_BACK' ? 'bg-amber-500/10 text-amber-400' :
-                                'bg-sentinel-surface text-sentinel-muted'}`}>
-                              {action.status}
-                            </span>
+                            {getStatusBadge(action)}
                           </div>
                         </div>
 
