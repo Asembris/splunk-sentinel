@@ -1,60 +1,172 @@
-# 🛡️ Splunk Sentinel
+# Splunk Sentinel
 
-> **Autonomous AI-powered SOC investigation platform.**  
-> Transforms a 4-hour manual security investigation into 90 seconds of 
-> fully autonomous kill chain reconstruction — powered by 6 specialized 
-> AI agents, a ReAct reasoning loop, and a 697-technique MITRE ATT&CK 
-> knowledge base.
+> Autonomous AI-powered SOC investigation platform.
+> A 4-hour manual investigation in 100 seconds —
+> 6 specialized AI agents, ReAct kill chain
+> reconstruction, and Splunk-native AI validation.
 
-<!-- Badges row 1: core stack -->
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2-orange?logo=langchain)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?logo=vite&logoColor=white)
 
-<!-- Badges row 2: AI and data -->
-![OpenAI](https://img.shields.io/badge/GPT--4o--mini-OpenAI-412991?logo=openai&logoColor=white)
-![Qdrant](https://img.shields.io/badge/Qdrant-Cloud-DC244C?logo=qdrant&logoColor=white)
-![Splunk](https://img.shields.io/badge/Splunk-Enterprise_10.2-000000?logo=splunk&logoColor=white)
-![LangSmith](https://img.shields.io/badge/LangSmith-Traced-1C3C3C)
+![GPT-4o-mini](https://img.shields.io/badge/GPT--4o--mini-OpenAI-412991?logo=openai&logoColor=white)
+![Qdrant Cloud](https://img.shields.io/badge/Qdrant-Cloud-DC244C?logo=qdrant&logoColor=white)
+![Splunk Enterprise](https://img.shields.io/badge/Splunk-Enterprise_10.2.2-000000?logo=splunk&logoColor=white)
+![LangSmith Traced](https://img.shields.io/badge/LangSmith-Traced-1C3C3C)
+![Langfuse PromptOps](https://img.shields.io/badge/Langfuse-PromptOps-4B5563)
 
-<!-- Badges row 3: quality -->
-![Tests](https://img.shields.io/badge/Tests-186_passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-397_passing-brightgreen)
 ![CI](https://github.com/Asembris/splunk-sentinel/actions/workflows/ci.yml/badge.svg)
 ![DeepEval](https://img.shields.io/badge/DeepEval-93.3%25_pass-brightgreen)
-![HitL](https://img.shields.io/badge/Human--in--the--Loop-Feedback-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-## Live Demo
+## What Judges Can Verify In 10 Minutes
 
-| Investigation Dashboard | Kill Chain Graph |
-|:---:|:---:|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Kill Chain](docs/screenshots/kill_chain.png) |
+### Option A — Watch the demo video
+[Demo video (TBD)](https://example.com)
 
-| Incident Report | Investigation History |
-|:---:|:---:|
-| ![Report](docs/screenshots/report.png) | ![History](docs/screenshots/history.png) |
+### Option B — Run it locally
 
-> **Demo:** Enter any security alert trigger → watch 6 AI agents 
-> reconstruct the full attack kill chain in real time.
+**Prerequisites:** Splunk Enterprise + botsv3, Python 3.12, Node 18, OpenAI API key, Qdrant Cloud (free tier), VirusTotal API key, AbuseIPDB API key, Langfuse account (free tier)
+
+**1. Clone and install**
+
+```bash
+git clone https://github.com/Asembris/splunk-sentinel.git
+cd splunk-sentinel
+
+# Backend
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+
+# Frontend
+cd ..\frontend
+npm install
+```
+
+**2. Configure .env**
+
+Use `backend/app/.env.example` and set:
+
+```env
+SPLUNK_HOST=localhost
+SPLUNK_PORT=8089
+SPLUNK_USERNAME=your_splunk_username
+SPLUNK_PASSWORD=your_splunk_password
+OPENAI_API_KEY=sk-your_openai_api_key
+QDRANT_URL=https://your-cluster.qdrant.io
+QDRANT_API_KEY=your_qdrant_api_key
+VIRUSTOTAL_API_KEY=your_virustotal_api_key
+ABUSEIPDB_API_KEY=your_abuseipdb_api_key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your_supabase_service_key
+LANGCHAIN_API_KEY=your_langsmith_api_key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=splunk-sentinel
+LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
+LANGFUSE_SECRET_KEY=your_langfuse_secret_key
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+```
+
+**3. Install Splunk app (one click)**
+
+`sentinel.spl` packaging is coming. Manual setup for now:
+- Create `sentinel_findings` index
+- Create `sentinel_actions` index
+- Add `authorize.conf` MLTK capabilities
+
+**4. Ingest RAG knowledge base (run once)**
+
+```bash
+cd backend
+.venv\Scripts\activate
+python -m app.rag.ingest
+```
+
+**5. Start backend**
+
+```bash
+cd backend
+.venv\Scripts\activate
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+**6. Start frontend**
+
+```bash
+cd frontend
+npm run dev
+# http://localhost:5173
+```
+
+**7. Verify health**
+
+`GET http://localhost:8001/api/health`
+
+Expected:
+
+```json
+{
+  "status": "ok",
+  "splunk_connected": true,
+  "splunk_version": "10.2.2",
+  "promptops": "langfuse",
+  "prompt_versions": {
+    "triage-agent": {"version": 1, "label": "production"},
+    "synthesis-narrative": {"version": 1, "label": "production"},
+    "containment-refinement": {"version": 1, "label": "production"}
+  }
+}
+```
+
+**8. Run your first investigation**
+
+`POST http://localhost:8001/api/investigate`
+
+```json
+{
+  "trigger": "Suspicious outbound requests to AWS metadata endpoint detected from internal web server. Possible SSRF attack leading to IAM credential exposure.",
+  "investigation_id": "judge-test-001"
+}
+```
+
+Expected response includes:
+- `attack_classification: APT`
+- `investigation_confidence: ~0.75`
+- `kill_chain_stages: 4+ stages`
+- `ttp_mappings: 4+ MITRE techniques`
+- `containment_plan: 3 phases with actions`
+
+**9. Run the test suite**
+
+```bash
+cd backend
+.venv\Scripts\activate
+python -m pytest tests/ --ignore=tests/eval/ -v
+```
+
+Expected: `397 passed, 0 failed`
 
 ## The Problem
 
-SOC analysts investigating APT incidents spend 4+ hours manually 
-pivoting between data sources — running 15-20 sequential Splunk 
+SOC analysts investigating APT incidents spend 4+ hours manually
+pivoting between data sources — running 15-20 sequential Splunk
 queries, each informed by the last. During this time:
 
 - **Alert fatigue** causes critical kill chain events to be missed
-- **Manual correlation** across 2M+ events is error-prone and slow  
+- **Manual correlation** across 2M+ events is error-prone and slow
 - **Context switching** between tools breaks investigative flow
 - **Dwell time increases** — attackers operate undetected for longer
 
-The BOTS v3 dataset demonstrates this problem exactly: 2,083,056 log 
-events across 20 sourcetypes. A human analyst needs 3-4 hours to 
-reconstruct the kill chain. **Splunk Sentinel does it in 90 seconds.**
+The BOTS v3 dataset demonstrates this problem exactly: 2,083,056 log
+events across 20 sourcetypes. A human analyst needs 3-4 hours to
+reconstruct the kill chain. **Splunk Sentinel does it in ~100 seconds.**
 
-## Architecture
+## How It Works — Architecture Overview
 
 ### Full Agent Pipeline
 
@@ -231,123 +343,175 @@ flowchart TD
     EXEC --> RESULTS[Return results to agent]
 ```
 
-## Key Technical Differentiators
+### Post-Pipeline Services
 
-### 1. ReAct Loop Kill Chain Reconstruction
+```mermaid
+graph TD
+    R[ReportAgent<br/>Investigation persisted] --> CE
+    R --> ME
 
-The ReconstructionAgent implements a full Reasoning + Acting loop — 
-the same pattern used in production AI agents at major tech companies.
-Each iteration:
+    subgraph POST ["Post-Pipeline Services (analyst-triggered)"]
+        CE[containment_engine<br/>Phase execution + rollback]
+        CC[containment_chat<br/>ContainmentRefinementAgent<br/>ReAct tool calling]
+        CV[containment_verifier<br/>SPL verification of effects]
+        DG[detection_gap_analyzer<br/>MITRE coverage analysis]
+        ME[mltk_enrichment<br/>Async MLTK ai command validation]
+    end
 
-1. **Observe** — execute SPL queries against botsv3 (2M+ events)
-2. **Reason** — LLM analyzes results: what stages are confirmed?
-3. **Act** — generate next targeted SPL query to fill gaps
-4. **Self-correct** — if SPL fails, LLM rewrites it automatically
-5. **Terminate** — when confidence ≥ 0.85 or kill chain is complete
+    CE --> CV
+    CE --> CC
+    R --> DG
 
-This is fundamentally different from fixed-query systems. The agent 
-adapts its investigation based on what it finds — exactly as a senior 
-SOC analyst would.
-
-### 2. Deterministic Confidence Scoring
-
-Every kill chain stage and finding has a mathematically computed 
-confidence score — never hallucinated by an LLM:
-
-```python
-def compute_reconstruction_confidence(
-    confirmed_stages: int,    # 0.35 weight
-    sourcetypes_covered: set, # 0.30 weight  
-    has_patient_zero: bool,   # 0.10 weight
-    has_external_ip: bool,    # 0.10 weight
-    has_blast_radius: bool,   # 0.15 weight
-) -> float:
-    # Capped at 0.95 — never 1.0
+    style POST fill:#1a1a2e,stroke:#8b5cf6
 ```
 
-### 3. Parallel Agent Fan-Out
+## Key Features
 
-ThreatIntelAgent and TTPAgent execute simultaneously after 
-ReconstructionAgent completes, using LangGraph's Send API. 
-Adding external API enrichment adds only 4-6 seconds of latency 
-(parallel execution) rather than 8-12 seconds (sequential).
+### Feature 1 — ReAct Kill Chain Reconstruction
+ReconstructionAgent runs a bounded ReAct loop (max 3 iterations) to reason over telemetry, issue next SPL queries, self-correct query failures, and converge on a complete kill chain with patient zero and blast radius.
 
-### 4. RAG-Grounded Reporting
+### Feature 2 — Explainable Confidence Scores
+Deterministic 5-factor confidence, not LLM-generated:
+- Kill chain completeness: `0.35`
+- Evidence variety: `0.30`
+- Patient zero identification: `0.10`
+- Threat corroboration: `0.10`
+- Blast radius assessment: `0.15`
 
-SynthesisAgent retrieves from all 4 Qdrant collections in parallel 
-before generating the final report. Every recommended action is 
-grounded in IR playbook content. Every MITRE technique citation 
-is backed by the 697-technique knowledge base. The agent is 
-explicitly instructed to never cite CVEs not present in RAG context.
+Includes weakest-factor callout plus a concrete recommendation.
 
-### 5. Full Observability
+### Feature 3 — MLTK Async TTP Validation
+After persistence, Splunk MLTK `ai` validates MITRE mappings asynchronously (~30s post-investigation). Validation runs in parallel and never blocks pipeline SLO. Qdrant/MLTK agreement boosts confidence using `Qdrant 60% + MLTK 40%`. UI updates via polling.
 
-Every LLM call, SPL query, and agent transition is traced in 
-LangSmith with token counts, latency, and cost. A complete 
-investigation costs approximately $0.009 in API calls.
+### Feature 4 — Containment Plan + Verification
+3-phase IR plan (`IMMEDIATE`, `SHORT TERM`, `REMEDIATION`) with analyst edits, SSE execution, and rollback via reversal SPL. `containment_verifier` proves measurable effect with deterministic before/after SPL counts and verdicts:
+- `VERIFIED_EFFECTIVE`
+- `PARTIAL_EFFECT`
+- `VERIFICATION_FAILED`
+- `ROLLBACK_RECOMMENDED`
 
-### 6. Production-Grade Test Coverage
+### Feature 5 — Conversational Containment Refinement
+ContainmentRefinementAgent supports natural-language plan edits with ReAct tool calling, bulk operations, RFC1918 validation, deduplication, phase targeting, and conversation memory. Uses `fetch ReadableStream` SSE for Safari compatibility.
 
-- **169 unit tests** — all deterministic, no LLM/Splunk dependencies
-- **DeepEval adversarial suite** — 15 goldens, 93.3% pass rate
-- **Hallucination traps** — agent correctly refuses to classify 
-  when telemetry contradicts the trigger
-- **Guardrail bypass tests** — adversarial SPL injection attempts
+### Feature 6 — Detection Gap Analysis
+Compares MITRE techniques against existing Splunk saved searches, identifies uncovered techniques, generates recommended detection SPL (LLM + templates), and deploys in one click through Splunk SDK. Includes cache, duplicate checks, and guardrails.
 
-### 7. Closed-Loop Autonomous SOC Integration
+### Feature 7 — PromptOps via Langfuse
+All 6 prompts managed in Langfuse (v1), with production/staging labels, startup validation, 5-minute TTL caching, memory fallback, and hardcoded fallback to prevent pipeline outages.
 
-ReportAgent closes the complete autonomous investigation loop:
+### Feature 8 — Parallel Agent Fan-Out
+ThreatIntelAgent and TTPAgent run in parallel after reconstruction, reducing total latency versus sequential enrichment.
 
-1. **PDF Generation** — ReportLab produces a structured incident 
-   report with kill chain timeline, MITRE ATT&CK mapping, key 
-   findings, recommended actions, and the full SPL audit log
-2. **Supabase Persistence** — every investigation is persisted 
-   permanently, enabling cross-session history and analyst feedback
-3. **Splunk Write-back** — investigation findings are written back 
-   to Splunk as notable events in `index=sentinel_findings`, 
-   completing the detection → investigation → response loop
-4. **4-Tier Confidence Ladder** — actions are gated by confidence:
-   - `≥ 0.90` → AUTO_ESCALATE (notable event + containment SPL)
-   - `0.70–0.89` → ANALYST_REVIEW (human review recommended)
-   - `0.60–0.70` → MONITOR (watch for escalation)
-   - `< 0.60` → ESCALATE_TO_HUMAN (manual investigation required)
-5. **Analyst Feedback Loop** — analysts rate each investigation 
-   (Correct / Partial / Incorrect) with notes, building a ground 
-   truth dataset for confidence formula calibration
+### Feature 9 — RAG-Grounded Reporting
+Synthesis pulls from Qdrant (`697 MITRE + 50 CVEs + 15 IR playbooks`) to ground techniques, recommendations, and contextual explanations.
 
-### 8. Tamper-Evident Hash-Chained Audit Log
+### Feature 10 — Tamper-Evident Audit Log
+Every SPL query is recorded in a SHA-256 chain. Integrity is verifiable per investigation via API.
 
-Every SPL query executed by any agent is recorded in a 
-cryptographically chained audit log:
+### Feature 11 — Full Observability
+LangSmith traces every LLM call. Langfuse manages prompt versions. Cost is approximately **$0.009 per investigation** with `gpt-4o-mini` exclusively.
 
-```python
-entry_hash = SHA-256(prev_hash + canonical_entry_json)
+## Agent and Service Reference
+
+### Investigation Pipeline (LangGraph)
+
+| Agent | Role | Key Logic |
+|-------|------|-----------|
+| TriageAgent | Classification, severity, SPL routing | 3-layer guardrail, UNKNOWN routing |
+| ReconstructionAgent | Kill chain, patient zero, blast radius | ReAct max 3 iter, SPL self-correction |
+| ThreatIntelAgent | IP reputation | VirusTotal + AbuseIPDB parallel, RFC1918 filter |
+| TTPAgent | MITRE mapping + MLTK validation | Qdrant RAG + async MLTK enrichment |
+| SynthesisAgent | Report generation | 4 parallel LLM calls, graceful degradation |
+| ReportAgent | PDF, Supabase, Splunk write-back | MLTK task fire, containment persistence |
+
+### Post-Pipeline Services
+
+| Service | Trigger | Role |
+|---------|---------|------|
+| containment_engine | Analyst executes phase | SPL execution, sentinel_actions write |
+| containment_chat | Analyst chat message | ContainmentRefinementAgent ReAct |
+| containment_verifier | After action executes | SPL before/after verification |
+| detection_gap_analyzer | Analyst opens gaps panel | MITRE coverage vs saved searches |
+| mltk_enrichment | After investigation persists | Async MLTK ai command TTP validation |
+
+## Splunk Integration
+
+### Autonomous Alert Webhook
+Configure Splunk alert actions to call Sentinel for autonomous investigations from detections.
+
+### Splunk Write-back
+Completed investigations are written back to `index=sentinel_findings`.
+
+### MLTK AI Toolkit Integration
+MLTK `5.7.4` + PSC `4.3.2` with Connection Management (`openai_sentinel`, `gpt-4o-mini`):
+
+```spl
+| makeresults count=1
+| eval evidence="..."
+| ai connection="openai_sentinel"
+    prompt="Validate MITRE technique: {qdrant_technique}..."
 ```
 
-Each entry's hash depends on all previous entries — modifying, 
-deleting, or inserting any entry breaks the chain from that 
-point forward. The integrity of any investigation's audit trail 
-can be verified via:
+Results enrich report content asynchronously after investigation completion.
 
+### Detection Gap Deployment
+One-click deployment creates Splunk saved searches:
+
+```spl
+| rest /services/saved/searches
+| where match(title, "Sentinel")
+| table title, updated
 ```
-GET /api/audit-log/verify/{investigation_id}
-→ {"valid": true, "total_entries": 16, "chain_intact": true}
+
+### Containment Actions Audit
+Every action execution and verification is auditable:
+
+```spl
+index=sentinel_actions earliest=0
+| table investigation_id, action_type, target,
+        status, executed_at, verification_verdict
+| sort -executed_at
 ```
 
-No other agent framework in the AI security space provides
-cryptographic integrity guarantees on the audit log — documented
-in FINDINGS.md.
+## API Reference
 
-## Agent Pipeline
+### Core investigation
 
-| Agent | Status | Inputs | Outputs | Key Logic |
-|:---|:---|:---|:---|:---|
-| **TriageAgent** | ✅ Complete | Alert trigger | classification, severity, attack_window, top_source_ips | SPL routing by attack type, 4625 count < 20 → never BRUTE_FORCE, CRITICAL → force escalate |
-| **ReconstructionAgent** | ✅ Complete | Triage outputs | kill_chain, patient_zero, blast_radius, attack_narrative | ReAct loop max 3 iter, seed queries per classification, SPL self-correction |
-| **ThreatIntelAgent** | ✅ Complete | blast_radius.external_ips | threat_intel per IP | VirusTotal + AbuseIPDB parallel, RFC1918 filter, deterministic fallback |
-| **TTPAgent** | ✅ Complete | kill_chain MITRE codes | ttp_mappings enriched | Qdrant exact ID lookup + semantic fallback, CVE linking |
-| **SynthesisAgent** | ✅ Complete | All upstream outputs | final_report | Parallel LLM calls, RAG 4-collection retrieval, field injection fallbacks |
-| **ReportAgent** | ✅ Complete | final_report | PDF report, Supabase record, Splunk notable event | ReportLab PDF generation, Supabase persistence, Splunk write-back via SDK, 4-tier confidence ladder |
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/investigate` | Start a new investigation (JSON/SSE) |
+| `POST` | `/api/webhook/splunk` | Splunk autonomous trigger |
+| `GET` | `/api/health` | Health and Splunk connectivity |
+| `GET` | `/api/investigations` | Investigation list |
+| `GET` | `/api/investigations/{id}` | Investigation details |
+| `POST` | `/api/investigations/{id}/feedback` | Analyst feedback |
+| `GET` | `/api/investigations/{id}/report/pdf` | Download PDF |
+
+### Analysis
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/investigations/{id}/confidence-breakdown` | Explainable confidence factors |
+| `GET` | `/api/investigations/{id}/ttp-enrichment` | Async MLTK enrichment status/results |
+| `GET` | `/api/investigations/{id}/detection-gaps` | MITRE coverage analysis |
+| `POST` | `/api/investigations/{id}/detection-gaps/deploy` | Deploy saved search |
+
+### Containment
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/investigations/{id}/containment-plan` | Load plan |
+| `POST` | `/api/investigations/{id}/containment-plan/execute` | Execute phase |
+| `POST` | `/api/investigations/{id}/containment-plan/rollback` | Rollback action |
+| `GET` | `/api/investigations/{id}/containment-plan/chat/init` | Init chat |
+| `POST` | `/api/investigations/{id}/containment-plan/chat` | Refinement chat |
+
+### Audit
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/audit-log/verify/{id}` | Verify audit chain for investigation |
+| `GET` | `/api/audit-log/verify-latest` | Verify latest investigation |
 
 ## Evaluation Results
 
@@ -375,12 +539,17 @@ in FINDINGS.md.
 
 ### Unit Test Coverage
 
-| Module | Tests | Coverage |
-|:---|:---|:---|
-| TriageAgent (guardrails, schema, routing) | 73 | Deterministic |
-| ReconstructionAgent (confidence, Pydantic, guardrails) | 44 | Deterministic |
-| ThreatIntelAgent + TTPAgent (RFC1918, threat level, MITRE extraction) | 52 | Deterministic |
-| **Total** | **169** | **169/169 passing** |
+| Module | Tests |
+|--------|-------|
+| Guardrails (SPL, escalation, telemetry) | 73 |
+| ReconstructionAgent (confidence, Pydantic) | 44 |
+| Containment (engine, models, routes, templates, chat) | 75 |
+| Detection gap analyzer | 28 |
+| Confidence breakdown | 15 |
+| Containment verifier | 31 |
+| API contracts | 27 |
+| Other (audit, parallel, schema, synthesis, triggers) | 104 |
+| **Total** | **397** |
 
 ### LangSmith Pipeline Trace
 
@@ -392,11 +561,70 @@ in FINDINGS.md.
 | ttp_agent | 3.3s | — | — |
 | synthesis_agent | 9.9s | 6.3K | ~$0.001 |
 | report_agent | ~5s | — | — |
-| **Total** | **~99s** | **~50.4K** | **~$0.009** |
+| **Total** | **~100s** | **~50.4K** | **~$0.009** |
+
+## Security Design
+
+### Read-Only Agent Operation
+
+The investigation agent operates in strict read-only mode against
+`index=botsv3` exclusively. Three layers of protection enforce this:
+
+**Layer 1 — Deterministic keyword blocking (0ms, zero LLM calls)**
+Blocked terms: `| delete`, `delete-index`, `| outputlookup overwrite=true`,
+`| sendemail`, `DROP`, `TRUNCATE`, `index=_internal`, `index=_audit`
+
+**Layer 2 — Index authorization**  
+Every SPL query is validated to target only `index=botsv3`. Queries
+targeting production indexes, internal Splunk indexes, or customer
+data are blocked before execution.
+
+**Layer 3 — Immutable audit log**
+Every query attempt (whether blocked or executed) is timestamped and
+logged with: `timestamp`, `investigation_id`, `query`, `layer1_result`,
+`layer2_result`, `executed`, `results_count`. This log cannot be
+modified by the agent.
+
+### Confidence-Gated Escalation
+
+Investigations with `reconstruction_confidence < 0.5` or
+`severity = CRITICAL` automatically set `escalate_to_human = True`.
+The system never produces a high-confidence report from low-quality
+evidence — it escalates instead.
+
+### Hash-Chained Audit Log
+
+Every SPL query attempt — whether blocked or executed — is
+recorded as a tamper-evident entry in a SHA-256 hash chain.
+Each entry contains:
+
+- `prev_hash` — hash of the previous entry (genesis: `"0"*64`)
+- `entry_hash` — SHA-256 of `prev_hash + canonical(entry content)`
+- `correction_attempts` — number of LLM self-correction rewrites
+- `was_corrected` — whether the query was rewritten before execution
+- `rows_returned` — result count for executed queries
+
+Modifying any entry invalidates all subsequent hashes, making
+tampering immediately detectable. The `GET /api/audit-log/verify`
+endpoint provides real-time chain integrity verification.
+
+### Splunk Notable Event Write-back
+
+When an investigation completes, ReportAgent writes a structured
+notable event to `index=sentinel_findings` via the Splunk Python
+SDK. The event includes the full kill chain summary, confidence
+tier, patient zero, and immediate recommended actions — making
+Sentinel findings searchable in Splunk alongside native alerts:
+
+```spl
+index=sentinel_findings sourcetype="sentinel:investigation"
+| table investigation_id, classification, confidence_tier,
+        kill_chain_summary, patient_zero_ip, severity
+```
 
 ## BOTS v3 Attack Scenario
 
-The system is evaluated against the Boss of the SOC v3 dataset — 
+The system is evaluated against the Boss of the SOC v3 dataset —
 a realistic APT simulation used in Splunk .conf competitions.
 
 ### Dataset
@@ -447,269 +675,159 @@ timeline
 
 ## Getting Started
 
-### Prerequisites
+> Note: This project requires Splunk Enterprise
+> with the botsv3 dataset. If you cannot run
+> it locally, the demo video shows the complete
+> investigation flow end to end.
 
-- Python 3.12+
-- Node.js 18+
-- Splunk Enterprise 9.x or 10.x (local instance)
-- BOTS v3 dataset installed in Splunk
-- OpenAI API key
-- Qdrant Cloud account (free tier sufficient)
-- VirusTotal API key (free tier)
-- AbuseIPDB API key (free tier)
+### Option A — Watch the demo video
+[Demo video (TBD)](https://example.com)
 
-### Backend Setup
+### Option B — Run locally with full commands
+
+#### 1) Clone repository
 
 ```bash
 git clone https://github.com/Asembris/splunk-sentinel.git
-cd splunk-sentinel/backend
-
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-# source .venv/bin/activate  # macOS/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your credentials
-
-# Ingest RAG knowledge base (run once)
-python -m app.rag.ingest
-
-# Start backend
-uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+cd splunk-sentinel
 ```
 
-### Frontend Setup
-
-```bash
-cd splunk-sentinel/frontend
-npm install
-npm run dev
-# → http://localhost:5173
-```
-
-### Environment Variables
-
-```env
-# Splunk
-SPLUNK_HOST=localhost
-SPLUNK_PORT=8089
-SPLUNK_USERNAME=admin
-SPLUNK_PASSWORD=your_password
-
-# OpenAI
-OPENAI_API_KEY=sk-...
-
-# Qdrant
-QDRANT_URL=https://your-cluster.qdrant.io
-QDRANT_API_KEY=your_key
-
-# Threat Intel (free tier)
-VIRUSTOTAL_API_KEY=your_key
-ABUSEIPDB_API_KEY=your_key
-
-# Observability (optional)
-LANGCHAIN_API_KEY=your_key
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_PROJECT=splunk-sentinel
-```
-
-### Run Tests
+#### 2) Backend setup
 
 ```bash
 cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-# Unit tests (169 tests, no external dependencies)
+#### 3) Frontend setup
+
+```bash
+cd ..\frontend
+npm install
+```
+
+#### 4) Configure environment
+Create `backend/app/.env` from `backend/app/.env.example` with:
+
+- `SPLUNK_HOST`
+- `SPLUNK_PORT`
+- `SPLUNK_USERNAME`
+- `SPLUNK_PASSWORD`
+- `OPENAI_API_KEY`
+- `QDRANT_URL`
+- `QDRANT_API_KEY`
+- `VIRUSTOTAL_API_KEY`
+- `ABUSEIPDB_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_KEY`
+- `LANGCHAIN_API_KEY`
+- `LANGCHAIN_TRACING_V2`
+- `LANGCHAIN_PROJECT`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `LANGFUSE_BASE_URL`
+
+#### 5) Splunk setup (manual until app package)
+
+- Create `sentinel_findings` index
+- Create `sentinel_actions` index
+- Apply MLTK capabilities in `authorize.conf`
+- Confirm Splunk on local ports `8000` and `8089`
+
+#### 6) Ingest RAG data (one-time)
+
+```bash
+cd backend
+.venv\Scripts\activate
+python -m app.rag.ingest
+```
+
+#### 7) Run backend
+
+```bash
+cd backend
+.venv\Scripts\activate
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+#### 8) Run frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open: `http://localhost:5173`
+
+#### 9) Verify health endpoint
+
+```bash
+curl http://localhost:8001/api/health
+```
+
+Expect:
+- `"status": "ok"`
+- `"splunk_connected": true`
+- `"splunk_version": "10.2.2"`
+- `"promptops": "langfuse"`
+- prompt versions metadata
+
+#### 10) Run investigation
+
+```bash
+curl -X POST http://localhost:8001/api/investigate ^
+  -H "Content-Type: application/json" ^
+  -d "{\"trigger\":\"Suspicious outbound requests to AWS metadata endpoint detected from internal web server. Possible SSRF attack leading to IAM credential exposure.\",\"investigation_id\":\"judge-test-001\"}"
+```
+
+Expect:
+- `attack_classification: APT`
+- `investigation_confidence: ~0.75`
+- `kill_chain_stages: 4+`
+- `ttp_mappings: 4+`
+- `containment_plan: 3 phases`
+
+#### 11) Run tests
+
+```bash
+cd backend
+.venv\Scripts\activate
 python -m pytest tests/ --ignore=tests/eval/ -v
-
-# DeepEval suite (requires backend running on 8001)
-python -m pytest tests/eval/test_triage_eval.py -v -s
 ```
 
-## Splunk Integration
-
-### Autonomous Alert Webhook
-
-Configure Splunk to automatically trigger investigations when
-saved search thresholds are breached:
-
-1. **Settings → Searches, Reports, and Alerts → New Alert**
-2. Set your detection SPL query
-3. Alert action: **Webhook → URL:** `http://localhost:8001/api/webhook/splunk`
-4. Save
-
-When the alert fires, Splunk POSTs the alert payload to Sentinel.
-The full 6-agent pipeline runs autonomously. No human input required.
-
-**Example saved search (botsv3):**
-```spl
-index=botsv3 earliest=0 sourcetype=stream:http dest_ip=169.254.169.254
-| stats count by src_ip
-| where count > 5
-```
-
-Saved search configured: **"Sentinel - AWS Metadata Access Detected"**
-
-### Splunk Write-back
-
-After every investigation, Sentinel writes findings back to Splunk:
-
-```spl
-index=sentinel_findings earliest=0
-| table investigation_id, classification, severity,
-        confidence_pct, confidence_tier, kill_chain_summary,
-        patient_zero_ip, containment_priority
-| sort -_time
-```
-
-This creates a complete closed loop:
-**Splunk detects → Sentinel investigates → Splunk receives findings**
-
-## API Reference
-
-### Core Endpoints
-
-| Method | Endpoint | Description |
-|:---|:---|:---|
-| `POST` | `/api/investigate` | Start investigation (SSE stream) |
-| `POST` | `/api/webhook/splunk` | Autonomous Splunk alert webhook |
-| `GET` | `/api/health` | Backend + Splunk health check |
-| `GET` | `/api/investigations/history` | Persistent investigation history |
-| `POST` | `/api/investigations/{id}/feedback` | Analyst HITL feedback |
-| `GET` | `/api/investigations/{id}/report/pdf` | Download PDF report |
-| `GET` | `/api/audit-log/verify/{id}` | Verify hash chain integrity |
-| `GET` | `/api/audit-log/verify-latest` | Verify most recent investigation |
-
-### POST /api/investigate
-
-**Request:**
-```json
-{
-  "trigger": "Suspicious outbound requests to AWS metadata endpoint...",
-  "investigation_id": "inc-001"
-}
-```
-
-**SSE Stream Events:**
-```text
-event: progress
-data: {"stage": "triage_agent"}
-
-event: reconstruction_progress  
-data: {
-  "iteration": 1,
-  "new_stages": ["TA0001 Initial Access", "TA0002 Execution"],
-  "confidence": 0.75,
-  "gaps_remaining": 2,
-  "total_stages_found": 2
-}
-
-event: complete
-data: { ...full investigation JSON... }
-```
-
-**Response (on complete):**
-```json
-{
-  "investigation_id": "inc-001",
-  "attack_classification": "APT",
-  "severity": "CRITICAL",
-  "kill_chain": [...],
-  "patient_zero": {...},
-  "blast_radius": {...},
-  "threat_intel": {...},
-  "ttp_mappings": [...],
-  "final_report": {
-    "executive_summary": "...",
-    "key_findings": [...],
-    "recommended_actions": [...],
-    "mitre_techniques_used": ["T1190", "T1552.005", "T1059.003"],
-    "cves_identified": ["CVE-2019-12314"],
-    "investigation_confidence": 0.85
-  }
-}
-```
-
-## Security Design
-
-### Read-Only Agent Operation
-
-The investigation agent operates in strict read-only mode against 
-`index=botsv3` exclusively. Three layers of protection enforce this:
-
-**Layer 1 — Deterministic keyword blocking (0ms, zero LLM calls)**
-Blocked terms: `| delete`, `delete-index`, `| outputlookup overwrite=true`,
-`| sendemail`, `DROP`, `TRUNCATE`, `index=_internal`, `index=_audit`
-
-**Layer 2 — Index authorization**  
-Every SPL query is validated to target only `index=botsv3`. Queries 
-targeting production indexes, internal Splunk indexes, or customer 
-data are blocked before execution.
-
-**Layer 3 — Immutable audit log**
-Every query attempt (whether blocked or executed) is timestamped and 
-logged with: `timestamp`, `investigation_id`, `query`, `layer1_result`, 
-`layer2_result`, `executed`, `results_count`. This log cannot be 
-modified by the agent.
-
-### Confidence-Gated Escalation
-
-Investigations with `reconstruction_confidence < 0.5` or 
-`severity = CRITICAL` automatically set `escalate_to_human = True`.
-The system never produces a high-confidence report from low-quality 
-evidence — it escalates instead.
-
-### Hash-Chained Audit Log
-
-Every SPL query attempt — whether blocked or executed — is 
-recorded as a tamper-evident entry in a SHA-256 hash chain. 
-Each entry contains:
-
-- `prev_hash` — hash of the previous entry (genesis: `"0"*64`)
-- `entry_hash` — SHA-256 of `prev_hash + canonical(entry content)`
-- `correction_attempts` — number of LLM self-correction rewrites
-- `was_corrected` — whether the query was rewritten before execution
-- `rows_returned` — result count for executed queries
-
-Modifying any entry invalidates all subsequent hashes, making 
-tampering immediately detectable. The `GET /api/audit-log/verify` 
-endpoint provides real-time chain integrity verification.
-
-### Splunk Notable Event Write-back
-
-When an investigation completes, ReportAgent writes a structured 
-notable event to `index=sentinel_findings` via the Splunk Python 
-SDK. The event includes the full kill chain summary, confidence 
-tier, patient zero, and immediate recommended actions — making 
-Sentinel findings searchable in Splunk alongside native alerts:
-
-```spl
-index=sentinel_findings sourcetype="sentinel:investigation"
-| table investigation_id, classification, confidence_tier,
-        kill_chain_summary, patient_zero_ip, severity
-```
+Expected: `397 passed, 0 failed`
 
 ## Tech Stack
 
 | Layer | Technology | Version | Purpose |
 |:---|:---|:---|:---|
 | Agent Orchestration | LangGraph | 0.2 | State machine + parallel fan-out |
-| LLM | GPT-4o-mini | — | SPL generation, reasoning, synthesis |
+| LLM | GPT-4o-mini | OpenAI | SPL generation, reasoning, synthesis |
 | Security Platform | Splunk Enterprise | 10.2.2 | Log ingestion + search execution |
-| Dataset | BOTS v3 | — | 2,083,056 events, APT simulation |
-| Vector Store | Qdrant Cloud | 1.11 | MITRE ATT&CK RAG (697 techniques) |
+| Dataset | BOTS v3 | — | 2,083,056 events |
+| Vector Store | Qdrant Cloud | 1.11 | RAG retrieval |
 | Embeddings | text-embedding-3-large | 3072 dims | Semantic search |
 | Backend | FastAPI | 0.115 | REST API + SSE streaming |
-| Frontend | React 18 + Vite | 18 / 5.0 | Real-time investigation UI |
-| UI Components | Tailwind CSS + shadcn | 3.x | Dark cybersecurity theme |
-| Graph Visualization | vis-network | 9.x | Kill chain directed graph |
-| Observability | LangSmith | — | Full pipeline tracing |
-| Evaluation | DeepEval | — | LLM-as-judge adversarial testing |
-| Threat Intel | VirusTotal + AbuseIPDB | v3 / v2 | IP reputation |
+| Frontend | React 18 + Vite | 18 / 5.0 | Real-time dashboard |
+| Persistence | Supabase | PostgreSQL | Investigation storage (JSONB) |
+| PromptOps | Langfuse | 3.14.6 | Prompt versioning + validation |
+| AI Toolkit | Splunk MLTK | 5.7.4 | Native Splunk AI command |
+| ML Runtime | Python for Scientific Computing | 4.3.2 | MLTK dependency |
+| Tracing | LangSmith | — | End-to-end LLM traces |
+
+## Documentation
+
+- [FINDINGS.md](FINDINGS.md) — 8 architectural findings
+  including MLTK latency analysis, SPL guardrail design,
+  Langfuse PromptOps, and containment verification
+- [SPLUNK_SDK_USAGE.md](SPLUNK_SDK_USAGE.md) — Complete
+  Splunk SDK integration guide including MLTK 5.7.4
+  syntax, Connection Management setup, and ai command
+  usage
+- [architecture_diagram.md](architecture_diagram.md) —
+  Full system architecture as required by hackathon rules
 
 ## License
 
@@ -723,3 +841,6 @@ MIT — see [LICENSE](LICENSE)
 - [Qdrant](https://qdrant.tech/) — Vector similarity search
 - [DeepEval](https://github.com/confident-ai/deepeval) — LLM evaluation
 - [vis-network](https://visjs.github.io/vis-network/docs/network/) — Graph visualization
+- Langfuse — Prompt management
+- Supabase — Investigation persistence
+- Splunk MLTK — AI Toolkit integration
