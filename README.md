@@ -25,11 +25,25 @@
 ## What Judges Can Verify In 10 Minutes
 
 ### Option A — Watch the demo video
-[Demo video (TBD)](https://example.com)
+> Demo video coming soon — see investigation
+> walkthrough in the screenshots below.
 
 ### Option B — Run it locally
 
-**Prerequisites:** Splunk Enterprise + botsv3, Python 3.12, Node 18, OpenAI API key, Qdrant Cloud (free tier), VirusTotal API key, AbuseIPDB API key, Langfuse account (free tier)
+**Required dependencies:**
+Splunk Enterprise + botsv3, Python 3.12,
+Node 18, OpenAI API key, Qdrant Cloud (free tier)
+
+**Optional (graceful fallback if missing):**
+- VirusTotal API key — threat intel shows
+  "unavailable", pipeline continues
+- AbuseIPDB API key — same fallback as above
+- Langfuse account — falls back to hardcoded
+  prompts, pipeline unaffected
+- LangSmith API key — tracing disabled,
+  pipeline unaffected
+- Supabase — investigations not persisted
+  between sessions
 
 **1. Clone and install**
 
@@ -681,7 +695,8 @@ timeline
 > investigation flow end to end.
 
 ### Option A — Watch the demo video
-[Demo video (TBD)](https://example.com)
+> Demo video coming soon — see investigation
+> walkthrough in the screenshots below.
 
 ### Option B — Run locally with full commands
 
