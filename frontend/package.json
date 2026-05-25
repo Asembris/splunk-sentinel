@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node ./scripts/wait-for-backend.mjs && vite",
+    "dev:no-wait": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
