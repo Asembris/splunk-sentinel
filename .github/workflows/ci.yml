@@ -1,5 +1,5 @@
 name: CI
-
+# v2 - workflow_dispatch enabled
 on:
   push:
     branches: [ main ]
