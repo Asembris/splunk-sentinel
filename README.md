@@ -86,12 +86,20 @@ LANGFUSE_SECRET_KEY=your_langfuse_secret_key
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ```
 
-**3. Install Splunk app (one click)**
+**Install Splunk app (one click):**
+Download `sentinel.spl` from the repo root and install:
+1. Open Splunk UI at `http://localhost:8000`
+2. Apps -> Manage Apps -> Install app from file
+3. Upload `sentinel.spl`
+4. Check "Upgrade app" if prompted
+5. Restart Splunk when prompted
 
-`sentinel.spl` packaging is coming. Manual setup for now:
-- Create `sentinel_findings` index
-- Create `sentinel_actions` index
-- Add `authorize.conf` MLTK capabilities
+This automatically creates:
+- `sentinel_findings` index
+- `sentinel_actions` index
+- MLTK `authorize.conf` capabilities
+- Native Splunk dashboard at
+  `/app/splunk_sentinel_app/sentinel_dashboard`
 
 **4. Ingest RAG knowledge base (run once)**
 
@@ -744,12 +752,21 @@ Create `backend/app/.env` from `backend/app/.env.example` with:
 - `LANGFUSE_SECRET_KEY`
 - `LANGFUSE_BASE_URL`
 
-#### 5) Splunk setup (manual until app package)
+#### 5) Install Splunk app (one click)
 
-- Create `sentinel_findings` index
-- Create `sentinel_actions` index
-- Apply MLTK capabilities in `authorize.conf`
-- Confirm Splunk on local ports `8000` and `8089`
+Download `sentinel.spl` from the repo root and install:
+1. Open Splunk UI at `http://localhost:8000`
+2. Apps -> Manage Apps -> Install app from file
+3. Upload `sentinel.spl`
+4. Check "Upgrade app" if prompted
+5. Restart Splunk when prompted
+
+This automatically creates:
+- `sentinel_findings` index
+- `sentinel_actions` index
+- MLTK `authorize.conf` capabilities
+- Native Splunk dashboard at
+  `/app/splunk_sentinel_app/sentinel_dashboard`
 
 #### 6) Ingest RAG data (one-time)
 
