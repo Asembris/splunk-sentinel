@@ -86,7 +86,9 @@ class DeleteContainmentAction(BaseModel):
 
 # LLM setup
 _LLM = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_LLM_WITH_TOOLS = _LLM.bind_tools([AddContainmentAction, DeleteContainmentAction])
+_LLM_WITH_TOOLS = _LLM.bind_tools([AddContainmentAction, DeleteContainmentAction]).with_config(
+    {"run_name": "ContainmentRefinementCopilot"}
+)
 
 _CONTAINMENT_REFINEMENT_FALLBACK = """You are Splunk Sentinel, an expert virtual Incident Response assistant.
 Your task is to help the analyst refine the containment plan dynamically.
