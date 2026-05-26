@@ -1,0 +1,87 @@
+<?xml version="1.0"?>
+<dashboard>
+  <label>Splunk Sentinel</label>
+  <description>
+    Autonomous SOC Investigation Platform.
+    Real-time view of AI-powered investigations
+    and containment actions.
+  </description>
+
+  <row>
+    <panel>
+      <title>Recent Investigations</title>
+      <table>
+        <search>
+          <query>
+            index=sentinel_findings earliest=0
+            sourcetype="sentinel:investigation"
+            | table _time investigation_id
+                    classification severity
+                    confidence_tier kill_chain_summary
+            | sort -_time
+            | head 10
+          </query>
+          <earliest>0</earliest>
+          <latest></latest>
+        </search>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Attack Classification Breakdown</title>
+      <chart>
+        <search>
+          <query>
+            index=sentinel_findings earliest=0
+            sourcetype="sentinel:investigation"
+            | stats count by classification
+            | sort -count
+          </query>
+          <earliest>0</earliest>
+          <latest></latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Containment Actions Audit</title>
+      <table>
+        <search>
+          <query>
+            index=sentinel_actions earliest=0
+            | table _time investigation_id
+                    action_type target
+                    status executed_at
+            | sort -_time
+            | head 20
+          </query>
+          <earliest>0</earliest>
+          <latest></latest>
+        </search>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Investigations Over Time</title>
+      <chart>
+        <search>
+          <query>
+            index=sentinel_findings earliest=0
+            sourcetype="sentinel:investigation"
+            | timechart span=1d count by classification
+          </query>
+          <earliest>0</earliest>
+          <latest></latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+</dashboard>
