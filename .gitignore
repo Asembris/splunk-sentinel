@@ -45,8 +45,6 @@ coverage/
 
 # Splunk
 *.tgz
-*.spl
-
 # Secrets & Certs
 *.pem
 *.key

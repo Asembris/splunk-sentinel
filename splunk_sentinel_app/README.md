@@ -1,38 +1,87 @@
 # Splunk Sentinel App
 
-## Installation
+Splunk app package for the Splunk Sentinel autonomous
+SOC investigation platform.
 
-Option A - Copy to Splunk apps directory:
-1. Copy `splunk_sentinel_app/` to `C:\Program Files\Splunk\etc\apps\` (Windows) or `/opt/splunk/etc/apps/` (Linux)
+## One-Click Installation
+
+### Option A - Install via .spl file (recommended)
+
+1. Download sentinel.spl from the repo root
+2. Open Splunk UI at http://localhost:8000
+3. Apps -> Manage Apps -> Install app from file
+4. Upload sentinel.spl
+5. Check "Upgrade app" if prompted
+6. Click Upload
+7. Restart Splunk when prompted
+8. Navigate to Apps -> Splunk Sentinel to confirm
+
+### Option B - Manual copy
+
+1. Copy splunk_sentinel_app/ to:
+   Windows: C:\Program Files\Splunk\etc\apps\
+   Linux:   /opt/splunk/etc/apps/
 2. Restart Splunk:
-   - Windows: Restart the Splunk service
-   - Linux: `/opt/splunk/bin/splunk restart`
-3. Open `http://localhost:8000`
+   Windows: net stop SplunkForwarder && net start SplunkForwarder
+            OR restart via Services
+   Linux:   /opt/splunk/bin/splunk restart
+3. Open http://localhost:8000
 4. Navigate to Apps -> Splunk Sentinel
-5. The dashboard loads automatically
 
-Option B - Install via `.spl` file
-(when `sentinel.spl` is available at repo root):
-1. Open the Splunk UI
-2. Apps -> Manage Apps -> Install app from file
-3. Upload `sentinel.spl`
-4. Restart Splunk when prompted
+## What Gets Installed
+
+### Indexes
+- sentinel_findings - stores completed investigation
+  findings as Splunk notable events
+- sentinel_actions - audit trail for every containment
+  action executed by Sentinel
+
+### Dashboard
+- 4-panel native Splunk dashboard showing:
+  - Recent Investigations (from sentinel_findings)
+  - Attack Classification Breakdown (pie chart)
+  - Containment Actions Audit (from sentinel_actions)
+  - Investigations Over Time (bar chart)
+
+### Saved Searches
+- Sentinel - AWS Metadata Access Detected
+  Detects SSRF attacks targeting AWS metadata service
+  Configure alert action to POST to:
+  http://localhost:8001/api/webhook/splunk
+  for autonomous investigation triggering
+
+### MLTK Permissions
+- authorize.conf grants role_admin the 3 capabilities
+  required for the MLTK ai SPL command:
+  - apply_ai_commander_command
+  - list_ai_commander_config
+  - edit_ai_commander_config
 
 ## Prerequisites
 
 - Splunk Enterprise 9.x or 10.x
-- `sentinel_findings` index must exist
-- `sentinel_actions` index must exist
-- At least one completed investigation run via the Splunk Sentinel backend
+- MLTK 5.7.4 (Splunk AI Toolkit) installed
+- Python for Scientific Computing 4.3.2 (Windows) installed
+- Splunk Sentinel backend running on port 8001
 
-## What the Dashboard Shows
+## Verify Installation
 
-- Recent Investigations: latest 10 investigations with classification, severity, and kill chain
-- Attack Classification Breakdown: pie chart of APT vs Ransomware vs Insider Threat distribution
-- Containment Actions Audit: latest 20 containment actions with verification verdicts
-- Investigations Over Time: daily investigation count by classification
+Run these in Splunk Search to confirm indexes exist:
 
-## Indexes Required
+```spl
+| rest /services/data/indexes
+| where title="sentinel_findings" OR title="sentinel_actions"
+| table title, totalEventCount, currentDBSizeMB
+```
 
-- `sentinel_findings`: created automatically by the Splunk Sentinel backend on startup
-- `sentinel_actions`: created automatically by the Splunk Sentinel backend on startup
+Expected: 2 rows returned.
+
+Verify MLTK permissions:
+```spl
+| makeresults count=1
+| eval test="MLTK permissions verified"
+| ai connection="openai_sentinel"
+    prompt="Say: MLTK working. {test}"
+```
+
+Expected: ai_result_1 field appears.
