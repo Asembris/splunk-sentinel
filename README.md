@@ -86,7 +86,15 @@ LANGFUSE_SECRET_KEY=your_langfuse_secret_key
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ```
 
-**Install Splunk app (one click):**
+**3. Create Supabase table:**
+Run `supabase_schema.sql` in your Supabase SQL Editor:
+1. Go to your Supabase project dashboard
+2. Click SQL Editor -> New Query
+3. Paste the contents of `supabase_schema.sql`
+4. Click Run
+5. Expected: table created with 0 rows
+
+**4. Install Splunk app (one click):**
 Download `sentinel.spl` from the repo root and install:
 1. Open Splunk UI at `http://localhost:8000`
 2. Apps -> Manage Apps -> Install app from file
@@ -101,7 +109,7 @@ This automatically creates:
 - Native Splunk dashboard at
   `/app/splunk_sentinel_app/sentinel_dashboard`
 
-**4. Ingest RAG knowledge base (run once)**
+**5. Ingest RAG knowledge base (run once)**
 
 ```bash
 cd backend
@@ -109,7 +117,7 @@ cd backend
 python -m app.rag.ingest
 ```
 
-**5. Start backend**
+**6. Start backend**
 
 ```bash
 cd backend
@@ -117,7 +125,7 @@ cd backend
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-**6. Start frontend**
+**7. Start frontend**
 
 ```bash
 cd frontend
@@ -125,7 +133,7 @@ npm run dev
 # http://localhost:5173
 ```
 
-**7. Verify health**
+**8. Verify health**
 
 `GET http://localhost:8001/api/health`
 
@@ -145,7 +153,7 @@ Expected:
 }
 ```
 
-**8. Run your first investigation**
+**9. Run your first investigation**
 
 `POST http://localhost:8001/api/investigate`
 
@@ -163,7 +171,7 @@ Expected response includes:
 - `ttp_mappings: 4+ MITRE techniques`
 - `containment_plan: 3 phases with actions`
 
-**9. Run the test suite**
+**10. Run the test suite**
 
 ```bash
 cd backend
@@ -752,7 +760,15 @@ Create `backend/app/.env` from `backend/app/.env.example` with:
 - `LANGFUSE_SECRET_KEY`
 - `LANGFUSE_BASE_URL`
 
-#### 5) Install Splunk app (one click)
+#### 5) Create Supabase table
+
+Run `supabase_schema.sql` in your Supabase SQL Editor:
+1. Go to your Supabase project at supabase.com/dashboard
+2. SQL Editor -> New Query
+3. Paste the full contents of `supabase_schema.sql`
+4. Click Run
+
+#### 6) Install Splunk app (one click)
 
 Download `sentinel.spl` from the repo root and install:
 1. Open Splunk UI at `http://localhost:8000`
@@ -768,7 +784,7 @@ This automatically creates:
 - Native Splunk dashboard at
   `/app/splunk_sentinel_app/sentinel_dashboard`
 
-#### 6) Ingest RAG data (one-time)
+#### 7) Ingest RAG data (one-time)
 
 ```bash
 cd backend
@@ -776,7 +792,7 @@ cd backend
 python -m app.rag.ingest
 ```
 
-#### 7) Run backend
+#### 8) Run backend
 
 ```bash
 cd backend
@@ -784,7 +800,7 @@ cd backend
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-#### 8) Run frontend
+#### 9) Run frontend
 
 ```bash
 cd frontend
@@ -793,7 +809,7 @@ npm run dev
 
 Open: `http://localhost:5173`
 
-#### 9) Verify health endpoint
+#### 10) Verify health endpoint
 
 ```bash
 curl http://localhost:8001/api/health
@@ -806,7 +822,7 @@ Expect:
 - `"promptops": "langfuse"`
 - prompt versions metadata
 
-#### 10) Run investigation
+#### 11) Run investigation
 
 ```bash
 curl -X POST http://localhost:8001/api/investigate ^
@@ -821,7 +837,7 @@ Expect:
 - `ttp_mappings: 4+`
 - `containment_plan: 3 phases`
 
-#### 11) Run tests
+#### 12) Run tests
 
 ```bash
 cd backend
