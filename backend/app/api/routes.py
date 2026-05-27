@@ -29,6 +29,7 @@ from app.tools.splunk_tools import SplunkClient
 from app.services.supabase_client import (
     update_feedback,
     get_investigation_history,
+    get_investigation_count,
     get_investigation_details,
     persist_investigation,
     patch_containment_plan,
@@ -468,7 +469,12 @@ async def history():
     Fetch investigation history from Supabase.
     """
     data = await get_investigation_history(limit=50)
-    return {"investigations": data}
+    total = get_investigation_count()
+    return {
+        "investigations": data,
+        "total": total,
+        "returned": len(data),
+    }
 
 
 @router.get("/investigations/{investigation_id}", summary="Get investigation details")

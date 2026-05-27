@@ -246,6 +246,27 @@ async def get_investigation_history(limit: int = 20) -> list[dict]:
         return []
 
 
+def get_investigation_count() -> int:
+    """
+    Return total count of investigations in Supabase.
+    Returns 0 on any error - never raises.
+    """
+    try:
+        client = get_supabase_client()
+        result = (
+            client.table("investigations")
+            .select("id", count="exact")
+            .execute()
+        )
+        return result.count if result.count is not None else 0
+    except Exception as e:
+        logger.error(
+            "[Supabase] get_investigation_count failed: %s",
+            str(e),
+        )
+        return 0
+
+
 async def get_investigation_details(investigation_id: str) -> Optional[dict]:
     """
     Retrieve full investigation details from Supabase.

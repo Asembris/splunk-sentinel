@@ -179,7 +179,8 @@ export default function HistoryPage() {
       const data = await res.json()
       const list = data.investigations || []
       setInvestigations(list)
-      setTotal(data.total ?? list.length)
+      const apiTotal = data.total ?? data.investigations?.length ?? 0
+      setTotal(apiTotal)
       setLastRefreshed(new Date())
     } catch (err) {
       setError('Failed to load investigation history. Is the backend running?')
@@ -215,6 +216,9 @@ export default function HistoryPage() {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE,
   )
+  const displayTotal = activeFilter === 'ALL'
+    ? total
+    : filteredInvestigations.length
 
   // Reset to page 1 when filter changes
   const handleFilterChange = (filter) => {
@@ -509,7 +513,7 @@ export default function HistoryPage() {
           {Math.min(
             currentPage * ITEMS_PER_PAGE,
             filteredInvestigations.length
-          )} of {filteredInvestigations.length}
+          )} of {displayTotal}
           {activeFilter !== 'ALL' ? ' filtered' : ''} investigations
         </p>
       )}
