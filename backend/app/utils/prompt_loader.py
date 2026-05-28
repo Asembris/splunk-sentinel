@@ -48,7 +48,7 @@ def _get_client():
         public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "")
         secret_key = os.getenv("LANGFUSE_SECRET_KEY", "")
         host = os.getenv(
-            "LANGFUSE_HOST", "https://cloud.langfuse.com"
+            "LANGFUSE_BASE_URL", "https://cloud.langfuse.com"
         )
 
         if not public_key or not secret_key:
