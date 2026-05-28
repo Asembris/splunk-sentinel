@@ -117,7 +117,7 @@ function reducer(state, action) {
           {
             time: new Date().toISOString(),
             type: 'iteration',
-            message: `Reconstruction iteration ${iteration} · confidence ${(confidence * 100).toFixed(0)}% · ${gaps_remaining} gaps`,
+            message: `Reconstruction iteration ${iteration} - confidence ${(confidence * 100).toFixed(0)}% - ${gaps_remaining} gaps`,
           },
           ...stageEvents,
         ],
@@ -146,7 +146,7 @@ function reducer(state, action) {
         events: [...state.events, {
           time: new Date().toISOString(),
           type: 'complete',
-          message: `Investigation complete · confidence ${((action.data?.final_report?.investigation_confidence || 0) * 100).toFixed(0)}%`,
+          message: `Investigation complete - confidence ${((action.data?.final_report?.investigation_confidence || 0) * 100).toFixed(0)}%`,
         }],
       }
     }

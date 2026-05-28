@@ -57,7 +57,7 @@ export default function DashboardPage() {
           {state.status === 'complete' && (
             <span className="flex items-center gap-2 text-sm text-sentinel-success">
               <span className="w-2 h-2 bg-sentinel-success rounded-full" />
-              Complete — loading report...
+              Complete - loading report...
             </span>
           )}
         </div>

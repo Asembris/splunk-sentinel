@@ -4,17 +4,17 @@ import { CheckCircle, Circle, Loader, AlertCircle } from 'lucide-react'
 const AGENTS = [
   { key: 'triage_agent', label: 'Triage Agent', description: 'Classification & telemetry' },
   { key: 'reconstruction_agent', label: 'Reconstruction Agent', description: 'ReAct kill chain loop' },
-  { key: 'threat_intel_agent', label: 'Threat Intel', description: 'VirusTotal · AbuseIPDB' },
+  { key: 'threat_intel_agent', label: 'Threat Intel', description: 'VirusTotal / AbuseIPDB' },
   { key: 'ttp_agent', label: 'TTP Agent', description: 'MITRE ATT&CK RAG' },
   { key: 'synthesis_agent', label: 'Synthesis Agent', description: 'Report generation' },
 ]
 
 const AGENT_MODES = {
-  triage_agent:         { mode: 'FAST', icon: '⚡', color: 'text-amber-400' },
-  reconstruction_agent: { mode: 'DEEP', icon: '🔍', color: 'text-blue-400' },
-  threat_intel_agent:   { mode: 'FAST', icon: '⚡', color: 'text-amber-400' },
-  ttp_agent:            { mode: 'FAST', icon: '⚡', color: 'text-amber-400' },
-  synthesis_agent:      { mode: 'DEEP', icon: '🔍', color: 'text-blue-400' },
+  triage_agent:         { mode: 'FAST', icon: '\u26A1', color: 'text-amber-400' },
+  reconstruction_agent: { mode: 'DEEP', icon: '\u{1F50D}', color: 'text-blue-400' },
+  threat_intel_agent:   { mode: 'FAST', icon: '\u26A1', color: 'text-amber-400' },
+  ttp_agent:            { mode: 'FAST', icon: '\u26A1', color: 'text-amber-400' },
+  synthesis_agent:      { mode: 'DEEP', icon: '\u{1F50D}', color: 'text-blue-400' },
 }
 
 const STATUS_CONFIG = {

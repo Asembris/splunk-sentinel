@@ -4,18 +4,18 @@ import { DataSet } from 'vis-data'
 import { useInvestigation } from '../../store/InvestigationContext'
 
 const TACTIC_COLORS = {
-  'TA0001': '#ef4444', // Initial Access — red
-  'TA0002': '#f97316', // Execution — orange
-  'TA0003': '#eab308', // Persistence — yellow
-  'TA0004': '#a855f7', // Privilege Escalation — purple
-  'TA0005': '#6366f1', // Defense Evasion — indigo
-  'TA0006': '#ec4899', // Credential Access — pink
-  'TA0007': '#14b8a6', // Discovery — teal
-  'TA0008': '#f59e0b', // Lateral Movement — amber
-  'TA0009': '#84cc16', // Collection — lime
-  'TA0010': '#06b6d4', // Exfiltration — cyan
-  'TA0011': '#8b5cf6', // Command and Control — violet
-  'TA0040': '#dc2626', // Impact — dark red
+  'TA0001': '#ef4444', // Initial Access - red
+  'TA0002': '#f97316', // Execution - orange
+  'TA0003': '#eab308', // Persistence - yellow
+  'TA0004': '#a855f7', // Privilege Escalation - purple
+  'TA0005': '#6366f1', // Defense Evasion - indigo
+  'TA0006': '#ec4899', // Credential Access - pink
+  'TA0007': '#14b8a6', // Discovery - teal
+  'TA0008': '#f59e0b', // Lateral Movement - amber
+  'TA0009': '#84cc16', // Collection - lime
+  'TA0010': '#06b6d4', // Exfiltration - cyan
+  'TA0011': '#8b5cf6', // Command and Control - violet
+  'TA0040': '#dc2626', // Impact - dark red
 }
 
 function getNodeColor(stageName) {
@@ -132,7 +132,7 @@ export default function KillChainGraph() {
 
       nodesRef.current.add({
         id: nodeId,
-        label: stage.label.replace(/\s*[-–]\s*/g, '\n'),
+        label: stage.label.replace(/\s*[-\u2013]\s*/g, '\n'),
         title: `
           <div style="
             background:#111827;
@@ -148,7 +148,7 @@ export default function KillChainGraph() {
               ${stage.label}
             </div>
             <div style="color:#6b7280;font-size:11px;">
-              Iteration: ${stage.iteration} · 
+              Iteration: ${stage.iteration} - 
               Confidence: ${Math.round(stage.confidence * 100)}%
             </div>
             ${stage.evidence ? `
@@ -239,7 +239,7 @@ export default function KillChainGraph() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-sentinel-bg/40 backdrop-blur-[2px]">
           <div className="text-center">
             <div className="w-16 h-16 border border-sentinel-accent/30 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse bg-sentinel-accent/5">
-              <span className="text-sentinel-accent text-2xl font-light">⬢</span>
+              <span className="text-sentinel-accent text-2xl font-light">{'\u2B22'}</span>
             </div>
             <p className="text-sentinel-muted text-xs uppercase tracking-widest px-10">
               {isIdle ? 'Waiting for Investigation' : 'Reconstructing attack kill chain...'}

@@ -102,7 +102,7 @@ function InvestigationCard({ investigation, onClick }) {
               )}
               {containment_priority === 'IMMEDIATE' && (
                 <span className="text-xs text-red-400 font-semibold">
-                  ⚡ IMMEDIATE
+                  ! IMMEDIATE
                 </span>
               )}
               {analyst_rating && (
@@ -256,7 +256,7 @@ export default function HistoryPage() {
             Persistent storage via Supabase
             {lastRefreshed && (
               <span className="opacity-60">
-                · Last refreshed {formatTimeAgo(lastRefreshed.toISOString())}
+                - Last refreshed {formatTimeAgo(lastRefreshed.toISOString())}
               </span>
             )}
           </p>
@@ -400,7 +400,7 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Investigation cards — use paginatedInvestigations */}
+      {/* Investigation cards - use paginatedInvestigations */}
       {!loading && !error && paginatedInvestigations.length > 0 && (
         <div className="space-y-3">
           {paginatedInvestigations.map((investigation) => (
@@ -444,7 +444,7 @@ export default function HistoryPage() {
                           : 'border-sentinel-border text-sentinel-muted hover:border-sentinel-accent hover:text-white'
                         }`}
           >
-            ← Previous
+            {'<- Previous'}
           </button>
 
           <div className="flex items-center gap-2">
@@ -500,7 +500,7 @@ export default function HistoryPage() {
                           : 'border-sentinel-border text-sentinel-muted hover:border-sentinel-accent hover:text-white'
                         }`}
           >
-            Next →
+            {'Next ->'}
           </button>
         </div>
       )}
@@ -509,7 +509,7 @@ export default function HistoryPage() {
       {!loading && !error && filteredInvestigations.length > 0 && (
         <p className="text-center text-xs text-sentinel-muted 
                       opacity-40 mt-3">
-          Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}–
+          Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-
           {Math.min(
             currentPage * ITEMS_PER_PAGE,
             filteredInvestigations.length

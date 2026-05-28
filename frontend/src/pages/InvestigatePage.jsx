@@ -72,7 +72,7 @@ export default function InvestigatePage() {
           />
           <div className="flex items-center justify-between mt-4">
             <span className="text-xs text-sentinel-muted">
-              Press ⌘/Ctrl+Enter to investigate
+              Press Ctrl+Enter to investigate
             </span>
             <button
               onClick={handleSubmit}

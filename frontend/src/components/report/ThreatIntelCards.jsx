@@ -39,7 +39,7 @@ export default function ThreatIntelCards({ threatIntel }) {
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-white/40">Geo/ISP</span>
-                  <span className="text-white font-bold truncate">{data.abuseipdb?.country_code || '--'} · {data.abuseipdb?.isp || 'Unknown'}</span>
+                  <span className="text-white font-bold truncate">{data.abuseipdb?.country_code || '--'} / {data.abuseipdb?.isp || 'Unknown'}</span>
                 </div>
                 <div className="flex flex-col gap-1 text-right">
                   <span className="text-white/40">Classification</span>

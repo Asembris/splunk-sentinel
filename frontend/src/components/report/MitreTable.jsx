@@ -1,6 +1,6 @@
 export default function MitreTable({ techniques, ttpMappings }) {
   const enriched = techniques.map(t => {
-    // Extract clean ID: "T1190 - Exploit..." → "T1190"
+    // Extract clean ID: "T1190 - Exploit..." -> "T1190"
     const cleanId = t.split(/[\s-]/)[0].trim()
     const mapping = ttpMappings.find(m =>
       m.technique_id === cleanId ||
@@ -60,7 +60,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
                             : 'text-amber-400 border-amber-500/30'
                         }`}
                       >
-                        {t.mltkAgrees ? 'MLTK ✓' : 'MLTK !'}
+                        {t.mltkAgrees ? 'MLTK OK' : 'MLTK !'}
                       </span>
                     )}
                   </div>
@@ -95,7 +95,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
                     <span className="text-xs font-bold text-sentinel-accent">
                       {Math.round(t.confidence * 100)}%
                     </span>
-                  ) : '—'}
+                  ) : '-'}
                 </td>
               </tr>
             ))}
