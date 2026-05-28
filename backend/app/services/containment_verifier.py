@@ -37,38 +37,38 @@ MLTK_CONNECTION = "openai_sentinel"
 # Verification SPL templates per action type
 VERIFICATION_SPL = {
     "BLOCK_IP": (
-        "search index=botsv3 earliest=-10m "
+        "search index=botsv3 earliest=0 "
         "(src_ip=\"{target}\" OR dest_ip=\"{target}\") "
         "| stats count"
     ),
     "ISOLATE_HOST": (
-        "search index=botsv3 earliest=-10m "
+        "search index=botsv3 earliest=0 "
         "host=\"{target}\" "
         "| stats count"
     ),
     "REVOKE_CREDENTIALS": (
-        "search index=botsv3 earliest=-10m "
+        "search index=botsv3 earliest=0 "
         "sourcetype=WinEventLog:Security "
         "EventCode=4624 "
         "Account_Name=\"{target}\" "
         "| stats count"
     ),
     "DISABLE_ACCOUNT": (
-        "search index=botsv3 earliest=-10m "
+        "search index=botsv3 earliest=0 "
         "sourcetype=WinEventLog:Security "
         "(EventCode=4624 OR EventCode=4625) "
         "Account_Name=\"{target}\" "
         "| stats count"
     ),
     "ROTATE_CREDENTIALS": (
-        "search index=botsv3 earliest=-10m "
+        "search index=botsv3 earliest=0 "
         "sourcetype=WinEventLog:Security "
         "EventCode=4648 "
         "Account_Name=\"{target}\" "
         "| stats count"
     ),
     "AUDIT_CLOUDTRAIL": (
-        "search index=botsv3 earliest=-10m "
+        "search index=botsv3 earliest=0 "
         "sourcetype=aws:cloudtrail "
         "| eval verification_target=\"{target}\" "
         "| stats count"
@@ -109,7 +109,10 @@ def _get_verdict(before: int, after: int) -> str:
     Pure deterministic function - no LLM.
     """
     if before == 0 and after == 0:
-        return "VERIFIED_EFFECTIVE"
+        # before=0 and after=0 means no baseline exists
+        # Cannot distinguish "action worked" from
+        # "no recent traffic" - skip verification
+        return "VERIFICATION_SKIPPED"
 
     if before == 0 and after > 0:
         return "VERIFICATION_FAILED"

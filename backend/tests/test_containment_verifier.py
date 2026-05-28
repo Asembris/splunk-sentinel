@@ -7,8 +7,10 @@ from app.services.containment_verifier import VERIFICATION_SPL, _get_verdict
 
 
 class TestGetVerdict:
-    def test_zero_before_zero_after_is_effective(self):
-        assert _get_verdict(0, 0) == "VERIFIED_EFFECTIVE"
+    def test_zero_before_zero_after_is_skipped(self):
+        # before=0 and after=0 means no baseline exists
+        # Cannot distinguish effective from no traffic
+        assert _get_verdict(0, 0) == "VERIFICATION_SKIPPED"
 
     def test_zero_before_events_after_is_failed(self):
         assert _get_verdict(0, 10) == "VERIFICATION_FAILED"
@@ -61,9 +63,9 @@ class TestVerificationSPLTemplates:
         assert "src_ip" in spl
         assert "dest_ip" in spl
 
-    def test_templates_use_recent_time_window(self):
+    def test_templates_use_full_history_window(self):
         for action_type, spl in VERIFICATION_SPL.items():
-            assert "earliest=-" in spl, (
+            assert "earliest=0" in spl, (
                 f"{action_type} template missing " f"time window"
             )
 
