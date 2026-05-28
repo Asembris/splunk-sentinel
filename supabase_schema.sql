@@ -17,7 +17,7 @@
 CREATE TABLE IF NOT EXISTS public.investigations (
     id                   UUID PRIMARY KEY
                          DEFAULT gen_random_uuid(),
-    investigation_id     TEXT NOT NULL,
+    investigation_id     TEXT NOT NULL UNIQUE,
     created_at           TIMESTAMPTZ DEFAULT now(),
     classification       TEXT,
     severity             TEXT,
