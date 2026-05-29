@@ -294,87 +294,103 @@ const KillChainTimeline = ({ stages = [] }) => {
 
   return (
     <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-5 border-t-2 border-t-blue-500">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
-            <h3 className="text-sm font-bold text-white tracking-wide">
-              Reconstructed Attack Path
-            </h3>
+      {/* Header - two row layout */}
+      <div className="flex flex-col gap-2 mb-4">
+        {/* Row 1: Title left, chips right */}
+        <div className="flex flex-row items-start justify-between gap-3">
+          {/* Left: title + subtitle */}
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+              <h3 className="text-sm font-bold text-white tracking-wide">
+                Reconstructed Attack Path
+              </h3>
+            </div>
+            <p className="text-xs text-sentinel-muted ml-4">
+              {normalized.length} stage
+              {normalized.length !== 1 ? "s" : ""}
+              {confirmedCount > 0 && (
+                <span className="text-green-400">
+                  {" "}&bull; {confirmedCount} confirmed
+                </span>
+              )}
+              {inferredCount > 0 && (
+                <span className="text-amber-400">
+                  {" "}&bull; {inferredCount} inferred
+                </span>
+              )}
+              <span className="text-sentinel-muted">
+                {" "}&bull; MITRE mapped
+              </span>
+            </p>
           </div>
-          <p className="text-xs text-sentinel-muted ml-4">
-            {normalized.length} stage
-            {normalized.length !== 1 ? "s" : ""}
-            {confirmedCount > 0 && (
-              <span className="text-green-400">
-                {" "}&bull; {confirmedCount} confirmed
+
+          {/* Right: Entry/Final chips */}
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {entryStage.techniqueId && (
+              <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+                Entry{" "}
+                <span className="font-mono text-blue-400">
+                  {entryStage.techniqueId}
+                </span>
               </span>
             )}
-            {inferredCount > 0 && (
-              <span className="text-amber-400">
-                {" "}&bull; {inferredCount} inferred
+            {normalized.length > 1 && finalStage.techniqueId && (
+              <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+                Final{" "}
+                <span
+                  className={
+                    isFinalImpact
+                      ? "font-mono text-red-400"
+                      : "font-mono text-blue-400"
+                  }
+                >
+                  {finalStage.techniqueId}
+                </span>
               </span>
             )}
-            <span className="text-sentinel-muted">
-              {" "}&bull; MITRE mapped
-            </span>
-          </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap ml-4 sm:ml-0">
-          {entryStage.techniqueId && (
-            <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted">
-              Entry{" "}
-              <span className="font-mono text-blue-400">
-                {entryStage.techniqueId}
-              </span>
-            </span>
-          )}
-          {normalized.length > 1 && finalStage.techniqueId && (
-            <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted">
-              Final{" "}
-              <span
-                className={
-                  isFinalImpact
-                    ? "font-mono text-red-400"
-                    : "font-mono text-blue-400"
-                }
-              >
-                {finalStage.techniqueId}
-              </span>
-            </span>
-          )}
-        </div>
-
-        {/* Attack story one-liner */}
+        {/* Row 2: Full-width story strip */}
         {normalized.length >= 2 && (
-          <div className="flex items-center gap-1.5 flex-wrap mt-2 ml-0">
-            <span className="text-xs text-sentinel-muted uppercase tracking-wider font-medium">
+          <div className="flex items-center gap-1.5 flex-wrap ml-4">
+            <span className="text-xs text-sentinel-muted uppercase tracking-wider font-medium shrink-0">
               Path
             </span>
-            {normalized.slice(0, 4).map((stage, idx) => (
-              <React.Fragment key={idx}>
-                <span className="text-xs font-medium text-white">
-                  {stage.name.length > 20
-                    ? stage.name.slice(0, 20) + "..."
-                    : stage.name}
-                </span>
-                {idx < Math.min(normalized.length, 4) - 1 && (
-                  <svg
-                    width="10"
-                    height="8"
-                    viewBox="0 0 10 8"
-                    className="text-sentinel-muted shrink-0"
-                    fill="currentColor"
-                  >
-                    <path d="M0 0 L10 4 L0 8 Z" />
-                  </svg>
-                )}
-              </React.Fragment>
-            ))}
-            {normalized.length > 4 && (
+            {normalized.slice(0, 5).map((stage, idx) => {
+              // Prefer tactic name over stage name.
+              // Tactic names are shorter and more meaningful.
+              const label =
+                stage.tactic && !stage.tactic.match(/^TA\d{4}$/)
+                  ? stage.tactic
+                  : stage.name
+
+              const displayLabel =
+                label.length > 18 ? label.slice(0, 18) + "..." : label
+
+              return (
+                <React.Fragment key={idx}>
+                  <span className="text-xs font-medium text-white">
+                    {displayLabel}
+                  </span>
+                  {idx < Math.min(normalized.length, 5) - 1 && (
+                    <svg
+                      width="10"
+                      height="8"
+                      viewBox="0 0 10 8"
+                      className="text-sentinel-muted shrink-0"
+                      fill="currentColor"
+                    >
+                      <path d="M0 0 L10 4 L0 8 Z" />
+                    </svg>
+                  )}
+                </React.Fragment>
+              )
+            })}
+            {normalized.length > 5 && (
               <span className="text-xs text-sentinel-muted">
-                +{normalized.length - 4} more
+                +{normalized.length - 5} more
               </span>
             )}
           </div>
