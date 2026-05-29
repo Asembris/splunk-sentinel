@@ -13,6 +13,7 @@ import MitreTable from '../components/report/MitreTable'
 import ThreatIntelCards from '../components/report/ThreatIntelCards'
 import RecommendedActions from '../components/report/RecommendedActions'
 import CveList from '../components/report/CveList'
+import KillChainTimeline from '../components/report/KillChainTimeline'
 
 const asArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -1919,6 +1920,14 @@ export default function ReportPage() {
   // Use state.result if available, otherwise use historicalData
   const activeResult = state.result || historicalData
   const report = activeResult?.final_report
+  const killChainStages = (() => {
+    const raw =
+      state.result?.kill_chain ||
+      activeResult?.report_json?.kill_chain_stages ||
+      report?.kill_chain_stages ||
+      []
+    return Array.isArray(raw) ? raw : []
+  })()
   const ttpData = enrichedTtpMappings || activeResult?.ttp_mappings || []
 
   useEffect(() => {
@@ -2322,6 +2331,13 @@ export default function ReportPage() {
 
       {/* Report sections */}
       <div className="space-y-6">
+        {/* Kill Chain Timeline - first thing judges see */}
+        {killChainStages.length > 0 && (
+          <RouteSectionErrorBoundary sectionName="KillChainTimeline">
+            <KillChainTimeline stages={killChainStages} />
+          </RouteSectionErrorBoundary>
+        )}
+
         <RouteSectionErrorBoundary sectionName="ExecutiveSummary">
           <ExecutiveSummary report={report} />
         </RouteSectionErrorBoundary>
