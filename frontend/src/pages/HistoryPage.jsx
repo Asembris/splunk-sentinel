@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Clock, Shield, ChevronRight, AlertTriangle,
-  CheckCircle, XCircle, RefreshCw, Database
+  CheckCircle, XCircle, RefreshCw, Database, Copy
 } from 'lucide-react'
 
 const SEVERITY_STYLES = {
@@ -46,13 +46,6 @@ function formatTimeAgo(isoString) {
   return `${diffDays}d ago`
 }
 
-function formatDateTime(isoString) {
-  return new Date(isoString).toLocaleString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
-}
-
 function InvestigationCard({ investigation, onClick }) {
   const {
     investigation_id,
@@ -66,36 +59,39 @@ function InvestigationCard({ investigation, onClick }) {
     containment_priority,
   } = investigation
 
-  const tier = CONFIDENCE_TIER(confidence)
+  const tier = CONFIDENCE_TIER(confidence || 0)
+
+  const handleCopy = (event) => {
+    event.stopPropagation()
+    navigator.clipboard?.writeText(investigation_id).catch(() => {})
+  }
 
   return (
     <div
       onClick={onClick}
-      className="bg-sentinel-surface border border-sentinel-border 
-                 rounded-xl p-5 hover:border-sentinel-accent 
+      className="bg-sentinel-surface border border-sentinel-border
+                 rounded-xl p-5 hover:border-sentinel-accent
                  transition-all cursor-pointer group"
     >
       <div className="flex items-start justify-between gap-4">
-        {/* Left: icon + main info */}
         <div className="flex items-start gap-3 flex-1 min-w-0">
-          <div className="mt-0.5 p-2 bg-sentinel-bg rounded-lg 
+          <div className="mt-0.5 p-2 bg-sentinel-bg rounded-lg
                           border border-sentinel-border flex-shrink-0">
             <Shield className="w-4 h-4 text-sentinel-accent" />
           </div>
 
           <div className="flex-1 min-w-0">
-            {/* Badges row */}
             <div className="flex items-center gap-2 flex-wrap mb-2">
               {severity && (
-                <span className={`text-xs font-bold px-2 py-0.5 rounded 
-                                  uppercase tracking-wider 
+                <span className={`text-xs font-bold px-2 py-0.5 rounded
+                                  uppercase tracking-wider
                                   ${SEVERITY_STYLES[severity] || SEVERITY_STYLES.LOW}`}>
                   {severity}
                 </span>
               )}
               {classification && (
                 <span className={`text-xs font-mono px-2 py-0.5 rounded
-                                  ${CLASSIFICATION_STYLES[classification] 
+                                  ${CLASSIFICATION_STYLES[classification]
                                     || CLASSIFICATION_STYLES.UNKNOWN}`}>
                   {classification}
                 </span>
@@ -106,7 +102,7 @@ function InvestigationCard({ investigation, onClick }) {
                 </span>
               )}
               {analyst_rating && (
-                <span className="flex items-center gap-1 text-xs 
+                <span className="flex items-center gap-1 text-xs
                                   text-sentinel-muted">
                   {RATING_ICON[analyst_rating]}
                   {analyst_rating}
@@ -114,18 +110,27 @@ function InvestigationCard({ investigation, onClick }) {
               )}
             </div>
 
-            {/* Trigger text */}
-            <p className="text-sm text-white font-medium leading-snug 
+            <p className="text-sm text-white font-medium leading-snug
                            line-clamp-2 mb-2">
               {trigger_text || 'No trigger text available'}
             </p>
 
-            {/* Meta row */}
-            <div className="flex items-center gap-4 text-xs 
+            <div className="flex items-center gap-4 text-xs
                              text-sentinel-muted flex-wrap">
               <span className="font-mono opacity-60">
                 {investigation_id}
               </span>
+              <button
+                type="button"
+                onClick={handleCopy}
+                title="Copy investigation ID"
+                aria-label="Copy investigation ID"
+                className="p-1 rounded text-sentinel-muted
+                           hover:text-white hover:bg-sentinel-border
+                           transition-colors"
+              >
+                <Copy size={14} />
+              </button>
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 {formatTimeAgo(created_at)}
@@ -139,18 +144,17 @@ function InvestigationCard({ investigation, onClick }) {
           </div>
         </div>
 
-        {/* Right: confidence + chevron */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <div className="text-right">
             <div className="text-2xl font-bold text-sentinel-accent">
-              {Math.round(confidence * 100)}%
+              {Math.round((confidence || 0) * 100)}%
             </div>
             <div className={`text-xs font-semibold ${tier.color}`}>
               {tier.label}
             </div>
           </div>
           <ChevronRight
-            className="w-4 h-4 text-sentinel-muted 
+            className="w-4 h-4 text-sentinel-muted
                         group-hover:text-sentinel-accent transition-colors"
           />
         </div>
@@ -162,79 +166,104 @@ function InvestigationCard({ investigation, onClick }) {
 export default function HistoryPage() {
   const navigate = useNavigate()
   const [investigations, setInvestigations] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalRecords, setTotalRecords] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [limit] = useState(20)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [lastRefreshed, setLastRefreshed] = useState(null)
-  const [activeFilter, setActiveFilter] = useState('ALL')
-  const [currentPage, setCurrentPage] = useState(1)
-  const ITEMS_PER_PAGE = 10
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async (
+    page = 1,
+    search = '',
+  ) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/investigations/history')
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+      })
+      if (search.trim()) {
+        params.append('search', search.trim())
+      }
+
+      const res = await fetch(
+        `/api/investigations/history?${params}`,
+      )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      const list = data.investigations || []
-      setInvestigations(list)
-      const apiTotal = data.total ?? data.investigations?.length ?? 0
-      setTotal(apiTotal)
+
+      setInvestigations(data.investigations || [])
+      setTotalRecords(data.total || 0)
+      setTotalPages(data.pages || 1)
+      setCurrentPage(data.page || 1)
       setLastRefreshed(new Date())
     } catch (err) {
-      setError('Failed to load investigation history. Is the backend running?')
       console.error('History fetch error:', err)
+      setInvestigations([])
+      setTotalRecords(0)
+      setTotalPages(1)
+      setError('Failed to load investigation history. Is the backend running?')
     } finally {
       setLoading(false)
     }
-  }
+  }, [limit])
 
   useEffect(() => {
-    fetchHistory()
-  }, [])
+    fetchHistory(currentPage, searchQuery)
+  }, [currentPage, searchQuery, fetchHistory])
 
   const handleCardClick = (investigation) => {
     navigate(`/report/${investigation.investigation_id}`)
   }
 
-  // Apply filter
-  const filteredInvestigations = investigations.filter(inv => {
-    if (activeFilter === 'ALL') return true
-    if (activeFilter === 'APT') return inv.classification === 'APT'
-    if (activeFilter === 'INSIDER_THREAT') return (
-      inv.classification === 'INSIDER_THREAT'
-    )
-    return true
-  })
-
-  // Apply pagination
-  const totalPages = Math.ceil(
-    filteredInvestigations.length / ITEMS_PER_PAGE
-  )
-  const paginatedInvestigations = filteredInvestigations.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE,
-  )
-  const displayTotal = activeFilter === 'ALL'
-    ? total
-    : filteredInvestigations.length
-
-  // Reset to page 1 when filter changes
-  const handleFilterChange = (filter) => {
-    setActiveFilter(filter)
+  const handleSearch = () => {
+    setSearchQuery(searchInput.trim())
     setCurrentPage(1)
   }
 
-  // Stats derived from loaded data
+  const handleSearchKeyDown = (event) => {
+    if (event.key === 'Enter') handleSearch()
+  }
+
+  const handleClearSearch = () => {
+    setSearchInput('')
+    setSearchQuery('')
+    setCurrentPage(1)
+  }
+
+  const handlePageChange = (newPage) => {
+    if (newPage < 1 || newPage > totalPages) return
+    setCurrentPage(newPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const pageNumbers = Array.from(
+    { length: totalPages },
+    (_, i) => i + 1,
+  )
+    .filter(page => (
+      page === 1 ||
+      page === totalPages ||
+      Math.abs(page - currentPage) <= 1
+    ))
+    .reduce((acc, page, idx, arr) => {
+      if (idx > 0 && page - arr[idx - 1] > 1) {
+        acc.push('...')
+      }
+      acc.push(page)
+      return acc
+    }, [])
+
   const criticalCount = investigations.filter(
     i => i.severity === 'CRITICAL'
   ).length
   const aptCount = investigations.filter(
     i => i.classification === 'APT'
-  ).length
-  const feedbackCount = investigations.filter(
-    i => i.analyst_rating
   ).length
   const avgConfidence = investigations.length > 0
     ? Math.round(
@@ -243,9 +272,13 @@ export default function HistoryPage() {
       )
     : 0
 
+  const startRecord = totalRecords === 0
+    ? 0
+    : (currentPage - 1) * limit + 1
+  const endRecord = Math.min(currentPage * limit, totalRecords)
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
-      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">
@@ -264,36 +297,35 @@ export default function HistoryPage() {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={fetchHistory}
+            onClick={() => fetchHistory(currentPage, searchQuery)}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 
-                       bg-sentinel-surface border border-sentinel-border 
-                       hover:border-sentinel-accent rounded-lg text-sm 
+            className="flex items-center gap-2 px-3 py-2
+                       bg-sentinel-surface border border-sentinel-border
+                       hover:border-sentinel-accent rounded-lg text-sm
                        transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <div className="px-3 py-1.5 bg-sentinel-surface border 
-                          border-sentinel-border rounded-lg text-sm 
+          <div className="px-3 py-1.5 bg-sentinel-surface border
+                          border-sentinel-border rounded-lg text-sm
                           text-sentinel-muted">
-            {total} {total === 1 ? 'Record' : 'Records'}
+            {totalRecords} {totalRecords === 1 ? 'Record' : 'Records'}
           </div>
         </div>
       </div>
 
-      {/* Stats bar */}
-      {investigations.length > 0 && (
+      {totalRecords > 0 && (
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Total', value: total, color: 'text-sentinel-accent' },
-            { label: 'Critical', value: criticalCount, color: 'text-red-400' },
-            { label: 'APT', value: aptCount, color: 'text-orange-400' },
-            { label: 'Avg Confidence', value: `${avgConfidence}%`, color: 'text-sentinel-accent' },
+            { label: 'Total', value: totalRecords, color: 'text-sentinel-accent' },
+            { label: 'Page Critical', value: criticalCount, color: 'text-red-400' },
+            { label: 'Page APT', value: aptCount, color: 'text-orange-400' },
+            { label: 'Page Avg Confidence', value: `${avgConfidence}%`, color: 'text-sentinel-accent' },
           ].map(stat => (
             <div
               key={stat.label}
-              className="bg-sentinel-surface border border-sentinel-border 
+              className="bg-sentinel-surface border border-sentinel-border
                          rounded-xl p-4 text-center"
             >
               <div className={`text-2xl font-bold ${stat.color}`}>
@@ -307,57 +339,52 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Filter tabs */}
-      {!loading && !error && investigations.length > 0 && (
-        <div className="flex items-center gap-1 mb-4 
-                        bg-sentinel-surface border border-sentinel-border 
-                        rounded-xl p-1 w-fit">
-          {[
-            { key: 'ALL', label: 'All', count: investigations.length },
-            {
-              key: 'APT',
-              label: 'APT',
-              count: investigations.filter(
-                i => i.classification === 'APT'
-              ).length,
-            },
-            {
-              key: 'INSIDER_THREAT',
-              label: 'Insider Threat',
-              count: investigations.filter(
-                i => i.classification === 'INSIDER_THREAT'
-              ).length,
-            },
-          ].map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => handleFilterChange(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 
-                          rounded-lg text-sm font-medium transition-all
-                          ${activeFilter === tab.key
-                            ? 'bg-sentinel-accent text-white'
-                            : 'text-sentinel-muted hover:text-white'
-                          }`}
-            >
-              {tab.label}
-              <span className={`text-xs px-1.5 py-0.5 rounded-full
-                                ${activeFilter === tab.key
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-sentinel-border text-sentinel-muted'
-                                }`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
-        </div>
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          onKeyDown={handleSearchKeyDown}
+          placeholder="Search by investigation ID or trigger..."
+          className="flex-1 bg-sentinel-surface border
+                     border-sentinel-border rounded px-3 py-2
+                     text-sm text-white placeholder-sentinel-muted
+                     focus:outline-none focus:border-blue-500"
+        />
+        <button
+          onClick={handleSearch}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700
+                     text-white text-sm rounded transition-colors"
+        >
+          Search
+        </button>
+        {searchQuery && (
+          <button
+            onClick={handleClearSearch}
+            className="px-4 py-2 bg-sentinel-surface
+                       hover:bg-sentinel-border text-sentinel-muted
+                       text-sm rounded border border-sentinel-border
+                       transition-colors"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {searchQuery && (
+        <p className="text-sm text-sentinel-muted mb-3">
+          {totalRecords > 0
+            ? `${totalRecords} result${totalRecords !== 1 ? 's' : ''} for "${searchQuery}"`
+            : `No results for "${searchQuery}"`
+          }
+        </p>
       )}
 
-      {/* Loading state */}
       {loading && (
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
-            <div className="w-8 h-8 border-2 border-sentinel-accent 
-                            border-t-transparent rounded-full animate-spin 
+            <div className="w-8 h-8 border-2 border-sentinel-accent
+                            border-t-transparent rounded-full animate-spin
                             mx-auto mb-3" />
             <p className="text-sentinel-muted text-sm">
               Loading from Supabase...
@@ -366,9 +393,8 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Error state */}
       {error && !loading && (
-        <div className="bg-red-500/10 border border-red-500/30 
+        <div className="bg-red-500/10 border border-red-500/30
                         rounded-xl p-6 text-center">
           <XCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
           <p className="text-red-400 font-medium mb-1">
@@ -376,9 +402,9 @@ export default function HistoryPage() {
           </p>
           <p className="text-sm text-sentinel-muted mb-4">{error}</p>
           <button
-            onClick={fetchHistory}
-            className="px-4 py-2 bg-sentinel-surface border 
-                       border-sentinel-border rounded-lg text-sm 
+            onClick={() => fetchHistory(currentPage, searchQuery)}
+            className="px-4 py-2 bg-sentinel-surface border
+                       border-sentinel-border rounded-lg text-sm
                        hover:border-sentinel-accent transition-colors"
           >
             Try again
@@ -386,24 +412,24 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && !error && investigations.length === 0 && (
+      {!loading && !error && totalRecords === 0 && (
         <div className="text-center py-20">
-          <Clock className="w-12 h-12 text-sentinel-muted mx-auto mb-4 
+          <Clock className="w-12 h-12 text-sentinel-muted mx-auto mb-4
                              opacity-40" />
           <p className="text-sentinel-muted font-medium mb-1">
-            No investigations yet
+            {searchQuery ? 'No results found' : 'No investigations yet'}
           </p>
           <p className="text-sm text-sentinel-muted opacity-60">
-            Run an investigation to see it here
+            {searchQuery
+              ? 'Try another investigation ID or trigger phrase'
+              : 'Run an investigation to see it here'}
           </p>
         </div>
       )}
 
-      {/* Investigation cards - use paginatedInvestigations */}
-      {!loading && !error && paginatedInvestigations.length > 0 && (
+      {!loading && !error && investigations.length > 0 && (
         <div className="space-y-3">
-          {paginatedInvestigations.map((investigation) => (
+          {investigations.map((investigation) => (
             <InvestigationCard
               key={investigation.investigation_id}
               investigation={investigation}
@@ -413,31 +439,13 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Empty filtered state */}
-      {!loading && !error && filteredInvestigations.length === 0 
-       && investigations.length > 0 && (
-        <div className="text-center py-12">
-          <p className="text-sentinel-muted text-sm">
-            No investigations match this filter
-          </p>
-          <button
-            onClick={() => handleFilterChange('ALL')}
-            className="mt-2 text-xs text-sentinel-accent 
-                       hover:underline"
-          >
-            Show all
-          </button>
-        </div>
-      )}
-
-      {/* Pagination */}
       {!loading && !error && totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6 
+        <div className="flex items-center justify-between mt-6
                         pt-4 border-t border-sentinel-border">
           <button
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage === 1}
-            className={`flex items-center gap-1.5 px-3 py-1.5 
+            className={`flex items-center gap-1.5 px-3 py-1.5
                         rounded-lg text-sm transition-all border
                         ${currentPage === 1
                           ? 'border-sentinel-border text-sentinel-muted opacity-40 cursor-not-allowed'
@@ -448,52 +456,35 @@ export default function HistoryPage() {
           </button>
 
           <div className="flex items-center gap-2">
-            {/* Page number pills */}
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(page => (
-                page === 1 ||
-                page === totalPages ||
-                Math.abs(page - currentPage) <= 1
-              ))
-              .reduce((acc, page, idx, arr) => {
-                if (idx > 0 && page - arr[idx - 1] > 1) {
-                  acc.push('...')
-                }
-                acc.push(page)
-                return acc
-              }, [])
-              .map((item, idx) => (
-                item === '...'
-                  ? (
-                    <span key={`ellipsis-${idx}`}
-                          className="text-sentinel-muted text-sm px-1">
-                      ...
-                    </span>
-                  )
-                  : (
-                    <button
-                      key={item}
-                      onClick={() => setCurrentPage(item)}
-                      className={`w-8 h-8 rounded-lg text-sm font-medium 
-                                  transition-all
-                                  ${currentPage === item
-                                    ? 'bg-sentinel-accent text-white'
-                                    : 'text-sentinel-muted hover:text-white'
-                                  }`}
-                    >
-                      {item}
-                    </button>
-                  )
-              ))
-            }
+            {pageNumbers.map((item, idx) => (
+              item === '...'
+                ? (
+                  <span key={`ellipsis-${idx}`}
+                        className="text-sentinel-muted text-sm px-1">
+                    ...
+                  </span>
+                )
+                : (
+                  <button
+                    key={item}
+                    onClick={() => handlePageChange(item)}
+                    className={`w-8 h-8 rounded-lg text-sm font-medium
+                                transition-all
+                                ${currentPage === item
+                                  ? 'bg-sentinel-accent text-white'
+                                  : 'text-sentinel-muted hover:text-white'
+                                }`}
+                  >
+                    {item}
+                  </button>
+                )
+            ))}
           </div>
 
           <button
-            onClick={() => setCurrentPage(
-              p => Math.min(totalPages, p + 1)
-            )}
+            onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
-            className={`flex items-center gap-1.5 px-3 py-1.5 
+            className={`flex items-center gap-1.5 px-3 py-1.5
                         rounded-lg text-sm transition-all border
                         ${currentPage === totalPages
                           ? 'border-sentinel-border text-sentinel-muted opacity-40 cursor-not-allowed'
@@ -505,22 +496,15 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Page info */}
-      {!loading && !error && filteredInvestigations.length > 0 && (
-        <p className="text-center text-xs text-sentinel-muted 
+      {!loading && !error && totalRecords > 0 && (
+        <p className="text-center text-xs text-sentinel-muted
                       opacity-40 mt-3">
-          Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-
-          {Math.min(
-            currentPage * ITEMS_PER_PAGE,
-            filteredInvestigations.length
-          )} of {displayTotal}
-          {activeFilter !== 'ALL' ? ' filtered' : ''} investigations
+          Showing {startRecord}-{endRecord} of {totalRecords} investigations
         </p>
       )}
 
-      {/* Supabase note */}
       {!loading && !error && (
-        <p className="text-center text-xs text-sentinel-muted 
+        <p className="text-center text-xs text-sentinel-muted
                        opacity-40 mt-8">
           Investigation history persisted to Supabase PostgreSQL.
           Data survives session reloads.

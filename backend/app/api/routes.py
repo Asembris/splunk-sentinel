@@ -14,11 +14,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -464,15 +465,30 @@ async def verify_audit_chain(investigation_id: str):
 
 
 @router.get("/investigations/history", summary="Get investigation history")
-async def history():
+async def history(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    search: str = Query(default=""),
+):
     """
-    Fetch investigation history from Supabase.
+    Return paginated investigation history.
     """
-    data = await get_investigation_history(limit=50)
-    total = get_investigation_count()
+    offset = (page - 1) * limit
+    data = await get_investigation_history(
+        limit=limit,
+        offset=offset,
+        search=search,
+    )
+    total = get_investigation_count(search=search)
+    pages = max(1, math.ceil(total / limit)) if total > 0 else 1
+
     return {
         "investigations": data,
         "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages,
+        "offset": offset,
         "returned": len(data),
     }
 

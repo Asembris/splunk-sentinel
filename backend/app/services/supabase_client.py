@@ -221,44 +221,74 @@ async def update_feedback(
         return False
 
 
-async def get_investigation_history(limit: int = 20) -> list[dict]:
+async def get_investigation_history(
+    limit: int = 20,
+    offset: int = 0,
+    search: str = "",
+) -> list[dict]:
     """
-    Retrieve recent investigations from Supabase for History page.
+    Return paginated investigation history from Supabase.
+    Supports offset-based pagination and search by investigation_id
+    or trigger_text. Returns empty list on any error - never raises.
     """
     try:
         client = get_supabase_client()
-        response = (
+        query = (
             client.table("investigations")
             .select(
-                "investigation_id, classification, severity, confidence, "
-                "trigger_text, kill_chain_stages, created_at, "
-                "analyst_rating, escalate_to_human, containment_priority"
+                "investigation_id, created_at, classification, "
+                "severity, confidence, trigger_text, "
+                "kill_chain_stages, patient_zero_ip, "
+                "containment_priority, analyst_rating, "
+                "escalate_to_human"
             )
             .order("created_at", desc=True)
             .limit(limit)
-            .execute()
+            .offset(offset)
         )
-        return response.data or []
+
+        if search and search.strip():
+            safe_search = search.strip()
+            query = query.or_(
+                f"investigation_id.ilike.%{safe_search}%,"
+                f"trigger_text.ilike.%{safe_search}%"
+            )
+
+        result = query.execute()
+        return result.data or []
     except Exception as e:
         logger.error(
-            "[SUPABASE] History retrieval failed | error=%s", str(e)
+            "[Supabase] get_investigation_history failed: %s",
+            str(e),
         )
         return []
 
 
-def get_investigation_count() -> int:
+def get_investigation_count(search: str = "") -> int:
     """
     Return total count of investigations in Supabase.
+    Supports optional search filter matching get_investigation_history().
     Returns 0 on any error - never raises.
     """
     try:
         client = get_supabase_client()
-        result = (
+        query = (
             client.table("investigations")
             .select("id", count="exact")
-            .execute()
         )
-        return result.count if result.count is not None else 0
+
+        if search and search.strip():
+            safe_search = search.strip()
+            query = query.or_(
+                f"investigation_id.ilike.%{safe_search}%,"
+                f"trigger_text.ilike.%{safe_search}%"
+        )
+
+        result = query.execute()
+        count = getattr(result, "count", None)
+        if isinstance(count, int):
+            return count
+        return len(result.data or [])
     except Exception as e:
         logger.error(
             "[Supabase] get_investigation_count failed: %s",
