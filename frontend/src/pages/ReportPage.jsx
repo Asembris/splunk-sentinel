@@ -1920,13 +1920,31 @@ export default function ReportPage() {
   // Use state.result if available, otherwise use historicalData
   const activeResult = state.result || historicalData
   const report = activeResult?.final_report
-  const killChainStages = (() => {
-    const raw =
-      state.result?.kill_chain ||
-      activeResult?.report_json?.kill_chain_stages ||
-      report?.kill_chain_stages ||
-      []
-    return Array.isArray(raw) ? raw : []
+  const safeKillChainStages = (() => {
+    // Try all three data sources in priority order
+    // Live investigation: state.result.kill_chain
+    // Historical report: report_json.kill_chain_stages
+    // Fallback: report.kill_chain_stages
+    const candidates = [
+      state.result?.kill_chain,
+      activeResult?.report_json?.kill_chain_stages,
+      report?.kill_chain_stages,
+    ]
+
+    // Use first candidate that is a real array
+    const raw = candidates.find(Array.isArray) || []
+
+    // Filter out non-objects and numbers
+    // kill_chain_stages can be a count (number)
+    // at the top level of the Supabase row
+    // Only keep actual stage objects
+    return raw.filter(
+      (stage) =>
+        stage !== null &&
+        stage !== undefined &&
+        typeof stage === 'object' &&
+        !Array.isArray(stage)
+    )
   })()
   const ttpData = enrichedTtpMappings || activeResult?.ttp_mappings || []
 
@@ -2332,9 +2350,9 @@ export default function ReportPage() {
       {/* Report sections */}
       <div className="space-y-6">
         {/* Kill Chain Timeline - first thing judges see */}
-        {killChainStages.length > 0 && (
+        {safeKillChainStages.length > 0 && (
           <RouteSectionErrorBoundary sectionName="KillChainTimeline">
-            <KillChainTimeline stages={killChainStages} />
+            <KillChainTimeline stages={safeKillChainStages} />
           </RouteSectionErrorBoundary>
         )}
 
