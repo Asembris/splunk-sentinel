@@ -10,7 +10,7 @@
 ## 1. Splunk Python SDK Integration
 
 ### Version and Installation
-- splunk-sdk: 1.7.4
+- splunk-sdk: 2.0.2
 - Splunk Enterprise: 10.2.2
 - Python: 3.12
 
