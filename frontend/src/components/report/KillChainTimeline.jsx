@@ -11,6 +11,7 @@ const TACTIC_STYLES = {
     glow: "shadow-red-500/20",
     badge: "bg-red-900 text-red-300",
     text: "text-red-400",
+    ring: "ring-red-500",
   },
   "Initial Access": {
     border: "border-l-red-500",
@@ -18,6 +19,7 @@ const TACTIC_STYLES = {
     glow: "shadow-red-500/20",
     badge: "bg-red-900 text-red-300",
     text: "text-red-400",
+    ring: "ring-red-500",
   },
   // Execution
   TA0002: {
@@ -26,6 +28,7 @@ const TACTIC_STYLES = {
     glow: "shadow-blue-500/20",
     badge: "bg-blue-900 text-blue-300",
     text: "text-blue-400",
+    ring: "ring-blue-500",
   },
   Execution: {
     border: "border-l-blue-500",
@@ -33,6 +36,7 @@ const TACTIC_STYLES = {
     glow: "shadow-blue-500/20",
     badge: "bg-blue-900 text-blue-300",
     text: "text-blue-400",
+    ring: "ring-blue-500",
   },
   // Persistence
   TA0003: {
@@ -41,6 +45,7 @@ const TACTIC_STYLES = {
     glow: "shadow-purple-500/20",
     badge: "bg-purple-900 text-purple-300",
     text: "text-purple-400",
+    ring: "ring-purple-500",
   },
   Persistence: {
     border: "border-l-purple-500",
@@ -48,6 +53,7 @@ const TACTIC_STYLES = {
     glow: "shadow-purple-500/20",
     badge: "bg-purple-900 text-purple-300",
     text: "text-purple-400",
+    ring: "ring-purple-500",
   },
   // Privilege Escalation
   TA0004: {
@@ -56,6 +62,7 @@ const TACTIC_STYLES = {
     glow: "shadow-orange-500/20",
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
+    ring: "ring-orange-500",
   },
   "Privilege Escalation": {
     border: "border-l-orange-500",
@@ -63,6 +70,7 @@ const TACTIC_STYLES = {
     glow: "shadow-orange-500/20",
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
+    ring: "ring-orange-500",
   },
   // Defense Evasion
   TA0005: {
@@ -71,6 +79,7 @@ const TACTIC_STYLES = {
     glow: "shadow-slate-400/20",
     badge: "bg-slate-800 text-slate-300",
     text: "text-slate-400",
+    ring: "ring-slate-400",
   },
   "Defense Evasion": {
     border: "border-l-slate-400",
@@ -78,6 +87,7 @@ const TACTIC_STYLES = {
     glow: "shadow-slate-400/20",
     badge: "bg-slate-800 text-slate-300",
     text: "text-slate-400",
+    ring: "ring-slate-400",
   },
   // Credential Access
   TA0006: {
@@ -86,6 +96,7 @@ const TACTIC_STYLES = {
     glow: "shadow-amber-500/20",
     badge: "bg-amber-900 text-amber-300",
     text: "text-amber-400",
+    ring: "ring-amber-500",
   },
   "Credential Access": {
     border: "border-l-amber-500",
@@ -93,6 +104,7 @@ const TACTIC_STYLES = {
     glow: "shadow-amber-500/20",
     badge: "bg-amber-900 text-amber-300",
     text: "text-amber-400",
+    ring: "ring-amber-500",
   },
   // Discovery
   TA0007: {
@@ -101,6 +113,7 @@ const TACTIC_STYLES = {
     glow: "shadow-teal-500/20",
     badge: "bg-teal-900 text-teal-300",
     text: "text-teal-400",
+    ring: "ring-teal-500",
   },
   Discovery: {
     border: "border-l-teal-500",
@@ -108,6 +121,7 @@ const TACTIC_STYLES = {
     glow: "shadow-teal-500/20",
     badge: "bg-teal-900 text-teal-300",
     text: "text-teal-400",
+    ring: "ring-teal-500",
   },
   // Lateral Movement
   TA0008: {
@@ -116,6 +130,7 @@ const TACTIC_STYLES = {
     glow: "shadow-orange-400/20",
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
+    ring: "ring-orange-400",
   },
   "Lateral Movement": {
     border: "border-l-orange-400",
@@ -123,6 +138,7 @@ const TACTIC_STYLES = {
     glow: "shadow-orange-400/20",
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
+    ring: "ring-orange-400",
   },
   // Collection
   TA0009: {
@@ -131,6 +147,7 @@ const TACTIC_STYLES = {
     glow: "shadow-cyan-500/20",
     badge: "bg-cyan-900 text-cyan-300",
     text: "text-cyan-400",
+    ring: "ring-cyan-500",
   },
   Collection: {
     border: "border-l-cyan-500",
@@ -138,6 +155,7 @@ const TACTIC_STYLES = {
     glow: "shadow-cyan-500/20",
     badge: "bg-cyan-900 text-cyan-300",
     text: "text-cyan-400",
+    ring: "ring-cyan-500",
   },
   // Exfiltration
   TA0010: {
@@ -146,6 +164,7 @@ const TACTIC_STYLES = {
     glow: "shadow-rose-500/20",
     badge: "bg-rose-900 text-rose-300",
     text: "text-rose-400",
+    ring: "ring-rose-500",
   },
   Exfiltration: {
     border: "border-l-rose-500",
@@ -153,6 +172,7 @@ const TACTIC_STYLES = {
     glow: "shadow-rose-500/20",
     badge: "bg-rose-900 text-rose-300",
     text: "text-rose-400",
+    ring: "ring-rose-500",
   },
   // Impact
   TA0040: {
@@ -161,6 +181,7 @@ const TACTIC_STYLES = {
     glow: "shadow-red-600/30",
     badge: "bg-red-900 text-red-200",
     text: "text-red-400",
+    ring: "ring-red-600",
   },
   Impact: {
     border: "border-l-red-600",
@@ -168,6 +189,7 @@ const TACTIC_STYLES = {
     glow: "shadow-red-600/30",
     badge: "bg-red-900 text-red-200",
     text: "text-red-400",
+    ring: "ring-red-600",
   },
   // Command and Control
   TA0011: {
@@ -176,6 +198,7 @@ const TACTIC_STYLES = {
     glow: "shadow-violet-500/20",
     badge: "bg-violet-900 text-violet-300",
     text: "text-violet-400",
+    ring: "ring-violet-500",
   },
   "Command and Control": {
     border: "border-l-violet-500",
@@ -183,6 +206,7 @@ const TACTIC_STYLES = {
     glow: "shadow-violet-500/20",
     badge: "bg-violet-900 text-violet-300",
     text: "text-violet-400",
+    ring: "ring-violet-500",
   },
 }
 
@@ -192,6 +216,7 @@ const DEFAULT_TACTIC_STYLE = {
   glow: "shadow-blue-500/20",
   badge: "bg-blue-900 text-blue-300",
   text: "text-blue-400",
+  ring: "ring-blue-500",
 }
 
 // --------------- Helpers ---------------
@@ -268,7 +293,7 @@ const KillChainTimeline = ({ stages = [] }) => {
   const useScroll = normalized.length > 4
 
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-5">
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-5 border-t-2 border-t-blue-500">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -320,6 +345,40 @@ const KillChainTimeline = ({ stages = [] }) => {
             </span>
           )}
         </div>
+
+        {/* Attack story one-liner */}
+        {normalized.length >= 2 && (
+          <div className="flex items-center gap-1.5 flex-wrap mt-2 ml-0">
+            <span className="text-xs text-sentinel-muted uppercase tracking-wider font-medium">
+              Path
+            </span>
+            {normalized.slice(0, 4).map((stage, idx) => (
+              <React.Fragment key={idx}>
+                <span className="text-xs font-medium text-white">
+                  {stage.name.length > 20
+                    ? stage.name.slice(0, 20) + "..."
+                    : stage.name}
+                </span>
+                {idx < Math.min(normalized.length, 4) - 1 && (
+                  <svg
+                    width="10"
+                    height="8"
+                    viewBox="0 0 10 8"
+                    className="text-sentinel-muted shrink-0"
+                    fill="currentColor"
+                  >
+                    <path d="M0 0 L10 4 L0 8 Z" />
+                  </svg>
+                )}
+              </React.Fragment>
+            ))}
+            {normalized.length > 4 && (
+              <span className="text-xs text-sentinel-muted">
+                +{normalized.length - 4} more
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className={useScroll ? "overflow-x-auto pb-1" : "overflow-visible"}>
@@ -335,21 +394,28 @@ const KillChainTimeline = ({ stages = [] }) => {
             const isLast = idx === normalized.length - 1
             const isConfirmed = stage.confidence === "CONFIRMED"
             const isImpact = isLast && isFinalImpact
+            const isFinalStage = isLast
             const cardClasses = joinClasses(
               "flex flex-col gap-2 p-3 rounded-lg",
               "bg-sentinel-bg border border-sentinel-border",
               "border-l-4",
               tacticStyle.border,
+              isFinalStage ? "shadow-md" : "",
               isImpact ? "shadow-lg" : "",
               isImpact ? tacticStyle.glow : "",
+              isFinalStage && !isImpact
+                ? "border-b border-b-sentinel-accent"
+                : "",
               useScroll ? "min-w-[200px] max-w-[240px]" : "flex-1 min-w-0",
               "transition-all duration-200",
               "hover:border-opacity-80 hover:bg-opacity-80"
             )
             const nodeClasses = joinClasses(
-              "w-6 h-6 rounded-full flex items-center",
+              "w-7 h-7 rounded-full flex items-center",
               "justify-center text-xs font-bold text-white shrink-0",
-              tacticStyle.node
+              "ring-2 ring-offset-1 ring-offset-sentinel-bg",
+              tacticStyle.node,
+              tacticStyle.ring ?? "ring-blue-500"
             )
             const tacticClasses = joinClasses(
               "text-xs font-medium",
@@ -403,19 +469,62 @@ const KillChainTimeline = ({ stages = [] }) => {
                     </div>
                   )}
 
-                  {stage.evidence && (
-                    <p
-                      className="text-xs text-sentinel-muted leading-snug"
-                      style={{
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {stage.evidence}
-                    </p>
-                  )}
+                  {stage.evidence && (() => {
+                    const ipMatch = stage.evidence.match(
+                      /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
+                    )
+                    const eventCodeMatch = stage.evidence.match(
+                      /EventCode\s+(\d{4,5})/i
+                    )
+                    const processMatch = stage.evidence.match(
+                      /\b(\w+\.exe)\b/i
+                    )
+                    const uriMatch = stage.evidence.match(
+                      /(\/[\w\-./]{8,40})/
+                    )
+                    const credMatch = stage.evidence.match(
+                      /\b(EC2InstanceRole|AccessKey|SecretKey|IAM\w+)\b/i
+                    )
+
+                    let highlight = null
+                    if (ipMatch?.[1]) highlight = ipMatch[1]
+                    else if (eventCodeMatch?.[1]) {
+                      highlight = "EventCode " + eventCodeMatch[1]
+                    } else if (processMatch?.[1]) {
+                      highlight = processMatch[1]
+                    } else if (uriMatch?.[1]) {
+                      highlight = uriMatch[1]
+                    } else if (credMatch?.[1]) {
+                      highlight = credMatch[1]
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {highlight && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 w-fit max-w-full truncate"
+                            title={highlight}
+                          >
+                            {highlight.length > 22
+                              ? highlight.slice(0, 22) + "..."
+                              : highlight}
+                          </span>
+                        )}
+                        <p
+                          className="text-xs text-sentinel-muted leading-snug"
+                          style={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                          title={stage.evidence}
+                        >
+                          {stage.evidence}
+                        </p>
+                      </div>
+                    )
+                  })()}
 
                   <div className="flex items-center justify-between gap-1 mt-auto flex-wrap">
                     {stage.timestamp && stage.timestamp !== "unknown" && (
@@ -444,15 +553,15 @@ const KillChainTimeline = ({ stages = [] }) => {
                 {!isLast && (
                   <div className="flex items-center shrink-0 px-1 self-center">
                     <div className="flex items-center gap-0">
-                      <div className="w-4 h-px bg-sentinel-border" />
+                      <div className="w-6 h-px bg-sentinel-border opacity-60" />
                       <svg
-                        width="8"
-                        height="10"
-                        viewBox="0 0 8 10"
-                        className="text-sentinel-muted shrink-0"
+                        width="10"
+                        height="12"
+                        viewBox="0 0 10 12"
+                        className="text-sentinel-muted shrink-0 opacity-70"
                         fill="currentColor"
                       >
-                        <path d="M0 0 L8 5 L0 10 Z" />
+                        <path d="M0 0 L10 6 L0 12 Z" />
                       </svg>
                     </div>
                   </div>
