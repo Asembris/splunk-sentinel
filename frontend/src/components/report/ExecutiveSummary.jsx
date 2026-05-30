@@ -1,35 +1,91 @@
 export default function ExecutiveSummary({ report }) {
   const summary = report?.executive_summary || ''
   const lowerSummary = summary.toLowerCase()
-  const vector = lowerSummary.includes('ssrf') ||
-    lowerSummary.includes('server-side request forgery')
-    ? 'SSRF'
-    : lowerSummary.includes('ransomware') ||
-      lowerSummary.includes('encrypted')
-      ? 'Ransomware'
-      : lowerSummary.includes('powershell')
-        ? 'PowerShell'
-        : null
-  const impact = lowerSummary.includes('iam') &&
-    lowerSummary.includes('credential')
-    ? 'IAM Credentials'
-    : lowerSummary.includes('credential')
-      ? 'Credential Exposure'
-      : lowerSummary.includes('metadata')
-        ? 'Metadata Service'
-        : null
+  const classification = (report?.classification || '')
+    .toString()
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+  const isRansomware = classification === 'RANSOMWARE' ||
+    lowerSummary.includes('ransomware') ||
+    lowerSummary.includes('shadow copy') ||
+    lowerSummary.includes('vssadmin') ||
+    lowerSummary.includes('pre-encryption')
+  const isInsiderThreat = classification === 'INSIDER_THREAT'
+  const isUnknown = classification === 'UNKNOWN'
+  const vector = isRansomware
+    ? 'Ransomware'
+    : isInsiderThreat
+      ? 'Insider Threat'
+      : isUnknown
+        ? 'Unconfirmed'
+        : lowerSummary.includes('ssrf') ||
+          lowerSummary.includes('server-side request forgery')
+          ? 'SSRF'
+          : classification === 'APT'
+            ? 'APT Intrusion'
+            : lowerSummary.includes('powershell')
+              ? 'PowerShell'
+              : null
+  const impact = isRansomware
+    ? 'Data Loss Risk'
+    : isInsiderThreat
+      ? 'Privilege Abuse'
+      : isUnknown
+        ? 'Needs Review'
+        : lowerSummary.includes('iam') &&
+          lowerSummary.includes('credential')
+          ? 'IAM Credentials'
+          : lowerSummary.includes('credential')
+            ? 'Credential Exposure'
+            : lowerSummary.includes('metadata')
+              ? 'Metadata Service'
+              : null
   const actionParts = []
-  if (
+  if (isUnknown) {
+    actionParts.push('Escalate to analyst')
+  } else if (isRansomware) {
+    if (
+      lowerSummary.includes('network isolation') ||
+      lowerSummary.includes('isolate')
+    ) {
+      actionParts.push('Isolate network')
+    }
+    if (lowerSummary.includes('contain')) {
+      actionParts.push('Contain spread')
+    }
+    if (
+      lowerSummary.includes('credential rotation') ||
+      (lowerSummary.includes('rotate') && lowerSummary.includes('credential'))
+    ) {
+      actionParts.push('Rotate credentials')
+    }
+    if (actionParts.length === 0) {
+      actionParts.push('Contain spread')
+    }
+  } else if (isInsiderThreat) {
+    if (lowerSummary.includes('disable')) {
+      actionParts.push('Disable access')
+    }
+    actionParts.push('Review activity')
+  } else if (
     lowerSummary.includes('credential rotation') ||
     (lowerSummary.includes('rotate') && lowerSummary.includes('credential'))
   ) {
     actionParts.push('Rotate credentials')
-  }
-  if (lowerSummary.includes('patch')) {
-    actionParts.push('Patch vulnerability')
-  }
-  if (lowerSummary.includes('contain')) {
-    actionParts.push('Contain threat')
+    if (lowerSummary.includes('patch')) {
+      actionParts.push('Patch vulnerability')
+    }
+    if (lowerSummary.includes('contain')) {
+      actionParts.push('Contain threat')
+    }
+  } else {
+    if (lowerSummary.includes('patch')) {
+      actionParts.push('Patch vulnerability')
+    }
+    if (lowerSummary.includes('contain')) {
+      actionParts.push('Contain threat')
+    }
   }
   const action = actionParts.length > 0
     ? actionParts.slice(0, 2).join(' + ')
@@ -67,7 +123,17 @@ export default function ExecutiveSummary({ report }) {
           ))}
         </div>
       )}
-      <p className="text-white text-sm leading-relaxed antialiased">{report.executive_summary}</p>
+      <div className="bg-sentinel-bg rounded-lg px-4 py-3 mt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-sentinel-accent" />
+          <span className="text-[10px] font-bold text-sentinel-muted uppercase tracking-wider">
+            Incident Narrative
+          </span>
+        </div>
+        <p className="text-white text-sm leading-relaxed antialiased">
+          {report.executive_summary}
+        </p>
+      </div>
       {report.threat_actor_profile && (
         <div className="mt-5 pt-5 border-t border-sentinel-border/50">
           <h3 className="text-[10px] font-bold text-sentinel-accent uppercase tracking-wider mb-2">Threat Actor Profile</h3>
