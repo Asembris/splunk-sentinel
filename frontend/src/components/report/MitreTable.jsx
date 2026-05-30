@@ -226,6 +226,22 @@ export default function MitreTable({ techniques, ttpMappings }) {
                       Alt: {t.mltkAlternative}
                     </p>
                   )}
+                  {t.confidencePct !== null && (
+                    <div className="flex flex-col items-end gap-1 mt-1">
+                      <span className="text-lg font-bold text-sentinel-accent leading-none">
+                        {t.confidencePct}%
+                      </span>
+                      <div className="w-20 h-1.5 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
+                        <div
+                          className="h-full bg-sentinel-accent rounded-full"
+                          style={{ width: `${t.confidencePct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-sentinel-muted">
+                        Confidence
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
