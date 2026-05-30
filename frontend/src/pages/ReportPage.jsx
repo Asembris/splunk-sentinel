@@ -894,26 +894,31 @@ function ConfidenceBreakdownPanel({ investigationId }) {
 
   if (loading || !breakdown || !breakdown.factors) return null
 
-  const scoreTone = (score) => {
-    if (score >= 0.75) return 'bg-green-500 text-green-400 border-green-500/30'
-    if (score >= 0.50) return 'bg-amber-500 text-amber-400 border-amber-500/30'
-    return 'bg-red-500 text-red-400 border-red-500/30'
+  const CONFIDENCE_TONE_MAP = {
+    high: { bar: 'bg-green-500', text: 'text-green-400', border: 'border-green-500/30', badge: 'bg-green-500/10 text-green-400 border-green-500/30' },
+    medium: { bar: 'bg-amber-500', text: 'text-amber-400', border: 'border-amber-500/30', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+    low: { bar: 'bg-red-500', text: 'text-red-400', border: 'border-red-500/30', badge: 'bg-red-500/10 text-red-400 border-red-500/30' },
+  }
+  const getScoreTone = (score) => {
+    if (score >= 0.75) return CONFIDENCE_TONE_MAP.high
+    if (score >= 0.50) return CONFIDENCE_TONE_MAP.medium
+    return CONFIDENCE_TONE_MAP.low
   }
 
   const weakestName = breakdown.weakest_factor?.name
   const strongestName = breakdown.strongest_factor?.name
 
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6">
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6" style={{ borderTop: '2px solid #3b82f6' }}>
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-1.5 h-4 bg-sentinel-accent rounded-full" />
-            <h3 className="text-sm font-semibold text-sentinel-muted uppercase tracking-wider">
+            <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+            <h3 className="text-sm font-bold text-white tracking-wide">
               Confidence Score Breakdown
             </h3>
           </div>
-          <p className="text-xs text-sentinel-muted">
+          <p className="text-xs text-sentinel-muted ml-4">
             Deterministic reconstruction confidence, shown by weighted evidence factor.
           </p>
         </div>
@@ -931,7 +936,7 @@ function ConfidenceBreakdownPanel({ investigationId }) {
       <div className="space-y-3">
         {breakdown.factors.map((factor) => {
           const rawScore = factor.raw_score || 0
-          const tone = scoreTone(rawScore)
+          const tone = getScoreTone(rawScore)
           const isWeakest = factor.name === weakestName
           const isStrongest = factor.name === strongestName
 
@@ -974,13 +979,13 @@ function ConfidenceBreakdownPanel({ investigationId }) {
                 <div className="w-full md:w-72">
                   <div className="flex items-center justify-between text-[10px] uppercase tracking-wider mb-1">
                     <span className="text-sentinel-muted">Raw score</span>
-                    <span className={`font-mono font-bold ${tone.split(' ')[1]}`}>
+                    <span className={`font-mono font-bold ${tone.text}`}>
                       {Math.round(rawScore * 100)}%
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
                     <div
-                      className={`h-full ${tone.split(' ')[0]}`}
+                      className={`h-full ${tone.bar}`}
                       style={{ width: `${Math.round(rawScore * 100)}%` }}
                     />
                   </div>
