@@ -1434,14 +1434,24 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
 
   return (
     <div className="bg-sentinel-surface border border-sentinel-border
-                    rounded-xl p-6 mt-6">
+                    rounded-xl p-6 mt-6"
+         style={{ borderTop: '2px solid #3b82f6' }}>
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-1.5 h-4 bg-sentinel-accent rounded-full" />
-        <h3 className="text-sm font-semibold text-sentinel-muted
-                       uppercase tracking-wider">
-          Why This Classification?
-        </h3>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+            <h3 className="text-sm font-bold text-white tracking-wide">
+              Why This Classification?
+            </h3>
+          </div>
+          <p className="text-xs text-sentinel-muted ml-4">
+            Confirmed by ruling out competing classifications
+          </p>
+        </div>
+        <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+          {alternatives.length} ruled out
+        </span>
       </div>
 
       {/* Confirmed */}
