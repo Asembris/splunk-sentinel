@@ -97,10 +97,57 @@ export default function MitreTable({ techniques, ttpMappings }) {
   })
 
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6">
-      <h2 className="text-sm font-semibold text-sentinel-muted uppercase tracking-wider mb-4">
-        MITRE ATT&CK Matrix Mapping
-      </h2>
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6" style={{ borderTop: '2px solid #3b82f6' }}>
+      <div className="flex flex-col gap-2 mb-5">
+        <div className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+              <h3 className="text-sm font-bold text-white tracking-wide">
+                MITRE ATT&CK Technique Validation
+              </h3>
+            </div>
+            <p className="text-xs text-sentinel-muted ml-4">
+              {enriched.length} technique{enriched.length !== 1 ? 's' : ''} mapped
+              {(() => {
+                const validated = enriched.filter(t => t.mltkValidationRun).length
+                const agreements = enriched.filter(t => t.mltkValidationRun && t.mltkAgrees === true).length
+                const disagreements = enriched.filter(t => t.mltkValidationRun && t.mltkAgrees === false).length
+                if (validated === 0) return null
+                return (
+                  <>
+                    <span className="text-sentinel-muted"> &bull; </span>
+                    <span className="text-green-400">{validated} MLTK validated</span>
+                    {agreements > 0 && (
+                      <>
+                        <span className="text-sentinel-muted"> &bull; </span>
+                        <span className="text-green-400">{agreements} agreement{agreements !== 1 ? 's' : ''}</span>
+                      </>
+                    )}
+                    {disagreements > 0 && (
+                      <>
+                        <span className="text-sentinel-muted"> &bull; </span>
+                        <span className="text-amber-400">{disagreements} disagreement{disagreements !== 1 ? 's' : ''}</span>
+                      </>
+                    )}
+                  </>
+                )
+              })()}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+              QDRANT RAG
+            </span>
+            <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+              MLTK AI
+            </span>
+            <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+              ATT&CK
+            </span>
+          </div>
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
