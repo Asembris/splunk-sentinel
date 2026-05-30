@@ -587,11 +587,6 @@ const KillChainTimeline = ({ stages = [] }) => {
                 ? stage.tactic
                 : stage.name
 
-            const displayTactic =
-              tacticLabel.length > 20
-                ? tacticLabel.slice(0, 20) + "..."
-                : tacticLabel
-
             return (
               <React.Fragment key={stage.originalIndex}>
                 {/* Stage unit: capsule stem node */}
@@ -617,13 +612,7 @@ const KillChainTimeline = ({ stages = [] }) => {
                     )}
                   >
                     {/* Stage number + tactic label */}
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={tacticClasses}
-                        title={tacticLabel}
-                      >
-                        {displayTactic}
-                      </span>
+                    <div className="flex items-center justify-end mb-1">
                       <span className="flex items-center gap-1">
                         <span
                           className={
