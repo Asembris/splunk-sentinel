@@ -476,11 +476,10 @@ const KillChainTimeline = ({ stages = [] }) => {
               <div
                 className="hidden sm:block absolute pointer-events-none"
                 style={{
-                  top: "50%",
                   left: "12px",
                   right: "12px",
+                  bottom: "18px",
                   height: "2px",
-                  transform: "translateY(-50%)",
                   background: `linear-gradient(to right, ${
                     normalized[0]
                       ? (TACTIC_STYLES[normalized[0].tactic]?.connector ??
@@ -537,7 +536,9 @@ const KillChainTimeline = ({ stages = [] }) => {
               "ring-2 ring-offset-2 ring-offset-sentinel-bg",
               tacticStyle.node,
               tacticStyle.ring ?? "ring-blue-500",
-              isImpact ? "shadow-lg ring-offset-sentinel-bg" : ""
+              isImpact
+                ? "shadow-lg ring-offset-sentinel-bg animate-pulse"
+                : ""
             )
 
             const tacticClasses = joinClasses(
@@ -551,7 +552,6 @@ const KillChainTimeline = ({ stages = [] }) => {
               tacticStyle.badge
             )
 
-            // Extract forensic highlight from evidence
             let highlight = null
             if (stage.evidence) {
               const ipMatch = stage.evidence.match(
@@ -570,16 +570,30 @@ const KillChainTimeline = ({ stages = [] }) => {
                 /\b(EC2InstanceRole|AccessKey|SecretKey|IAM\w+)\b/i
               )
               if (ipMatch?.[1]) highlight = ipMatch[1]
-              else if (eventCodeMatch?.[1])
+              else if (eventCodeMatch?.[1]) {
                 highlight = "EventCode " + eventCodeMatch[1]
-              else if (processMatch?.[1]) highlight = processMatch[1]
-              else if (uriMatch?.[1]) highlight = uriMatch[1]
-              else if (credMatch?.[1]) highlight = credMatch[1]
+              } else if (processMatch?.[1]) {
+                highlight = processMatch[1]
+              } else if (uriMatch?.[1]) {
+                highlight = uriMatch[1]
+              } else if (credMatch?.[1]) {
+                highlight = credMatch[1]
+              }
             }
+
+            const tacticLabel =
+              stage.tactic && !stage.tactic.match(/^TA\d{4}$/)
+                ? stage.tactic
+                : stage.name
+
+            const displayTactic =
+              tacticLabel.length > 20
+                ? tacticLabel.slice(0, 20) + "..."
+                : tacticLabel
 
             return (
               <React.Fragment key={stage.originalIndex}>
-                {/* Stage unit: node + capsule above rail */}
+                {/* Stage unit: capsule stem node */}
                 <div
                   className={
                     useScroll
@@ -588,12 +602,12 @@ const KillChainTimeline = ({ stages = [] }) => {
                   }
                   style={useScroll ? { width: "180px" } : {}}
                 >
-                  {/* Telemetry capsule above node */}
+                  {/* Telemetry capsule above rail */}
                   <div
                     className={joinClasses(
-                      "w-full mb-2 p-2.5 rounded-lg",
+                      "w-full p-2.5 rounded-lg",
                       "bg-sentinel-bg border border-sentinel-border",
-                      "border-l-4",
+                      "border-l-4 opacity-100",
                       tacticStyle.border,
                       isImpact ? "shadow-lg " + tacticStyle.glow : "",
                       isFinalStage && !isImpact
@@ -603,28 +617,36 @@ const KillChainTimeline = ({ stages = [] }) => {
                   >
                     {/* Stage number + tactic label */}
                     <div className="flex items-center justify-between mb-1">
-                      <span className={tacticClasses}>
-                        {stage.tactic && !stage.tactic.match(/^TA\d{4}$/)
-                          ? stage.tactic
-                          : stage.name.length > 16
-                            ? stage.name.slice(0, 16) + "..."
-                            : stage.name}
-                      </span>
                       <span
-                        className={
-                          isConfirmed
-                            ? "text-xs font-medium text-green-400"
-                            : "text-xs font-medium text-amber-400"
-                        }
+                        className={tacticClasses}
+                        title={tacticLabel}
                       >
-                        {isConfirmed ? "OK" : "~"}
+                        {displayTactic}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span
+                          className={
+                            isConfirmed
+                              ? "w-1.5 h-1.5 rounded-full bg-green-400 shrink-0"
+                              : "w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+                          }
+                        />
+                        <span
+                          className={
+                            isConfirmed
+                              ? "text-xs font-medium text-green-400"
+                              : "text-xs font-medium text-amber-400"
+                          }
+                        >
+                          {isConfirmed ? "CONF" : "INF"}
+                        </span>
                       </span>
                     </div>
 
                     {/* Stage name - primary label */}
                     <p
                       className={joinClasses(
-                        "text-xs font-semibold leading-tight mb-1",
+                        "text-sm font-semibold leading-tight mb-1",
                         isFinalStage ? tacticStyle.text : "text-white"
                       )}
                       style={{
@@ -660,8 +682,8 @@ const KillChainTimeline = ({ stages = [] }) => {
                           className="text-xs px-1 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 block truncate"
                           title={highlight}
                         >
-                          {highlight.length > 20
-                            ? highlight.slice(0, 20) + "..."
+                          {highlight.length > 24
+                            ? highlight.slice(0, 24) + "..."
                             : highlight}
                         </span>
                       </div>
@@ -669,46 +691,48 @@ const KillChainTimeline = ({ stages = [] }) => {
 
                     {/* Timestamp - compact */}
                     {stage.timestamp && stage.timestamp !== "unknown" && (
-                      <p className="text-xs text-sentinel-muted font-mono mt-1 opacity-75">
-                        {stage.timestamp.length > 10
-                          ? stage.timestamp.slice(0, 10)
+                      <p
+                        className="text-xs text-sentinel-muted font-mono mt-1 opacity-75"
+                        title={stage.timestamp}
+                      >
+                        {stage.timestamp.length > 16
+                          ? stage.timestamp.slice(0, 16)
                           : stage.timestamp}
                       </p>
                     )}
                   </div>
 
+                  {/* Vertical telemetry stem */}
+                  <div
+                    className="shrink-0"
+                    style={{
+                      width: "2px",
+                      height: "12px",
+                      background: tacticStyle.connector ?? "#3b82f6",
+                      opacity: 0.8,
+                      borderRadius: "1px",
+                    }}
+                  />
+
                   {/* Node circle on the rail */}
                   <div className={nodeClasses} title={stage.name}>
                     {stage.number}
                   </div>
+
+                  {isImpact && (
+                    <span
+                      className={joinClasses(
+                        "mt-1 text-xs font-bold tracking-wider",
+                        tacticStyle.text
+                      )}
+                    >
+                      IMPACT
+                    </span>
+                  )}
                 </div>
 
-                {/* Connector between stage units */}
                 {!isLast && (
-                  <div className="hidden sm:flex items-center shrink-0 self-center relative z-10 pb-12">
-                    <div className="flex items-center gap-0">
-                      <div
-                        className="w-8 h-0.5 shrink-0"
-                        style={{
-                          background: `linear-gradient(
-                            to right,
-                            ${tacticStyle.connector ?? "#3b82f6"}99,
-                            #374151
-                          )`,
-                        }}
-                      />
-                      <svg
-                        width="10"
-                        height="12"
-                        viewBox="0 0 10 12"
-                        className="shrink-0"
-                        fill={tacticStyle.connector ?? "#3b82f6"}
-                        style={{ opacity: 0.75 }}
-                      >
-                        <path d="M0 0 L10 6 L0 12 Z" />
-                      </svg>
-                    </div>
-                  </div>
+                  <div className="hidden sm:block shrink-0 w-1 relative z-10" />
                 )}
               </React.Fragment>
             )
