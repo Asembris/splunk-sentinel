@@ -316,62 +316,74 @@ export default function MitreTable({ techniques, ttpMappings }) {
                     </p>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0 min-w-24">
-                  {t.validationTone === 'success' && (
-                    <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded border border-green-500/30 bg-green-900/20 text-green-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-                      MLTK CONF
-                    </span>
-                  )}
-                  {t.validationTone === 'warning' && (
-                    <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded border border-amber-500/30 bg-amber-900/20 text-amber-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                      MLTK REVIEW
-                    </span>
-                  )}
-                  {t.validationTone === 'muted' && (
-                    <span className="text-xs px-2 py-1 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
-                      NOT RUN
-                    </span>
-                  )}
-                  {t.validationTone === 'warning' && t.mltkAlternative && (
-                    <p className="text-xs text-amber-400/70 text-right max-w-36">
-                      Alt: {t.mltkAlternative}
-                    </p>
-                  )}
-                  {t.confidencePct !== null && (
-                    <div className="flex flex-col items-end gap-1 mt-1">
-                      {t.confidencePct >= 75 && (
-                        <span className="text-lg font-bold text-green-400 leading-none">
-                          {t.confidencePct}%
-                        </span>
-                      )}
-                      {t.confidencePct >= 50 && t.confidencePct < 75 && (
-                        <span className="text-lg font-bold text-amber-400 leading-none">
-                          {t.confidencePct}%
-                        </span>
-                      )}
-                      {t.confidencePct < 50 && (
-                        <span className="text-lg font-bold text-red-400 leading-none">
-                          {t.confidencePct}%
-                        </span>
-                      )}
-                      <div className="w-20 h-1.5 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
+                <div className="flex flex-col items-end shrink-0 min-w-28">
+                  <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-2.5 flex flex-col items-center gap-2 w-full">
+                    {t.confidencePct !== null && (
+                      <div className="flex flex-col items-center gap-1 w-full">
                         {t.confidencePct >= 75 && (
-                          <div className="h-full bg-green-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                          <span className="text-2xl font-bold text-green-400 leading-none">
+                            {t.confidencePct}%
+                          </span>
                         )}
                         {t.confidencePct >= 50 && t.confidencePct < 75 && (
-                          <div className="h-full bg-amber-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                          <span className="text-2xl font-bold text-amber-400 leading-none">
+                            {t.confidencePct}%
+                          </span>
                         )}
                         {t.confidencePct < 50 && (
-                          <div className="h-full bg-red-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                          <span className="text-2xl font-bold text-red-400 leading-none">
+                            {t.confidencePct}%
+                          </span>
                         )}
+                        <div className="w-full h-1.5 rounded-full bg-sentinel-bg border border-sentinel-border overflow-hidden">
+                          {t.confidencePct >= 75 && (
+                            <div className="h-full bg-green-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                          )}
+                          {t.confidencePct >= 50 && t.confidencePct < 75 && (
+                            <div className="h-full bg-amber-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                          )}
+                          {t.confidencePct < 50 && (
+                            <div className="h-full bg-red-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                          )}
+                        </div>
+                        <span className="text-xs text-sentinel-muted uppercase tracking-widest" style={{ fontSize: '9px' }}>
+                          Confidence
+                        </span>
                       </div>
-                      <span className="text-xs text-sentinel-muted">
-                        Confidence
-                      </span>
+                    )}
+                    <div className="w-full border-t border-sentinel-border/40 pt-2 flex flex-col items-center gap-1">
+                      {t.validationTone === 'success' && (
+                        <span className="flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded border border-green-500/30 bg-green-900/20 text-green-400 w-full justify-center">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                          MLTK CONF
+                        </span>
+                      )}
+                      {t.validationTone === 'warning' && (
+                        <span className="flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-900/20 text-amber-400 w-full justify-center">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                          MLTK REVIEW
+                        </span>
+                      )}
+                      {t.validationTone === 'muted' && (
+                        <span className="text-xs px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted w-full text-center">
+                          NOT RUN
+                        </span>
+                      )}
+                      {t.validationTone === 'warning' && t.mltkAlternative && (
+                        <p className="text-xs text-amber-400/70 text-center w-full leading-tight mt-0.5">
+                          {t.mltkAlternative.slice(0, 20)}
+                        </p>
+                      )}
+                      <div className="flex gap-1 mt-1">
+                        <span className="text-xs px-1 py-0.5 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted" style={{ fontSize: '8px' }}>
+                          RAG
+                        </span>
+                        <span className="text-xs px-1 py-0.5 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted" style={{ fontSize: '8px' }}>
+                          MLTK
+                        </span>
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
