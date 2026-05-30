@@ -12,6 +12,7 @@ const TACTIC_STYLES = {
     badge: "bg-red-900 text-red-300",
     text: "text-red-400",
     ring: "ring-red-500",
+    connector: "#ef4444",
   },
   "Initial Access": {
     border: "border-l-red-500",
@@ -20,6 +21,7 @@ const TACTIC_STYLES = {
     badge: "bg-red-900 text-red-300",
     text: "text-red-400",
     ring: "ring-red-500",
+    connector: "#ef4444",
   },
   // Execution
   TA0002: {
@@ -29,6 +31,7 @@ const TACTIC_STYLES = {
     badge: "bg-blue-900 text-blue-300",
     text: "text-blue-400",
     ring: "ring-blue-500",
+    connector: "#3b82f6",
   },
   Execution: {
     border: "border-l-blue-500",
@@ -37,6 +40,7 @@ const TACTIC_STYLES = {
     badge: "bg-blue-900 text-blue-300",
     text: "text-blue-400",
     ring: "ring-blue-500",
+    connector: "#3b82f6",
   },
   // Persistence
   TA0003: {
@@ -46,6 +50,7 @@ const TACTIC_STYLES = {
     badge: "bg-purple-900 text-purple-300",
     text: "text-purple-400",
     ring: "ring-purple-500",
+    connector: "#a855f7",
   },
   Persistence: {
     border: "border-l-purple-500",
@@ -54,6 +59,7 @@ const TACTIC_STYLES = {
     badge: "bg-purple-900 text-purple-300",
     text: "text-purple-400",
     ring: "ring-purple-500",
+    connector: "#a855f7",
   },
   // Privilege Escalation
   TA0004: {
@@ -63,6 +69,7 @@ const TACTIC_STYLES = {
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
     ring: "ring-orange-500",
+    connector: "#f97316",
   },
   "Privilege Escalation": {
     border: "border-l-orange-500",
@@ -71,6 +78,7 @@ const TACTIC_STYLES = {
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
     ring: "ring-orange-500",
+    connector: "#f97316",
   },
   // Defense Evasion
   TA0005: {
@@ -80,6 +88,7 @@ const TACTIC_STYLES = {
     badge: "bg-slate-800 text-slate-300",
     text: "text-slate-400",
     ring: "ring-slate-400",
+    connector: "#94a3b8",
   },
   "Defense Evasion": {
     border: "border-l-slate-400",
@@ -88,6 +97,7 @@ const TACTIC_STYLES = {
     badge: "bg-slate-800 text-slate-300",
     text: "text-slate-400",
     ring: "ring-slate-400",
+    connector: "#94a3b8",
   },
   // Credential Access
   TA0006: {
@@ -97,6 +107,7 @@ const TACTIC_STYLES = {
     badge: "bg-amber-900 text-amber-300",
     text: "text-amber-400",
     ring: "ring-amber-500",
+    connector: "#f59e0b",
   },
   "Credential Access": {
     border: "border-l-amber-500",
@@ -105,6 +116,7 @@ const TACTIC_STYLES = {
     badge: "bg-amber-900 text-amber-300",
     text: "text-amber-400",
     ring: "ring-amber-500",
+    connector: "#f59e0b",
   },
   // Discovery
   TA0007: {
@@ -114,6 +126,7 @@ const TACTIC_STYLES = {
     badge: "bg-teal-900 text-teal-300",
     text: "text-teal-400",
     ring: "ring-teal-500",
+    connector: "#14b8a6",
   },
   Discovery: {
     border: "border-l-teal-500",
@@ -122,6 +135,7 @@ const TACTIC_STYLES = {
     badge: "bg-teal-900 text-teal-300",
     text: "text-teal-400",
     ring: "ring-teal-500",
+    connector: "#14b8a6",
   },
   // Lateral Movement
   TA0008: {
@@ -131,6 +145,7 @@ const TACTIC_STYLES = {
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
     ring: "ring-orange-400",
+    connector: "#fb923c",
   },
   "Lateral Movement": {
     border: "border-l-orange-400",
@@ -139,6 +154,7 @@ const TACTIC_STYLES = {
     badge: "bg-orange-900 text-orange-300",
     text: "text-orange-400",
     ring: "ring-orange-400",
+    connector: "#fb923c",
   },
   // Collection
   TA0009: {
@@ -148,6 +164,7 @@ const TACTIC_STYLES = {
     badge: "bg-cyan-900 text-cyan-300",
     text: "text-cyan-400",
     ring: "ring-cyan-500",
+    connector: "#06b6d4",
   },
   Collection: {
     border: "border-l-cyan-500",
@@ -156,6 +173,7 @@ const TACTIC_STYLES = {
     badge: "bg-cyan-900 text-cyan-300",
     text: "text-cyan-400",
     ring: "ring-cyan-500",
+    connector: "#06b6d4",
   },
   // Exfiltration
   TA0010: {
@@ -165,6 +183,7 @@ const TACTIC_STYLES = {
     badge: "bg-rose-900 text-rose-300",
     text: "text-rose-400",
     ring: "ring-rose-500",
+    connector: "#f43f5e",
   },
   Exfiltration: {
     border: "border-l-rose-500",
@@ -173,6 +192,7 @@ const TACTIC_STYLES = {
     badge: "bg-rose-900 text-rose-300",
     text: "text-rose-400",
     ring: "ring-rose-500",
+    connector: "#f43f5e",
   },
   // Impact
   TA0040: {
@@ -182,6 +202,7 @@ const TACTIC_STYLES = {
     badge: "bg-red-900 text-red-200",
     text: "text-red-400",
     ring: "ring-red-600",
+    connector: "#dc2626",
   },
   Impact: {
     border: "border-l-red-600",
@@ -190,6 +211,7 @@ const TACTIC_STYLES = {
     badge: "bg-red-900 text-red-200",
     text: "text-red-400",
     ring: "ring-red-600",
+    connector: "#dc2626",
   },
   // Command and Control
   TA0011: {
@@ -199,6 +221,7 @@ const TACTIC_STYLES = {
     badge: "bg-violet-900 text-violet-300",
     text: "text-violet-400",
     ring: "ring-violet-500",
+    connector: "#8b5cf6",
   },
   "Command and Control": {
     border: "border-l-violet-500",
@@ -207,6 +230,7 @@ const TACTIC_STYLES = {
     badge: "bg-violet-900 text-violet-300",
     text: "text-violet-400",
     ring: "ring-violet-500",
+    connector: "#8b5cf6",
   },
 }
 
@@ -217,6 +241,7 @@ const DEFAULT_TACTIC_STYLE = {
   badge: "bg-blue-900 text-blue-300",
   text: "text-blue-400",
   ring: "ring-blue-500",
+  connector: "#3b82f6",
 }
 
 // --------------- Helpers ---------------
@@ -412,7 +437,9 @@ const KillChainTimeline = ({ stages = [] }) => {
             const isImpact = isLast && isFinalImpact
             const isFinalStage = isLast
             const cardClasses = joinClasses(
-              "flex flex-col gap-2 p-3 rounded-lg",
+              isLast
+                ? "flex flex-col gap-2 p-3 rounded-lg"
+                : "flex flex-col gap-2 p-3 rounded-l-lg rounded-r-sm",
               "bg-sentinel-bg border border-sentinel-border",
               "border-l-4",
               tacticStyle.border,
@@ -567,15 +594,23 @@ const KillChainTimeline = ({ stages = [] }) => {
                 </div>
 
                 {!isLast && (
-                  <div className="flex items-center shrink-0 px-1 self-center">
+                  <div className="flex items-center shrink-0 px-0.5 self-center">
                     <div className="flex items-center gap-0">
-                      <div className="w-6 h-px bg-sentinel-border opacity-60" />
+                      <div
+                        className="w-8 h-0.5 shrink-0"
+                        style={{
+                          background: `linear-gradient(to right, ${
+                            tacticStyle.connector ?? "#3b82f6"
+                          }99, #374151)`,
+                        }}
+                      />
                       <svg
                         width="10"
                         height="12"
                         viewBox="0 0 10 12"
-                        className="text-sentinel-muted shrink-0 opacity-70"
-                        fill="currentColor"
+                        className="shrink-0"
+                        fill={tacticStyle.connector ?? "#3b82f6"}
+                        style={{ opacity: 0.75 }}
                       >
                         <path d="M0 0 L10 6 L0 12 Z" />
                       </svg>
