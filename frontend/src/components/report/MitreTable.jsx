@@ -300,8 +300,8 @@ export default function MitreTable({ techniques, ttpMappings }) {
                         Detection available
                       </span>
                     ) : (
-                      <span className="text-xs px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
-                        No detection guidance
+                      <span className="text-xs px-1.5 py-0.5 rounded border border-sentinel-border/30 bg-transparent text-sentinel-muted/50 italic">
+                        RAG gap
                       </span>
                     )}
                     {t.hasMitigation && (
