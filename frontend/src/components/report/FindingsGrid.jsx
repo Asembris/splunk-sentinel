@@ -4,24 +4,28 @@ const CONFIDENCE_TONE_MAP = {
     border: 'border-green-500/30',
     bg: 'bg-green-500/10',
     bar: 'bg-green-500',
+    leftBorder: 'border-l-green-500',
   },
   medium: {
     text: 'text-sentinel-warning',
     border: 'border-amber-500/30',
     bg: 'bg-amber-500/10',
     bar: 'bg-amber-500',
+    leftBorder: 'border-l-amber-500',
   },
   low: {
     text: 'text-sentinel-danger',
     border: 'border-red-500/30',
     bg: 'bg-red-500/10',
     bar: 'bg-red-500',
+    leftBorder: 'border-l-red-500',
   },
   muted: {
     text: 'text-sentinel-muted',
     border: 'border-sentinel-border',
     bg: 'bg-sentinel-surface',
     bar: 'bg-sentinel-muted',
+    leftBorder: 'border-l-sentinel-border',
   },
 }
 
@@ -227,7 +231,7 @@ export default function FindingsGrid({ findings }) {
             return (
               <div
                 key={f.originalIndex}
-                className={`p-4 bg-sentinel-bg rounded-lg border border-sentinel-border hover:border-sentinel-accent/50 transition-colors group ${
+                className={`p-4 bg-sentinel-bg rounded-lg border border-sentinel-border border-l-4 ${f.tone.leftBorder} hover:border-sentinel-accent/50 hover:bg-sentinel-surface transition-colors group ${
                   isLastOddCard ? 'md:col-span-2' : ''
                 }`}
               >
@@ -236,6 +240,11 @@ export default function FindingsGrid({ findings }) {
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
                       Finding {String(index + 1).padStart(2, '0')}
                     </span>
+                    {index === 0 && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-blue-500/30 bg-blue-900/20 text-blue-300">
+                        Primary Finding
+                      </span>
+                    )}
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
                       {f.sourceLabel}
                     </span>
