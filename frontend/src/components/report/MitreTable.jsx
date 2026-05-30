@@ -44,6 +44,21 @@ const TACTIC_STYLE_MAP = {
   'Unknown': { border: 'border-l-blue-500', text: 'text-blue-400', badge: 'bg-blue-900/30 text-blue-300 border-blue-500/30' },
 }
 
+const TACTIC_NODE_BG = {
+  'Initial Access': 'bg-red-500',
+  'Execution': 'bg-blue-500',
+  'Persistence': 'bg-purple-500',
+  'Privilege Escalation': 'bg-orange-500',
+  'Defense Evasion': 'bg-slate-400',
+  'Credential Access': 'bg-amber-500',
+  'Discovery': 'bg-teal-500',
+  'Lateral Movement': 'bg-orange-400',
+  'Exfiltration': 'bg-rose-500',
+  'Impact': 'bg-red-600',
+  'Command and Control': 'bg-violet-500',
+  'Unknown': 'bg-blue-500',
+}
+
 export default function MitreTable({ techniques, ttpMappings }) {
   const enriched = techniques.map(t => {
     // Extract clean ID: "T1190 - Exploit..." -> "T1190"
@@ -155,6 +170,76 @@ export default function MitreTable({ techniques, ttpMappings }) {
           </div>
         </div>
       </div>
+      {enriched.length > 0 && (() => {
+        const uniqueTactics = []
+        enriched.forEach(t => {
+          if (!uniqueTactics.find(u => u.tactic === t.tactic)) {
+            uniqueTactics.push({ tactic: t.tactic, tacticStyle: t.tacticStyle })
+          }
+        })
+        const avgConf = enriched.filter(t => t.confidencePct !== null).length > 0
+          ? Math.round(enriched.filter(t => t.confidencePct !== null).reduce((sum, t) => sum + t.confidencePct, 0) / enriched.filter(t => t.confidencePct !== null).length)
+          : null
+        const totalCves = enriched.reduce((sum, t) => sum + t.cveChips.length, 0)
+        const detectionCount = enriched.filter(t => t.hasDetection).length
+        return (
+          <div className="mb-4 p-3 rounded-lg bg-sentinel-bg border border-sentinel-border">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-sentinel-muted uppercase tracking-widest">
+                Tactic Coverage
+              </span>
+              <div className="flex items-center gap-3">
+                {avgConf !== null && (
+                  <span className="text-xs text-sentinel-muted">
+                    avg <span className={avgConf >= 75 ? 'text-green-400 font-bold' : avgConf >= 50 ? 'text-amber-400 font-bold' : 'text-red-400 font-bold'}>{avgConf}%</span> confidence
+                  </span>
+                )}
+                {totalCves > 0 && (
+                  <span className="text-xs text-sentinel-muted">
+                    <span className="text-amber-300 font-bold">{totalCves}</span> CVEs
+                  </span>
+                )}
+                <span className="text-xs text-sentinel-muted">
+                  <span className="text-teal-400 font-bold">{detectionCount}</span>/{enriched.length} detection
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-0">
+              {uniqueTactics.map((u, idx) => {
+                const shortLabels = {
+                  'Initial Access': 'INIT',
+                  'Execution': 'EXEC',
+                  'Persistence': 'PERS',
+                  'Privilege Escalation': 'PRIV',
+                  'Defense Evasion': 'DEF',
+                  'Credential Access': 'CRED',
+                  'Discovery': 'DISC',
+                  'Lateral Movement': 'LAT',
+                  'Exfiltration': 'EXFIL',
+                  'Impact': 'IMPACT',
+                  'Command and Control': 'C2',
+                  'Unknown': 'UNK',
+                }
+                const nodeBg = TACTIC_NODE_BG[u.tactic] || TACTIC_NODE_BG['Unknown']
+                const isLast = idx === uniqueTactics.length - 1
+                return (
+                  <div key={u.tactic} className="flex items-center">
+                    <div className="flex flex-col items-center gap-1">
+                      <div className={`w-6 h-6 rounded-full ${nodeBg} flex items-center justify-center shrink-0`} title={u.tactic} />
+                      <span className={`text-xs font-bold uppercase tracking-tight ${u.tacticStyle.text}`} style={{ fontSize: '9px' }}>
+                        {shortLabels[u.tactic] || u.tactic.slice(0, 4).toUpperCase()}
+                      </span>
+                    </div>
+                    {!isLast && (
+                      <div className="w-8 h-px bg-sentinel-border mx-1 mb-4 shrink-0" />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
       {enriched.length === 0 ? (
         <div className="py-8 text-center text-xs text-sentinel-muted">
           No MITRE techniques mapped for this investigation.
