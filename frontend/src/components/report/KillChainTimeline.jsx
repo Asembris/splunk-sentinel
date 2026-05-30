@@ -529,198 +529,172 @@ const KillChainTimeline = ({ stages = [] }) => {
             const isConfirmed = stage.confidence === "CONFIRMED"
             const isImpact = isLast && isFinalImpact
             const isFinalStage = isLast
-            const cardClasses = joinClasses(
-              isLast
-                ? "flex flex-col gap-2 p-3 rounded-lg"
-                : "flex flex-col gap-2 p-3 rounded-l-lg rounded-r-sm",
-              "bg-sentinel-bg border border-sentinel-border",
-              "border-l-4",
-              tacticStyle.border,
-              isFinalStage ? "shadow-md" : "",
-              isImpact ? "shadow-lg" : "",
-              isImpact ? tacticStyle.glow : "",
-              isFinalStage && !isImpact
-                ? "border-b border-b-sentinel-accent"
-                : "",
-              useScroll
-                ? "min-w-[200px] max-w-[240px]"
-                : normalized.length === 1
-                  ? "w-full sm:max-w-[280px]"
-                  : "w-full sm:flex-1 sm:min-w-0",
-              "transition-all duration-200",
-              "hover:border-opacity-80 hover:bg-opacity-80"
-            )
+
             const nodeClasses = joinClasses(
-              "w-7 h-7 rounded-full flex items-center",
-              "justify-center text-xs font-bold text-white shrink-0",
-              "ring-2 ring-offset-1 ring-offset-sentinel-bg",
+              "w-9 h-9 rounded-full flex items-center",
+              "justify-center text-sm font-bold text-white",
+              "shrink-0 border-2 border-white/20",
+              "ring-2 ring-offset-2 ring-offset-sentinel-bg",
               tacticStyle.node,
-              tacticStyle.ring ?? "ring-blue-500"
+              tacticStyle.ring ?? "ring-blue-500",
+              isImpact ? "shadow-lg ring-offset-sentinel-bg" : ""
             )
+
             const tacticClasses = joinClasses(
               "text-xs font-medium",
               tacticStyle.text
             )
+
             const techniqueBadgeClasses = joinClasses(
-              "text-xs px-1.5 py-0.5 rounded font-mono font-medium",
+              "text-xs px-1.5 py-0.5 rounded",
+              "font-mono font-medium",
               tacticStyle.badge
             )
 
+            // Extract forensic highlight from evidence
+            let highlight = null
+            if (stage.evidence) {
+              const ipMatch = stage.evidence.match(
+                /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
+              )
+              const eventCodeMatch = stage.evidence.match(
+                /EventCode\s+(\d{4,5})/i
+              )
+              const processMatch = stage.evidence.match(
+                /\b(\w+\.exe)\b/i
+              )
+              const uriMatch = stage.evidence.match(
+                /(\/[\w\-./]{8,40})/
+              )
+              const credMatch = stage.evidence.match(
+                /\b(EC2InstanceRole|AccessKey|SecretKey|IAM\w+)\b/i
+              )
+              if (ipMatch?.[1]) highlight = ipMatch[1]
+              else if (eventCodeMatch?.[1])
+                highlight = "EventCode " + eventCodeMatch[1]
+              else if (processMatch?.[1]) highlight = processMatch[1]
+              else if (uriMatch?.[1]) highlight = uriMatch[1]
+              else if (credMatch?.[1]) highlight = credMatch[1]
+            }
+
             return (
               <React.Fragment key={stage.originalIndex}>
+                {/* Stage unit: node + capsule above rail */}
                 <div
-                  className={cardClasses + " relative z-10"}
-                  title={stage.evidence ?? ""}
+                  className={
+                    useScroll
+                      ? "flex flex-col items-center shrink-0 relative z-10"
+                      : "flex flex-col items-center flex-1 min-w-0 relative z-10"
+                  }
+                  style={useScroll ? { width: "180px" } : {}}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={nodeClasses}>{stage.number}</div>
+                  {/* Telemetry capsule above node */}
+                  <div
+                    className={joinClasses(
+                      "w-full mb-2 p-2.5 rounded-lg",
+                      "bg-sentinel-bg border border-sentinel-border",
+                      "border-l-4",
+                      tacticStyle.border,
+                      isImpact ? "shadow-lg " + tacticStyle.glow : "",
+                      isFinalStage && !isImpact
+                        ? "border-b-2 border-b-sentinel-accent"
+                        : ""
+                    )}
+                  >
+                    {/* Stage number + tactic label */}
+                    <div className="flex items-center justify-between mb-1">
                       <span className={tacticClasses}>
-                        {stage.tactic ?? ""}
+                        {stage.tactic && !stage.tactic.match(/^TA\d{4}$/)
+                          ? stage.tactic
+                          : stage.name.length > 16
+                            ? stage.name.slice(0, 16) + "..."
+                            : stage.name}
+                      </span>
+                      <span
+                        className={
+                          isConfirmed
+                            ? "text-xs font-medium text-green-400"
+                            : "text-xs font-medium text-amber-400"
+                        }
+                      >
+                        {isConfirmed ? "OK" : "~"}
                       </span>
                     </div>
-                  </div>
 
-                  <p
-                    className={
-                      isFinalStage
-                        ? "text-sm font-semibold leading-tight mb-0.5 " +
-                          tacticStyle.text
-                        : "text-sm font-semibold text-white leading-tight mb-0.5"
-                    }
-                    style={{
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    }}
-                    title={stage.name}
-                  >
-                    {stage.name}
-                    {isImpact && (
-                      <span className="ml-1 text-red-400 text-xs">
-                        &bull;
-                      </span>
-                    )}
-                  </p>
+                    {/* Stage name - primary label */}
+                    <p
+                      className={joinClasses(
+                        "text-xs font-semibold leading-tight mb-1",
+                        isFinalStage ? tacticStyle.text : "text-white"
+                      )}
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                      title={stage.name}
+                    >
+                      {stage.name}
+                      {isImpact && (
+                        <span className="ml-1 text-red-400">
+                          &bull;
+                        </span>
+                      )}
+                    </p>
 
-                  {/* Confidence badge below title */}
-                  <span
-                    className={
-                      isConfirmed
-                        ? "text-xs px-1.5 py-0.5 rounded font-medium w-fit bg-green-900 text-green-300"
-                        : "text-xs px-1.5 py-0.5 rounded font-medium w-fit bg-amber-900 text-amber-300"
-                    }
-                  >
-                    {isConfirmed ? "CONFIRMED" : "INFERRED"}
-                  </span>
-
-                  {stage.techniqueId && (
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <span className={techniqueBadgeClasses}>
+                    {/* Technique badge */}
+                    {stage.techniqueId && (
+                      <span
+                        className={techniqueBadgeClasses}
+                        title={stage.technique ?? ""}
+                      >
                         {stage.techniqueId}
                       </span>
-                      {stage.techniqueName && (
-                        <span className="text-xs text-sentinel-muted leading-tight opacity-75">
-                          {stage.techniqueName}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                    )}
 
-                  {stage.evidence && (() => {
-                    const ipMatch = stage.evidence.match(
-                      /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
-                    )
-                    const eventCodeMatch = stage.evidence.match(
-                      /EventCode\s+(\d{4,5})/i
-                    )
-                    const processMatch = stage.evidence.match(
-                      /\b(\w+\.exe)\b/i
-                    )
-                    const uriMatch = stage.evidence.match(
-                      /(\/[\w\-./]{8,40})/
-                    )
-                    const credMatch = stage.evidence.match(
-                      /\b(EC2InstanceRole|AccessKey|SecretKey|IAM\w+)\b/i
-                    )
-
-                    let highlight = null
-                    if (ipMatch?.[1]) highlight = ipMatch[1]
-                    else if (eventCodeMatch?.[1]) {
-                      highlight = "EventCode " + eventCodeMatch[1]
-                    } else if (processMatch?.[1]) {
-                      highlight = processMatch[1]
-                    } else if (uriMatch?.[1]) {
-                      highlight = uriMatch[1]
-                    } else if (credMatch?.[1]) {
-                      highlight = credMatch[1]
-                    }
-
-                    return (
-                      <div className="flex flex-col gap-1">
-                        {highlight && (
-                          <span
-                            className="text-xs px-1.5 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 w-fit max-w-full truncate"
-                            title={highlight}
-                          >
-                            {highlight.length > 22
-                              ? highlight.slice(0, 22) + "..."
-                              : highlight}
-                          </span>
-                        )}
-                        <p
-                          className="text-xs text-sentinel-muted leading-snug"
-                          style={{
-                            display: "-webkit-box",
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: "vertical",
-                            overflow: "hidden",
-                          }}
-                          title={stage.evidence}
-                        >
-                          {stage.evidence}
-                        </p>
-                      </div>
-                    )
-                  })()}
-
-                  {((stage.timestamp && stage.timestamp !== "unknown") ||
-                    stage.assets.length > 0) && (
-                    <div className="flex items-center justify-between gap-1 mt-1 flex-wrap">
-                      {stage.timestamp && stage.timestamp !== "unknown" && (
-                        <span className="text-xs text-sentinel-muted font-mono">
-                          {stage.timestamp.length > 16
-                            ? stage.timestamp.slice(0, 16)
-                            : stage.timestamp}
-                        </span>
-                      )}
-                      {(stage.assets.length > 0) && (
+                    {/* Forensic highlight chip */}
+                    {highlight && (
+                      <div className="mt-1">
                         <span
-                          className="text-xs px-1.5 py-0.5 rounded bg-sentinel-surface border border-sentinel-border text-sentinel-muted font-mono truncate max-w-[100px]"
-                          title={stage.assets[0]}
+                          className="text-xs px-1 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 block truncate"
+                          title={highlight}
                         >
-                          {stage.assets[0].length > 15
-                            ? stage.assets[0].slice(0, 15) + "..."
-                            : stage.assets[0]}
-                          {stage.assets.length > 1 && (
-                            <span> +{stage.assets.length - 1}</span>
-                          )}
+                          {highlight.length > 20
+                            ? highlight.slice(0, 20) + "..."
+                            : highlight}
                         </span>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+
+                    {/* Timestamp - compact */}
+                    {stage.timestamp && stage.timestamp !== "unknown" && (
+                      <p className="text-xs text-sentinel-muted font-mono mt-1 opacity-75">
+                        {stage.timestamp.length > 10
+                          ? stage.timestamp.slice(0, 10)
+                          : stage.timestamp}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Node circle on the rail */}
+                  <div className={nodeClasses} title={stage.name}>
+                    {stage.number}
+                  </div>
                 </div>
 
+                {/* Connector between stage units */}
                 {!isLast && (
-                  <div className="hidden sm:flex items-center shrink-0 px-0.5 self-center relative z-10">
+                  <div className="hidden sm:flex items-center shrink-0 self-center relative z-10 pb-12">
                     <div className="flex items-center gap-0">
                       <div
                         className="w-8 h-0.5 shrink-0"
                         style={{
-                          background: `linear-gradient(to right, ${
-                            tacticStyle.connector ?? "#3b82f6"
-                          }99, #374151)`,
+                          background: `linear-gradient(
+                            to right,
+                            ${tacticStyle.connector ?? "#3b82f6"}99,
+                            #374151
+                          )`,
                         }}
                       />
                       <svg
