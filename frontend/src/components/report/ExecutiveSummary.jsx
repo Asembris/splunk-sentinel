@@ -1,9 +1,14 @@
 export default function ExecutiveSummary({ report }) {
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 shadow-lg">
-      <h2 className="text-xs font-semibold text-sentinel-muted uppercase tracking-[0.1em] mb-4">
-        Executive Summary
-      </h2>
+    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 shadow-lg" style={{ borderTop: '2px solid #3b82f6' }}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+          <h2 className="text-sm font-bold text-white tracking-wide">
+            Executive Brief
+          </h2>
+        </div>
+      </div>
       <p className="text-white text-sm leading-relaxed antialiased">{report.executive_summary}</p>
       {report.threat_actor_profile && (
         <div className="mt-5 pt-5 border-t border-sentinel-border/50">
