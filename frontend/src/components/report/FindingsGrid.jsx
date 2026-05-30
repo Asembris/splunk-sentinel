@@ -144,25 +144,49 @@ export default function FindingsGrid({ findings }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {normalized.map((f) => (
-            <div key={f.originalIndex} className="flex gap-4 p-4 bg-sentinel-bg rounded-xl border border-sentinel-border hover:border-sentinel-accent/50 transition-colors group">
-              <div className="flex-shrink-0 text-center min-w-[50px] border-r border-sentinel-border pr-4">
-                <span className={`text-xl font-bold tabular-nums ${f.tone.text}`}>
-                  {f.confidenceDisplay}
-                  {f.confidenceKnown && (
-                    <span className="text-[10px] ml-0.5">%</span>
-                  )}
-                </span>
-                <div className="text-[9px] text-sentinel-muted uppercase tracking-tighter mt-1">{f.sourceLabel}</div>
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-white font-medium leading-snug group-hover:text-sentinel-accent transition-colors">{f.findingText}</p>
+          {normalized.map((f, index) => {
+            const isLastOddCard =
+              index === normalized.length - 1 &&
+              normalized.length % 2 === 1 &&
+              normalized.length > 1
+
+            return (
+              <div
+                key={f.originalIndex}
+                className={`p-4 bg-sentinel-bg rounded-lg border border-sentinel-border hover:border-sentinel-accent/50 transition-colors group ${
+                  isLastOddCard ? 'md:col-span-2' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
+                      Finding {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
+                      {f.sourceLabel}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className={`text-lg font-bold tabular-nums leading-none ${f.tone.text}`}>
+                      {f.confidenceDisplay}
+                      {f.confidenceKnown && (
+                        <span className="text-[10px] ml-0.5">%</span>
+                      )}
+                    </span>
+                    <div className="text-[9px] text-sentinel-muted uppercase tracking-wider mt-1">
+                      Confidence
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm font-semibold text-white leading-snug group-hover:text-sentinel-accent transition-colors">
+                  {f.findingText}
+                </p>
                 {f.evidenceText && (
-                  <p className="text-[11px] text-sentinel-muted mt-2 leading-relaxed line-clamp-3 font-mono">{f.evidenceText}</p>
+                  <p className="text-xs font-mono text-sentinel-muted mt-2 leading-relaxed line-clamp-3">{f.evidenceText}</p>
                 )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
