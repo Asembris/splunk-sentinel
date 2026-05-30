@@ -159,7 +159,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
               key={i}
               className={`bg-sentinel-bg border border-sentinel-border rounded-lg border-l-4 ${t.tacticStyle.border} p-4`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <a
@@ -170,13 +170,30 @@ export default function MitreTable({ techniques, ttpMappings }) {
                     >
                       {t.id}
                     </a>
-                    <span className={`text-xs font-bold uppercase tracking-wider ${t.tacticStyle.text}`}>
+                    <span className={`text-xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${t.tacticStyle.badge}`}>
                       {t.tactic}
                     </span>
                   </div>
-                  <p className="text-sm font-semibold text-white leading-tight">
+                  <p className="text-sm font-semibold text-white leading-tight mb-2">
                     {t.name}
                   </p>
+                  {t.cveChips.length > 0 && (
+                    <div className="flex gap-1.5 flex-wrap">
+                      {t.cveChips.slice(0, 2).map(c => (
+                        <span
+                          key={c.id}
+                          className="text-xs font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-900/20 text-amber-300"
+                        >
+                          {c.label}
+                        </span>
+                      ))}
+                      {t.cveChips.length > 2 && (
+                        <span className="text-xs font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
+                          +{t.cveChips.length - 2}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
