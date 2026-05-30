@@ -1365,14 +1365,72 @@ const CLASSIFICATION_COLORS = {
   UNKNOWN:        'text-gray-400 border-gray-500/30 bg-gray-500/5',
 }
 
+const CLASSIFICATION_LABELS = {
+  APT: 'APT',
+  RANSOMWARE: 'Ransomware',
+  INSIDER_THREAT: 'Insider Threat',
+  BRUTE_FORCE: 'Brute Force',
+  UNKNOWN: 'Unknown',
+}
+
+const normalizeClassification = (value) => {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+
+  return normalized || 'UNKNOWN'
+}
+
+const getClassificationLabel = (value) => {
+  const normalized = normalizeClassification(value)
+  if (CLASSIFICATION_LABELS[normalized]) {
+    return CLASSIFICATION_LABELS[normalized]
+  }
+
+  return normalized
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ') || CLASSIFICATION_LABELS.UNKNOWN
+}
+
+const normalizeMissingIndicators = (indicators) => {
+  if (!Array.isArray(indicators)) return []
+
+  return indicators
+    .map((indicator) => String(indicator || '').trim())
+    .filter(Boolean)
+}
+
 function CounterfactualCard({ counterfactual, confirmedClassification }) {
-  if (
-    !counterfactual ||
-    !counterfactual.alternatives_ruled_out ||
-    counterfactual.alternatives_ruled_out.length === 0
-  ) {
+  const alternativesRaw = Array.isArray(counterfactual?.alternatives_ruled_out)
+    ? counterfactual.alternatives_ruled_out
+    : []
+  const alternatives = alternativesRaw
+    .filter((alt) => alt && typeof alt === 'object')
+    .map((alt, index) => {
+      const classificationKey = normalizeClassification(alt.classification)
+
+      return {
+        classificationKey,
+        classificationLabel: getClassificationLabel(classificationKey),
+        reason:
+          typeof alt.reason === 'string' && alt.reason.trim()
+            ? alt.reason.trim()
+            : 'No counterfactual reasoning was provided.',
+        missingIndicators: normalizeMissingIndicators(alt.missing_indicators),
+        originalIndex: index,
+      }
+    })
+
+  if (!alternatives.length) {
     return null
   }
+
+  const confirmedKey = normalizeClassification(confirmedClassification)
+  const confirmedLabel = getClassificationLabel(confirmedKey)
 
   return (
     <div className="bg-sentinel-surface border border-sentinel-border
@@ -1391,28 +1449,28 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
         <span className="text-xs text-sentinel-muted">Confirmed:</span>
         <span className={`text-xs font-bold px-2 py-0.5 rounded
                           border ${
-                            CLASSIFICATION_COLORS[confirmedClassification]
+                            CLASSIFICATION_COLORS[confirmedKey]
                             || CLASSIFICATION_COLORS.UNKNOWN
                           }`}>
-          CONFIRMED {confirmedClassification}
+          CONFIRMED {confirmedLabel}
         </span>
       </div>
 
       {/* Ruled out alternatives */}
       <div className="space-y-3">
-        {counterfactual.alternatives_ruled_out.map((alt, i) => (
+        {alternatives.map((alt) => (
           <div
-            key={i}
+            key={alt.originalIndex}
             className="border border-sentinel-border rounded-lg p-4
                        bg-sentinel-bg"
           >
             <div className="flex items-center gap-2 mb-2">
               <span className={`text-xs font-bold px-2 py-0.5 
                                 rounded border ${
-                                  CLASSIFICATION_COLORS[alt.classification]
+                                  CLASSIFICATION_COLORS[alt.classificationKey]
                                   || CLASSIFICATION_COLORS.UNKNOWN
                                 }`}>
-                NOT {alt.classification}
+                NOT {alt.classificationLabel}
               </span>
             </div>
 
@@ -1420,13 +1478,12 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
               {alt.reason}
             </p>
 
-            {alt.missing_indicators &&
-             alt.missing_indicators.length > 0 && (
+            {alt.missingIndicators.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 <span className="text-xs text-sentinel-muted/60 mr-1">
                   Missing:
                 </span>
-                {alt.missing_indicators.map((ind, j) => (
+                {alt.missingIndicators.map((ind, j) => (
                   <span
                     key={j}
                     className="text-xs font-mono px-1.5 py-0.5
