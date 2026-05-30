@@ -202,6 +202,27 @@ export default function MitreTable({ techniques, ttpMappings }) {
                       )}
                     </div>
                   )}
+                  <div className="flex gap-2 flex-wrap mt-2">
+                    {t.hasDetection ? (
+                      <span className="text-xs px-1.5 py-0.5 rounded border border-teal-500/30 bg-teal-900/20 text-teal-400">
+                        Detection available
+                      </span>
+                    ) : (
+                      <span className="text-xs px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
+                        No detection guidance
+                      </span>
+                    )}
+                    {t.hasMitigation && (
+                      <span className="text-xs px-1.5 py-0.5 rounded border border-blue-500/30 bg-blue-900/20 text-blue-300">
+                        Mitigation available
+                      </span>
+                    )}
+                  </div>
+                  {t.hasDetection && (
+                    <p className="text-xs text-sentinel-muted leading-relaxed mt-1 line-clamp-2">
+                      {t.detection}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   {t.validationTone === 'success' && (
