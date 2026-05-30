@@ -391,8 +391,15 @@ const KillChainTimeline = ({ stages = [] }) => {
                   ? stage.tactic
                   : stage.name
 
+              const trimmedLabel = label
+                .replace(/ Stage$/, "")
+                .replace(/ Phase$/, "")
+                .trim()
+
               const displayLabel =
-                label.length > 18 ? label.slice(0, 18) + "..." : label
+                trimmedLabel.length > 18
+                  ? trimmedLabel.slice(0, 18) + "..."
+                  : trimmedLabel
 
               return (
                 <React.Fragment key={idx}>
@@ -422,12 +429,14 @@ const KillChainTimeline = ({ stages = [] }) => {
         )}
       </div>
 
-      <div className={useScroll ? "overflow-x-auto pb-1" : "overflow-visible"}>
+      <div
+        className={useScroll ? "overflow-x-auto pb-1" : "overflow-visible"}
+      >
         <div
           className={
             useScroll
               ? "flex items-stretch gap-0 min-w-max"
-              : "flex items-stretch gap-0 w-full"
+              : "flex flex-col gap-3 w-full sm:flex-row sm:items-stretch sm:gap-0"
           }
         >
           {normalized.map((stage, idx) => {
@@ -449,7 +458,11 @@ const KillChainTimeline = ({ stages = [] }) => {
               isFinalStage && !isImpact
                 ? "border-b border-b-sentinel-accent"
                 : "",
-              useScroll ? "min-w-[200px] max-w-[240px]" : "flex-1 min-w-0",
+              useScroll
+                ? "min-w-[200px] max-w-[240px]"
+                : normalized.length === 1
+                  ? "w-full sm:max-w-[280px]"
+                  : "w-full sm:flex-1 sm:min-w-0",
               "transition-all duration-200",
               "hover:border-opacity-80 hover:bg-opacity-80"
             )
@@ -488,6 +501,13 @@ const KillChainTimeline = ({ stages = [] }) => {
                           tacticStyle.text
                         : "text-sm font-semibold text-white leading-tight mb-0.5"
                     }
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                    title={stage.name}
                   >
                     {stage.name}
                     {isImpact && (
@@ -578,32 +598,35 @@ const KillChainTimeline = ({ stages = [] }) => {
                     )
                   })()}
 
-                  <div className="flex items-center justify-between gap-1 mt-1 flex-wrap">
-                    {stage.timestamp && stage.timestamp !== "unknown" && (
-                      <span className="text-xs text-sentinel-muted font-mono">
-                        {stage.timestamp.length > 16
-                          ? stage.timestamp.slice(0, 16)
-                          : stage.timestamp}
-                      </span>
-                    )}
-                    {stage.assets.length > 0 && (
-                      <span
-                        className="text-xs px-1.5 py-0.5 rounded bg-sentinel-surface border border-sentinel-border text-sentinel-muted font-mono truncate max-w-[100px]"
-                        title={stage.assets[0]}
-                      >
-                        {stage.assets[0].length > 15
-                          ? stage.assets[0].slice(0, 15) + "..."
-                          : stage.assets[0]}
-                        {stage.assets.length > 1 && (
-                          <span> +{stage.assets.length - 1}</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
+                  {((stage.timestamp && stage.timestamp !== "unknown") ||
+                    stage.assets.length > 0) && (
+                    <div className="flex items-center justify-between gap-1 mt-1 flex-wrap">
+                      {stage.timestamp && stage.timestamp !== "unknown" && (
+                        <span className="text-xs text-sentinel-muted font-mono">
+                          {stage.timestamp.length > 16
+                            ? stage.timestamp.slice(0, 16)
+                            : stage.timestamp}
+                        </span>
+                      )}
+                      {(stage.assets.length > 0) && (
+                        <span
+                          className="text-xs px-1.5 py-0.5 rounded bg-sentinel-surface border border-sentinel-border text-sentinel-muted font-mono truncate max-w-[100px]"
+                          title={stage.assets[0]}
+                        >
+                          {stage.assets[0].length > 15
+                            ? stage.assets[0].slice(0, 15) + "..."
+                            : stage.assets[0]}
+                          {stage.assets.length > 1 && (
+                            <span> +{stage.assets.length - 1}</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {!isLast && (
-                  <div className="flex items-center shrink-0 px-0.5 self-center">
+                  <div className="hidden sm:flex items-center shrink-0 px-0.5 self-center">
                     <div className="flex items-center gap-0">
                       <div
                         className="w-8 h-0.5 shrink-0"
