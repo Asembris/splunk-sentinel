@@ -136,8 +136,17 @@ export default function ExecutiveSummary({ report }) {
       </div>
       {report.threat_actor_profile && (
         <div className="mt-5 pt-5 border-t border-sentinel-border/50">
-          <h3 className="text-[10px] font-bold text-sentinel-accent uppercase tracking-wider mb-2">Threat Actor Profile</h3>
-          <p className="text-xs text-sentinel-muted leading-relaxed italic">{report.threat_actor_profile}</p>
+          <div className="bg-sentinel-bg rounded-lg px-4 py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-sentinel-accent" />
+              <span className="text-[10px] font-bold text-sentinel-muted uppercase tracking-wider">
+                Threat Actor Profile
+              </span>
+            </div>
+            <p className="text-xs text-sentinel-muted leading-relaxed">
+              {report.threat_actor_profile}
+            </p>
+          </div>
         </div>
       )}
     </div>
