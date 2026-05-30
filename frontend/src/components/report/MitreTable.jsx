@@ -164,7 +164,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
           {enriched.map((t, i) => (
             <div
               key={i}
-              className={`bg-sentinel-bg border border-sentinel-border rounded-lg border-l-4 ${t.tacticStyle.border} p-4`}
+              className={`bg-sentinel-bg border border-sentinel-border rounded-lg border-l-4 ${t.tacticStyle.border} p-4 transition-colors hover:bg-sentinel-surface`}
             >
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -209,7 +209,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
                       )}
                     </div>
                   )}
-                  <div className="flex gap-2 flex-wrap mt-2">
+                  <div className="flex gap-2 flex-wrap mt-3 pt-2 border-t border-sentinel-border/40">
                     {t.hasDetection ? (
                       <span className="text-xs px-1.5 py-0.5 rounded border border-teal-500/30 bg-teal-900/20 text-teal-400">
                         Detection available
@@ -231,7 +231,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
                     </p>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex flex-col items-end gap-2 shrink-0 min-w-24">
                   {t.validationTone === 'success' && (
                     <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded border border-green-500/30 bg-green-900/20 text-green-400">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
@@ -256,14 +256,31 @@ export default function MitreTable({ techniques, ttpMappings }) {
                   )}
                   {t.confidencePct !== null && (
                     <div className="flex flex-col items-end gap-1 mt-1">
-                      <span className="text-lg font-bold text-sentinel-accent leading-none">
-                        {t.confidencePct}%
-                      </span>
+                      {t.confidencePct >= 75 && (
+                        <span className="text-lg font-bold text-green-400 leading-none">
+                          {t.confidencePct}%
+                        </span>
+                      )}
+                      {t.confidencePct >= 50 && t.confidencePct < 75 && (
+                        <span className="text-lg font-bold text-amber-400 leading-none">
+                          {t.confidencePct}%
+                        </span>
+                      )}
+                      {t.confidencePct < 50 && (
+                        <span className="text-lg font-bold text-red-400 leading-none">
+                          {t.confidencePct}%
+                        </span>
+                      )}
                       <div className="w-20 h-1.5 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
-                        <div
-                          className="h-full bg-sentinel-accent rounded-full"
-                          style={{ width: `${t.confidencePct}%` }}
-                        />
+                        {t.confidencePct >= 75 && (
+                          <div className="h-full bg-green-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                        )}
+                        {t.confidencePct >= 50 && t.confidencePct < 75 && (
+                          <div className="h-full bg-amber-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                        )}
+                        {t.confidencePct < 50 && (
+                          <div className="h-full bg-red-400 rounded-full" style={{ width: `${t.confidencePct}%` }} />
+                        )}
                       </div>
                       <span className="text-xs text-sentinel-muted">
                         Confidence
