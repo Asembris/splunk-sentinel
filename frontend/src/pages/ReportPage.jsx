@@ -950,6 +950,9 @@ function ConfidenceBreakdownPanel({ investigationId }) {
       <div className="space-y-3">
         {breakdown.factors.map((factor) => {
           const rawScore = factor.raw_score || 0
+          const rawPct = Math.round(rawScore * 100)
+          const weightPct = Math.round((factor.weight || 0) * 100)
+          const contributionPct = Math.round((factor.contribution || 0) * 100)
           const tone = getScoreTone(rawScore)
           const isWeakest = factor.name === weakestName
           const isStrongest = factor.name === strongestName
@@ -991,29 +994,29 @@ function ConfidenceBreakdownPanel({ investigationId }) {
                 </div>
 
                 <div className="w-full md:w-72">
-                  <div className="flex items-center justify-between text-[10px] uppercase tracking-wider mb-1">
-                    <span className="text-sentinel-muted">Raw score</span>
-                    <span className={`font-mono font-bold ${tone.text}`}>
-                      {Math.round(rawScore * 100)}%
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] uppercase tracking-wider text-sentinel-muted">
+                      Contributes
+                    </span>
+                    <span className={`text-lg font-bold leading-none ${tone.text}`}>
+                      {contributionPct}%
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
                     <div
                       className={`h-full ${tone.bar}`}
-                      style={{ width: `${Math.round(rawScore * 100)}%` }}
+                      style={{ width: `${contributionPct}%` }}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     <div className="rounded border border-sentinel-border bg-sentinel-surface px-2 py-1">
-                      <div className="text-[9px] text-sentinel-muted uppercase">Weight</div>
-                      <div className="text-xs font-mono text-white">
-                        {Math.round((factor.weight || 0) * 100)}%
+                      <div className="text-xs text-sentinel-muted">
+                        Raw {rawPct}%
                       </div>
                     </div>
                     <div className="rounded border border-sentinel-border bg-sentinel-surface px-2 py-1">
-                      <div className="text-[9px] text-sentinel-muted uppercase">Contribution</div>
-                      <div className="text-xs font-mono text-white">
-                        {Math.round((factor.contribution || 0) * 100)}%
+                      <div className="text-xs text-sentinel-muted">
+                        Weight {weightPct}%
                       </div>
                     </div>
                   </div>
