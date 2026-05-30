@@ -32,6 +32,18 @@ const SOURCE_LABEL_MAP = {
   reportagent: 'Report',
 }
 
+const EVIDENCE_CHIP_STYLE_MAP = {
+  process: 'text-xs font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-900/20 text-amber-300',
+  event: 'text-xs font-mono px-1.5 py-0.5 rounded border border-blue-500/30 bg-blue-900/20 text-blue-300',
+  ip: 'text-xs font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 bg-cyan-900/20 text-cyan-300',
+  mitre: 'text-xs font-mono px-1.5 py-0.5 rounded border border-red-500/30 bg-red-900/20 text-red-300',
+  credential: 'text-xs font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-900/20 text-amber-300',
+  timestamp: 'text-xs font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted',
+  generic: 'text-xs font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted',
+}
+
+const IP_CHIP_BLOCKLIST = new Set(['169.254.169.254'])
+
 const normalizeConfidence = (value) => {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
@@ -74,22 +86,84 @@ const normalizeSource = (source) => {
     .join(' ') || 'Agent'
 }
 
+const isValidIp = (ip) => {
+  const octets = ip.split('.').map(Number)
+  return octets.length === 4 &&
+    octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+}
+
+const addChip = (chips, seen, type, label) => {
+  if (!label || chips.length >= 8) return
+  const key = `${type}:${label.toLowerCase()}`
+  if (seen.has(key)) return
+  seen.add(key)
+  chips.push({ type, label })
+}
+
+const extractEvidenceChips = (text) => {
+  if (!text) return []
+
+  const chips = []
+  const seen = new Set()
+  const source = String(text)
+
+  const processMatches = source.match(/\b[\w.-]+\.exe\b/gi) || []
+  processMatches.forEach((match) => {
+    addChip(chips, seen, 'process', match)
+  })
+
+  const eventMatches = source.matchAll(/EventCode\s+(\d{4,5})/gi)
+  Array.from(eventMatches).forEach((match) => {
+    addChip(chips, seen, 'event', `EventCode ${match[1]}`)
+  })
+
+  const ipMatches = source.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) || []
+  ipMatches.forEach((match) => {
+    if (!isValidIp(match) || IP_CHIP_BLOCKLIST.has(match)) return
+    addChip(chips, seen, 'ip', `IP ${match}`)
+  })
+
+  const mitreMatches = source.match(/\bT\d{4}(?:\.\d{3})?\b/g) || []
+  mitreMatches.forEach((match) => {
+    addChip(chips, seen, 'mitre', match)
+  })
+
+  const credentialMatches = source.match(/\b(EC2InstanceRole|AccessKey|SecretKey|IAM)\b/gi) || []
+  credentialMatches.forEach((match) => {
+    const label = match.toLowerCase() === 'iam'
+      ? 'IAM Credentials'
+      : match
+    addChip(chips, seen, 'credential', label)
+  })
+
+  const timestampMatches = source.match(/\b\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\b/g) || []
+  timestampMatches.forEach((match) => {
+    addChip(chips, seen, 'timestamp', match)
+  })
+
+  return chips
+}
+
 const normalizeFinding = (finding, index) => {
   const confidence = normalizeConfidence(finding?.confidence)
+  const findingText =
+    typeof finding?.finding === 'string' && finding.finding.trim()
+      ? finding.finding.trim()
+      : 'Finding unavailable'
+  const evidenceText =
+    typeof finding?.evidence === 'string' && finding.evidence.trim()
+      ? finding.evidence.trim()
+      : ''
+
   return {
     confidence,
     confidenceDisplay: confidence.display,
     confidenceKnown: confidence.known,
     tone: getConfidenceTone(confidence),
     sourceLabel: normalizeSource(finding?.source),
-    findingText:
-      typeof finding?.finding === 'string' && finding.finding.trim()
-        ? finding.finding.trim()
-        : 'Finding unavailable',
-    evidenceText:
-      typeof finding?.evidence === 'string' && finding.evidence.trim()
-        ? finding.evidence.trim()
-        : '',
+    findingText,
+    evidenceText,
+    evidenceChips: extractEvidenceChips(`${findingText} ${evidenceText}`),
     originalIndex: index,
   }
 }
@@ -181,6 +255,23 @@ export default function FindingsGrid({ findings }) {
                 <p className="text-sm font-semibold text-white leading-snug group-hover:text-sentinel-accent transition-colors">
                   {f.findingText}
                 </p>
+                {f.evidenceChips.length > 0 && (
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {f.evidenceChips.slice(0, 4).map((chip) => (
+                      <span
+                        key={`${chip.type}-${chip.label}`}
+                        className={EVIDENCE_CHIP_STYLE_MAP[chip.type] || EVIDENCE_CHIP_STYLE_MAP.generic}
+                      >
+                        {chip.label}
+                      </span>
+                    ))}
+                    {f.evidenceChips.length > 4 && (
+                      <span className={EVIDENCE_CHIP_STYLE_MAP.generic}>
+                        +{f.evidenceChips.length - 4}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {f.evidenceText && (
                   <p className="text-xs font-mono text-sentinel-muted mt-2 leading-relaxed line-clamp-3">{f.evidenceText}</p>
                 )}
