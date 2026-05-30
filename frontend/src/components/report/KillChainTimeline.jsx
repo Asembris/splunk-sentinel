@@ -318,7 +318,18 @@ const KillChainTimeline = ({ stages = [] }) => {
   const useScroll = normalized.length > 4
 
   return (
-    <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-5 border-t-2 border-t-blue-500">
+    <div
+      className="bg-sentinel-surface border
+                 border-sentinel-border rounded-xl p-5"
+      style={{
+        borderTop: `2px solid ${
+          normalized.length > 0
+            ? (TACTIC_STYLES[normalized[0]?.tactic]?.connector ??
+              "#3b82f6")
+            : "#3b82f6"
+        }`,
+      }}
+    >
       {/* Header - two row layout */}
       <div className="flex flex-col gap-2 mb-4">
         {/* Row 1: Title left, chips right */}
@@ -430,15 +441,88 @@ const KillChainTimeline = ({ stages = [] }) => {
       </div>
 
       <div
-        className={useScroll ? "overflow-x-auto pb-1" : "overflow-visible"}
+        className={
+          useScroll
+            ? "overflow-x-auto pb-1"
+            : "overflow-visible relative"
+        }
       >
         <div
           className={
             useScroll
               ? "flex items-stretch gap-0 min-w-max"
-              : "flex flex-col gap-3 w-full sm:flex-row sm:items-stretch sm:gap-0"
+              : "flex flex-col gap-3 w-full sm:flex-row sm:items-stretch sm:gap-0 relative"
           }
         >
+          {/* Background attack rail layers - non-scroll desktop only */}
+          {!useScroll && (
+            <>
+              {/* Faint telemetry grid */}
+              <div
+                className="hidden sm:block absolute inset-0 rounded-lg pointer-events-none"
+                style={{
+                  background: `repeating-linear-gradient(
+                    90deg,
+                    transparent,
+                    transparent 59px,
+                    rgba(31, 41, 55, 0.4) 59px,
+                    rgba(31, 41, 55, 0.4) 60px
+                  )`,
+                  zIndex: 0,
+                }}
+              />
+
+              {/* Continuous attack rail line */}
+              <div
+                className="hidden sm:block absolute pointer-events-none"
+                style={{
+                  top: "50%",
+                  left: "12px",
+                  right: "12px",
+                  height: "2px",
+                  transform: "translateY(-50%)",
+                  background: `linear-gradient(to right, ${
+                    normalized[0]
+                      ? (TACTIC_STYLES[normalized[0].tactic]?.connector ??
+                        DEFAULT_TACTIC_STYLE.connector)
+                      : DEFAULT_TACTIC_STYLE.connector
+                  }66, ${
+                    normalized.length > 1
+                      ? (TACTIC_STYLES[
+                          normalized[normalized.length - 1].tactic
+                        ]?.connector ?? DEFAULT_TACTIC_STYLE.connector)
+                      : DEFAULT_TACTIC_STYLE.connector
+                  }99)`,
+                  zIndex: 0,
+                }}
+              />
+
+              {/* Final impact radial glow */}
+              {isFinalImpact && (
+                <div
+                  className="hidden sm:block absolute pointer-events-none"
+                  style={{
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: "30%",
+                    background: `radial-gradient(
+                      ellipse at 90% 50%,
+                      ${
+                        normalized[normalized.length - 1]
+                          ? (TACTIC_STYLES[
+                              normalized[normalized.length - 1].tactic
+                            ]?.connector ?? "#dc2626")
+                          : "#dc2626"
+                      }18,
+                      transparent 70%
+                    )`,
+                    zIndex: 0,
+                  }}
+                />
+              )}
+            </>
+          )}
           {normalized.map((stage, idx) => {
             const tacticStyle = getTacticStyle(stage.tactic)
             const isLast = idx === normalized.length - 1
@@ -484,7 +568,10 @@ const KillChainTimeline = ({ stages = [] }) => {
 
             return (
               <React.Fragment key={stage.originalIndex}>
-                <div className={cardClasses} title={stage.evidence ?? ""}>
+                <div
+                  className={cardClasses + " relative z-10"}
+                  title={stage.evidence ?? ""}
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className={nodeClasses}>{stage.number}</div>
@@ -626,7 +713,7 @@ const KillChainTimeline = ({ stages = [] }) => {
                 </div>
 
                 {!isLast && (
-                  <div className="hidden sm:flex items-center shrink-0 px-0.5 self-center">
+                  <div className="hidden sm:flex items-center shrink-0 px-0.5 self-center relative z-10">
                     <div className="flex items-center gap-0">
                       <div
                         className="w-8 h-0.5 shrink-0"
