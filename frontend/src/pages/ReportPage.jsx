@@ -1455,15 +1455,26 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
       </div>
 
       {/* Confirmed */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-xs text-sentinel-muted">Confirmed:</span>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded
-                          border ${
-                            CLASSIFICATION_COLORS[confirmedKey]
-                            || CLASSIFICATION_COLORS.UNKNOWN
-                          }`}>
-          CONFIRMED {confirmedLabel}
-        </span>
+      <div className="bg-sentinel-bg border border-sentinel-border rounded-lg p-4 mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-sentinel-muted mb-1">
+              Confirmed Classification
+            </div>
+            <div className="text-lg font-bold text-white leading-tight">
+              {confirmedLabel}
+            </div>
+            <div className="text-xs text-sentinel-muted mt-1">
+              Selected after counterfactual elimination
+            </div>
+          </div>
+          <span className={`text-xs font-bold px-2 py-1 rounded border w-fit ${
+            CLASSIFICATION_COLORS[confirmedKey]
+            || CLASSIFICATION_COLORS.UNKNOWN
+          }`}>
+            CONFIRMED
+          </span>
+        </div>
       </div>
 
       {/* Ruled out alternatives */}
