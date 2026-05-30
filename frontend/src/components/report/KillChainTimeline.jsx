@@ -532,12 +532,13 @@ const KillChainTimeline = ({ stages = [] }) => {
             const nodeClasses = joinClasses(
               "w-9 h-9 rounded-full flex items-center",
               "justify-center text-sm font-bold text-white",
-              "shrink-0 border-2 border-white/20",
+              "shrink-0 border-2",
+              isImpact ? "border-white/60" : "border-white/20",
               "ring-2 ring-offset-2 ring-offset-sentinel-bg",
               tacticStyle.node,
               tacticStyle.ring ?? "ring-blue-500",
               isImpact
-                ? "shadow-lg ring-offset-sentinel-bg animate-pulse"
+                ? "shadow-xl ring-offset-sentinel-bg animate-pulse brightness-125"
                 : ""
             )
 
