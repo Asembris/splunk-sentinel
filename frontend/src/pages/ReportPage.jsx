@@ -1365,6 +1365,14 @@ const CLASSIFICATION_COLORS = {
   UNKNOWN:        'text-gray-400 border-gray-500/30 bg-gray-500/5',
 }
 
+const CLASSIFICATION_LEFT_BORDERS = {
+  APT: 'border-l-red-500',
+  RANSOMWARE: 'border-l-orange-500',
+  INSIDER_THREAT: 'border-l-purple-500',
+  BRUTE_FORCE: 'border-l-amber-500',
+  UNKNOWN: 'border-l-gray-500',
+}
+
 const CLASSIFICATION_LABELS = {
   APT: 'APT',
   RANSOMWARE: 'Ransomware',
@@ -1482,16 +1490,21 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
         {alternatives.map((alt) => (
           <div
             key={alt.originalIndex}
-            className="border border-sentinel-border rounded-lg p-4
-                       bg-sentinel-bg"
+            className={`border border-sentinel-border border-l-4 ${
+              CLASSIFICATION_LEFT_BORDERS[alt.classificationKey]
+              || CLASSIFICATION_LEFT_BORDERS.UNKNOWN
+            } rounded-lg p-4 bg-sentinel-bg`}
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className={`text-xs font-bold px-2 py-0.5 
                                 rounded border ${
                                   CLASSIFICATION_COLORS[alt.classificationKey]
                                   || CLASSIFICATION_COLORS.UNKNOWN
                                 }`}>
-                NOT {alt.classificationLabel}
+                {alt.classificationLabel} Ruled Out
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
+                Counterfactual
               </span>
             </div>
 
@@ -1502,7 +1515,7 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
             {alt.missingIndicators.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 <span className="text-xs text-sentinel-muted/60 mr-1">
-                  Missing:
+                  Absent Signals
                 </span>
                 {alt.missingIndicators.map((ind, j) => (
                   <span
