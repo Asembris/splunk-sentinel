@@ -960,12 +960,12 @@ function ConfidenceBreakdownPanel({ investigationId }) {
           return (
             <div
               key={factor.name}
-              className={`border rounded-lg p-4 bg-sentinel-bg ${
+              className={`border rounded-lg p-4 ${
                 isWeakest
-                  ? 'border-amber-500/40'
+                  ? 'border-amber-500/40 bg-amber-500/5'
                   : isStrongest
-                    ? 'border-green-500/40'
-                    : 'border-sentinel-border'
+                    ? 'border-green-500/40 bg-green-500/5'
+                    : 'border-sentinel-border bg-sentinel-bg'
               }`}
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -975,13 +975,15 @@ function ConfidenceBreakdownPanel({ investigationId }) {
                       {factor.name}
                     </span>
                     {isWeakest && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400">
-                        Weakest
+                      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                        Confidence Gap
                       </span>
                     )}
                     {isStrongest && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-green-500/30 bg-green-500/10 text-green-400">
-                        Strongest
+                      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-green-500/30 bg-green-500/10 text-green-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                        Strongest Signal
                       </span>
                     )}
                   </div>
@@ -991,6 +993,16 @@ function ConfidenceBreakdownPanel({ investigationId }) {
                   <p className="text-[11px] text-sentinel-muted/70 mt-1 font-mono">
                     {factor.detail}
                   </p>
+                  {isStrongest && (
+                    <p className="text-[10px] text-green-400/70 mt-2 uppercase tracking-wider">
+                      Primary supporting evidence
+                    </p>
+                  )}
+                  {isWeakest && (
+                    <p className="text-[10px] text-amber-400/70 mt-2 uppercase tracking-wider">
+                      Missing validation signal
+                    </p>
+                  )}
                 </div>
 
                 <div className="w-full md:w-72">
