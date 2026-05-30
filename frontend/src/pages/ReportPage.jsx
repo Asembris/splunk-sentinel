@@ -907,6 +907,9 @@ function ConfidenceBreakdownPanel({ investigationId }) {
 
   const weakestName = breakdown.weakest_factor?.name
   const strongestName = breakdown.strongest_factor?.name
+  const overallScore = breakdown.overall || 0
+  const overallPct = Math.round(overallScore * 100)
+  const overallTone = getScoreTone(overallScore)
 
   return (
     <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6" style={{ borderTop: '2px solid #3b82f6' }}>
@@ -923,12 +926,23 @@ function ConfidenceBreakdownPanel({ investigationId }) {
           </p>
         </div>
 
-        <div className="text-left md:text-right">
-          <div className="text-4xl font-bold text-sentinel-accent leading-none">
-            {Math.round((breakdown.overall || 0) * 100)}%
+        <div className="bg-sentinel-bg border border-sentinel-border rounded-lg px-4 py-3 min-w-[150px]">
+          <div className={`text-4xl font-bold leading-none ${overallTone.text}`}>
+            {overallPct}%
           </div>
-          <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">
-            overall score
+          <div className="h-2 w-full rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden mt-2 mb-1">
+            <div
+              className={`h-full ${overallTone.bar}`}
+              style={{ width: `${overallPct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[10px] text-sentinel-muted uppercase tracking-widest">
+              Overall Score
+            </div>
+            <div className="text-[10px] text-sentinel-muted">
+              {breakdown.factors.length} factors evaluated
+            </div>
           </div>
         </div>
       </div>
