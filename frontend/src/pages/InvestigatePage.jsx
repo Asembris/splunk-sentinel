@@ -50,7 +50,7 @@ export default function InvestigatePage() {
         </h1>
         <p className="text-sentinel-muted text-lg max-w-2xl">
           Describe a security alert. Sentinel reconstructs the full attack 
-          kill chain from 2M+ log events in under 90 seconds.
+          kill chain from 2M+ log events in ~100 seconds.
         </p>
       </div>
 
@@ -107,7 +107,7 @@ export default function InvestigatePage() {
         {[
           { value: '2M+', label: 'Log Events Analyzed' },
           { value: '697', label: 'MITRE Techniques' },
-          { value: '<90s', label: 'Investigation Time' },
+          { value: '~100', label: 'Investigation Time' },
           { value: '6', label: 'AI Agents' },
         ].map(({ value, label }) => (
           <div key={label}>
