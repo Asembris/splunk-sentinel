@@ -148,82 +148,41 @@ export default function MitreTable({ techniques, ttpMappings }) {
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-sentinel-muted border-b border-sentinel-border">
-              <th className="pb-3 pr-4 w-24">ID</th>
-              <th className="pb-3 pr-4 w-48">Technique</th>
-              <th className="pb-3 pr-4">Detection Guidance</th>
-              <th className="pb-3 w-16 text-right">Score</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-sentinel-border">
-            {enriched.map((t, i) => (
-              <tr key={i} className="hover:bg-sentinel-bg transition-colors">
-                <td className="py-3 pr-4">
-                  <a
-                    href={`https://attack.mitre.org/techniques/${t.id.replace('.', '/')}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-xs text-sentinel-accent hover:underline"
-                  >
-                    {t.id}
-                  </a>
-                </td>
-                <td className="py-3 pr-4">
-                  <div className="font-medium text-white text-sm flex items-center gap-2 flex-wrap">
-                    <span>{t.name}</span>
-                    {t.mltkValidationRun && (
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded border ${
-                          t.mltkAgrees
-                            ? 'text-green-400 border-green-500/30'
-                            : 'text-amber-400 border-amber-500/30'
-                        }`}
-                      >
-                        {t.mltkAgrees ? 'MLTK OK' : 'MLTK !'}
-                      </span>
-                    )}
+      {enriched.length === 0 ? (
+        <div className="py-8 text-center text-xs text-sentinel-muted">
+          No MITRE techniques mapped for this investigation.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {enriched.map((t, i) => (
+            <div
+              key={i}
+              className={`bg-sentinel-bg border border-sentinel-border rounded-lg border-l-4 ${t.tacticStyle.border} p-4`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <a
+                      href={`https://attack.mitre.org/techniques/${t.id.replace('.', '/')}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-accent hover:border-sentinel-accent transition-colors"
+                    >
+                      {t.id}
+                    </a>
+                    <span className={`text-xs font-bold uppercase tracking-wider ${t.tacticStyle.text}`}>
+                      {t.tactic}
+                    </span>
                   </div>
-                  {t.mltkAgrees === false && t.mltkAlternative && (
-                    <div className="text-xs text-amber-400/70 mt-0.5">
-                      MLTK suggests: {t.mltkAlternative}
-                    </div>
-                  )}
-                  {t.cves.length > 0 && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {t.cves.slice(0, 2).map(c => (
-                        <span key={c.cve_id} className="text-xs font-mono text-sentinel-warning">
-                          {c.cve_id}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className="py-3 pr-4">
-                  {t.detection ? (
-                    <p className="text-xs text-sentinel-muted leading-relaxed line-clamp-3">
-                      {t.detection}
-                    </p>
-                  ) : (
-                    <span className="text-xs text-sentinel-border italic">
-                      No RAG data retrieved for this technique
-                    </span>
-                  )}
-                </td>
-                <td className="py-3 text-right">
-                  {t.confidence ? (
-                    <span className="text-xs font-bold text-sentinel-accent">
-                      {Math.round(t.confidence * 100)}%
-                    </span>
-                  ) : '-'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  <p className="text-sm font-semibold text-white leading-tight">
+                    {t.name}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
