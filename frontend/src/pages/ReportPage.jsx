@@ -1041,11 +1041,26 @@ function ConfidenceBreakdownPanel({ investigationId }) {
 
       {breakdown.weakest_factor?.recommendation && (
         <div className="mt-4 border border-amber-500/30 bg-amber-500/10 rounded-lg p-4">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1">
-            Recommended Confidence Improvement
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                Next Confidence Lift
+              </div>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-amber-500/30 bg-sentinel-bg text-amber-300">
+              Actionable Gap
+            </span>
           </div>
-          <p className="text-sm text-white">
-            {breakdown.weakest_factor.name}: {breakdown.weakest_factor.recommendation}
+          <p className="text-sm text-white leading-relaxed">
+            <span className="text-amber-300 font-semibold">
+              {breakdown.weakest_factor.name || 'Confidence gap'}
+            </span>
+            {': '}
+            {breakdown.weakest_factor.recommendation}
+          </p>
+          <p className="text-xs text-sentinel-muted mt-2">
+            Completing this check can improve the confidence score.
           </p>
         </div>
       )}
