@@ -188,11 +188,43 @@ export default function MitreTable({ techniques, ttpMappings }) {
                         </span>
                       ))}
                       {t.cveChips.length > 2 && (
-                        <span className="text-xs font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
-                          +{t.cveChips.length - 2}
+                        <span className="relative inline-flex group">
+                          <span
+                            className="text-xs font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted"
+                            title={t.cveChips.slice(2).map(c => c.label).join(', ')}
+                          >
+                            +{t.cveChips.length - 2}
+                          </span>
+                          <span className="pointer-events-none absolute left-0 bottom-full mb-1 hidden group-hover:block z-20 whitespace-nowrap rounded border border-sentinel-border bg-sentinel-surface px-2 py-1 text-xs font-mono text-sentinel-text shadow-lg">
+                            {t.cveChips.slice(2).map(c => c.label).join(', ')}
+                          </span>
                         </span>
                       )}
                     </div>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {t.validationTone === 'success' && (
+                    <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded border border-green-500/30 bg-green-900/20 text-green-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                      MLTK CONF
+                    </span>
+                  )}
+                  {t.validationTone === 'warning' && (
+                    <span className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded border border-amber-500/30 bg-amber-900/20 text-amber-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      MLTK REVIEW
+                    </span>
+                  )}
+                  {t.validationTone === 'muted' && (
+                    <span className="text-xs px-2 py-1 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-muted">
+                      NOT RUN
+                    </span>
+                  )}
+                  {t.validationTone === 'warning' && t.mltkAlternative && (
+                    <p className="text-xs text-amber-400/70 text-right max-w-36">
+                      Alt: {t.mltkAlternative}
+                    </p>
                   )}
                 </div>
               </div>
