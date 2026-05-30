@@ -479,18 +479,16 @@ const KillChainTimeline = ({ stages = [] }) => {
                         {stage.tactic ?? ""}
                       </span>
                     </div>
-                    <span
-                      className={
-                        isConfirmed
-                          ? "text-xs px-1.5 py-0.5 rounded font-medium shrink-0 bg-green-900 text-green-300"
-                          : "text-xs px-1.5 py-0.5 rounded font-medium shrink-0 bg-amber-900 text-amber-300"
-                      }
-                    >
-                      {isConfirmed ? "CONFIRMED" : "INFERRED"}
-                    </span>
                   </div>
 
-                  <p className="text-sm font-semibold text-white leading-tight">
+                  <p
+                    className={
+                      isFinalStage
+                        ? "text-sm font-semibold leading-tight mb-0.5 " +
+                          tacticStyle.text
+                        : "text-sm font-semibold text-white leading-tight mb-0.5"
+                    }
+                  >
                     {stage.name}
                     {isImpact && (
                       <span className="ml-1 text-red-400 text-xs">
@@ -499,13 +497,24 @@ const KillChainTimeline = ({ stages = [] }) => {
                     )}
                   </p>
 
+                  {/* Confidence badge below title */}
+                  <span
+                    className={
+                      isConfirmed
+                        ? "text-xs px-1.5 py-0.5 rounded font-medium w-fit bg-green-900 text-green-300"
+                        : "text-xs px-1.5 py-0.5 rounded font-medium w-fit bg-amber-900 text-amber-300"
+                    }
+                  >
+                    {isConfirmed ? "CONFIRMED" : "INFERRED"}
+                  </span>
+
                   {stage.techniqueId && (
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className={techniqueBadgeClasses}>
                         {stage.techniqueId}
                       </span>
                       {stage.techniqueName && (
-                        <span className="text-xs text-sentinel-muted leading-tight">
+                        <span className="text-xs text-sentinel-muted leading-tight opacity-75">
                           {stage.techniqueName}
                         </span>
                       )}
@@ -569,7 +578,7 @@ const KillChainTimeline = ({ stages = [] }) => {
                     )
                   })()}
 
-                  <div className="flex items-center justify-between gap-1 mt-auto flex-wrap">
+                  <div className="flex items-center justify-between gap-1 mt-1 flex-wrap">
                     {stage.timestamp && stage.timestamp !== "unknown" && (
                       <span className="text-xs text-sentinel-muted font-mono">
                         {stage.timestamp.length > 16
