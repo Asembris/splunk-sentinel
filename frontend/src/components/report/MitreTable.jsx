@@ -56,7 +56,10 @@ export default function MitreTable({ techniques, ttpMappings }) {
     const baseId = cleanId.split('.')[0]
     const tactic = TECHNIQUE_TACTIC_MAP[baseId] || 'Unknown'
     const tacticStyle = TACTIC_STYLE_MAP[tactic] || TACTIC_STYLE_MAP['Unknown']
-    const confidencePct = mapping?.confidence != null ? Math.round(mapping.confidence * 100) : null
+    const rawConf = mapping?.confidence
+    const confidencePct = (rawConf != null && isFinite(rawConf))
+      ? Math.min(100, Math.max(0, Math.round(rawConf * 100)))
+      : null
     const mltkValidationRun = mapping?.mltk_validation_run === true
     const mltkAgrees = mapping?.mltk_agrees
     let validationLabel = 'NOT RUN'
@@ -71,13 +74,17 @@ export default function MitreTable({ techniques, ttpMappings }) {
         validationTone = 'warning'
       }
     }
-    const cveChips = (mapping?.cves || []).map(c => ({ id: c.cve_id || c, label: c.cve_id || c }))
+    const rawCves = Array.isArray(mapping?.cves) ? mapping.cves : []
+    const cveChips = rawCves.map(c => ({
+      id: (typeof c === 'object' ? c.cve_id : c) || String(c),
+      label: (typeof c === 'object' ? c.cve_id : c) || String(c),
+    })).filter(c => c.id && c.id !== 'undefined')
     const hasDetection = !!(mapping?.detection_guidance && mapping.detection_guidance.trim().length > 0 && !mapping.detection_guidance.toLowerCase().includes('no specific') && !mapping.detection_guidance.toLowerCase().includes('no rag'))
     const hasMitigation = !!(mapping?.mitigations && mapping.mitigations.trim().length > 0)
     return {
       raw: t,
       id: cleanId,
-      name: mapping?.technique_name || (t.includes(' - ') ? t.split(' - ')[1] : cleanId),
+      name: (mapping?.technique_name || (typeof t === 'string' && t.includes(' - ') ? t.split(' - ')[1] : null) || cleanId || 'Unknown Technique').slice(0, 80),
       tactic,
       tacticStyle,
       detection: mapping?.detection_guidance || null,
@@ -163,7 +170,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <a
-                      href={`https://attack.mitre.org/techniques/${t.id.replace('.', '/')}/`}
+                      href={`https://attack.mitre.org/techniques/${t.id.replace(/\./g, '/')}/`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-xs px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-surface text-sentinel-accent hover:border-sentinel-accent transition-colors"
@@ -218,9 +225,9 @@ export default function MitreTable({ techniques, ttpMappings }) {
                       </span>
                     )}
                   </div>
-                  {t.hasDetection && (
+                  {t.hasDetection && t.detection && t.detection.trim().length > 0 && (
                     <p className="text-xs text-sentinel-muted leading-relaxed mt-1 line-clamp-2">
-                      {t.detection}
+                      {t.detection.trim()}
                     </p>
                   )}
                 </div>
