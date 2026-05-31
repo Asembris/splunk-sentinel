@@ -1,5 +1,9 @@
 export default function CveList({ cves }) {
-  if (!cves || cves.length === 0) return null
+  const normalizedCves = (cves || [])
+    .map(cve => String(cve).trim())
+    .filter(cve => cve.length > 0)
+
+  if (normalizedCves.length === 0) return null
 
   return (
     <div
@@ -19,20 +23,41 @@ export default function CveList({ cves }) {
           </p>
         </div>
         <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
-          {cves.length} CVE{cves.length !== 1 ? 's' : ''}
+          {normalizedCves.length} CVE{normalizedCves.length !== 1 ? 's' : ''}
         </span>
       </div>
-      <div className="flex flex-wrap gap-3">
-        {cves.map((cve, i) => (
+      <div className="grid grid-cols-1 gap-3">
+        {normalizedCves.map((cve, i) => (
           <a
             key={i}
             href={`https://nvd.nist.gov/vuln/detail/${cve}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-mono px-4 py-2 bg-sentinel-bg border border-sentinel-border hover:border-sentinel-accent text-sentinel-accent rounded-lg transition-all hover:scale-105 shadow-sm flex items-center gap-2"
+            className="bg-sentinel-bg border border-sentinel-border rounded-lg p-3 hover:border-sentinel-accent hover:bg-sentinel-surface transition-colors"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-sentinel-accent" />
-            {cve}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-blue-900/20 border border-blue-500/30 text-sentinel-accent">
+                    {cve}
+                  </span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-sentinel-surface border border-sentinel-border text-sentinel-muted">
+                    Referenced
+                  </span>
+                </div>
+                <p className="text-xs text-sentinel-muted mt-2 leading-relaxed">
+                  Referenced by mapped MITRE techniques or remediation actions.
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="text-[10px] uppercase tracking-wider text-sentinel-muted">
+                  Mapped Evidence
+                </span>
+                <span className="text-xs font-mono text-sentinel-accent">
+                  NVD -&gt;
+                </span>
+              </div>
+            </div>
           </a>
         ))}
       </div>
