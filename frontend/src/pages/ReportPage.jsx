@@ -2715,145 +2715,159 @@ export default function ReportPage() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 animate-fade-in">
       {/* Report header */}
-      <div className="flex items-start justify-between mb-8">
-        <div>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 text-sm text-sentinel-muted hover:text-white mb-4 transition-colors group"
-          >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
-          </button>
-          <div className="flex items-center gap-3 mb-2">
-            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${
-              REPORT_SEVERITY_TONES[normalizedSeverity]
-            }`}>
-              {report.severity}
-            </span>
-            <span className={`text-[10px] font-mono border px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-              REPORT_CLASSIFICATION_TONES[normalizedClassification]
-            }`}>
-              {report.classification || normalizedClassification}
-            </span>
-            
-            <AuditChainBadge
-              auditChain={auditChain}
-              expanded={auditExpanded}
-              onToggle={() => setAuditExpanded(prev => !prev)}
-              splAuditLog={activeResult?.spl_audit_log || []}
-            />
-          </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Automated Investigation Report</h1>
-          <p className="text-xs text-sentinel-muted font-mono mt-1 flex items-center gap-2">
-            <span className="bg-sentinel-border px-1.5 py-0.5 rounded text-gray-400">{report.investigation_id || state.investigationId}</span>
-            <span>-</span>
-            <span>{report.generated_at ? new Date(report.generated_at).toLocaleString() : 'Just now'}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right mr-4 border-r border-sentinel-border pr-6">
-            <div className="text-3xl font-bold text-sentinel-accent leading-none">
-              {confidencePct}%
+      <div className="mb-6">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="flex items-center gap-2 text-sm text-sentinel-muted hover:text-white mb-4 transition-colors group"
+        >
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
+        </button>
+        <div
+          className={
+            normalizedSeverity === 'CRITICAL'
+              ? "bg-sentinel-surface border border-sentinel-border border-t-2 border-t-sentinel-danger rounded-xl p-5 shadow-lg"
+              : normalizedSeverity === 'HIGH'
+                ? "bg-sentinel-surface border border-sentinel-border border-t-2 border-t-orange-400 rounded-xl p-5 shadow-lg"
+                : normalizedSeverity === 'MEDIUM'
+                  ? "bg-sentinel-surface border border-sentinel-border border-t-2 border-t-sentinel-warning rounded-xl p-5 shadow-lg"
+                  : "bg-sentinel-surface border border-sentinel-border border-t-2 border-t-sentinel-success rounded-xl p-5 shadow-lg"
+          }
+        >
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${
+                  REPORT_SEVERITY_TONES[normalizedSeverity]
+                }`}>
+                  {report.severity}
+                </span>
+                <span className={`text-[10px] font-mono border px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                  REPORT_CLASSIFICATION_TONES[normalizedClassification]
+                }`}>
+                  {report.classification || normalizedClassification}
+                </span>
+                
+                <AuditChainBadge
+                  auditChain={auditChain}
+                  expanded={auditExpanded}
+                  onToggle={() => setAuditExpanded(prev => !prev)}
+                  splAuditLog={activeResult?.spl_audit_log || []}
+                />
+              </div>
+              <h1 className="text-3xl font-bold text-white tracking-tight">Automated Investigation Report</h1>
+              <p className="text-xs text-sentinel-muted font-mono mt-1 flex items-center gap-2">
+                <span className="bg-sentinel-border px-1.5 py-0.5 rounded text-gray-400">{report.investigation_id || state.investigationId}</span>
+                <span>-</span>
+                <span>{report.generated_at ? new Date(report.generated_at).toLocaleString() : 'Just now'}</span>
+              </p>
             </div>
-            <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">{confidenceLabel}</div>
-            
-            {/* SLO Status Pill */}
-            {report.slo_report && (
-              <div className="mt-4 flex justify-end group/slo relative">
-                <div 
-                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border cursor-help transition-all
-                    ${sloTone.chip}`}
-                  title="System Performance Compliance"
-                >
-                  <Zap className={`w-2.5 h-2.5 ${sloTone.icon}`} />
-                  <span className="text-[10px] font-bold font-mono tracking-tight">
-                    SLO: {sloStatus}
-                  </span>
+            <div className="flex items-center gap-4 flex-wrap lg:justify-end">
+              <div className="text-right mr-4 border-r border-sentinel-border pr-6">
+                <div className="text-3xl font-bold text-sentinel-accent leading-none">
+                  {confidencePct}%
                 </div>
-
-                {/* Refined Glassmorphism Tooltip */}
-                <div className="absolute top-full right-0 mt-3 w-52 p-4 
-                                bg-sentinel-surface/95 backdrop-blur-xl 
-                                border border-sentinel-border rounded-xl 
-                                shadow-[0_20px_50px_rgba(0,0,0,0.5)] opacity-0 translate-y-1 
-                                pointer-events-none group-hover/slo:opacity-100 
-                                group-hover/slo:translate-y-0 transition-all duration-200 z-50">
-                  <div className="flex items-center gap-2 mb-3 border-b border-sentinel-border pb-2">
-                    <Zap className="w-3 h-3 text-sentinel-accent" />
-                    <p className="text-[10px] font-bold text-white uppercase tracking-wider">
-                      Performance Metrics
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-2.5">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-sentinel-muted">Wall-clock Time</span>
-                      <span className={`font-mono ${report.slo_report.slo_1_time?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
-                        {report.slo_report.slo_1_time?.actual_seconds}s <span className="opacity-40">/ {report.slo_report.slo_1_time?.budget_seconds}s</span>
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-sentinel-muted">Token Budget</span>
-                      <span className={`font-mono ${report.slo_report.slo_2_tokens?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
-                        {Math.round(report.slo_report.slo_2_tokens?.actual_tokens / 1000)}k <span className="opacity-40">/ {Math.round(report.slo_report.slo_2_tokens?.budget_tokens / 1000)}k</span>
+                <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">{confidenceLabel}</div>
+                
+                {/* SLO Status Pill */}
+                {report.slo_report && (
+                  <div className="mt-4 flex justify-end group/slo relative">
+                    <div 
+                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border cursor-help transition-all
+                        ${sloTone.chip}`}
+                      title="System Performance Compliance"
+                    >
+                      <Zap className={`w-2.5 h-2.5 ${sloTone.icon}`} />
+                      <span className="text-[10px] font-bold font-mono tracking-tight">
+                        SLO: {sloStatus}
                       </span>
                     </div>
 
-                    {report.slo_report.slo_breaches?.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-sentinel-border/50">
-                        <div className="flex items-start gap-1.5">
-                          <AlertCircle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
-                          <p className="text-[9px] text-red-400/90 leading-relaxed italic">
-                            {report.slo_report.slo_breaches[0]}
-                          </p>
-                        </div>
+                    {/* Refined Glassmorphism Tooltip */}
+                    <div className="absolute top-full right-0 mt-3 w-52 p-4 
+                                    bg-sentinel-surface/95 backdrop-blur-xl 
+                                    border border-sentinel-border rounded-xl 
+                                    shadow-[0_20px_50px_rgba(0,0,0,0.5)] opacity-0 translate-y-1 
+                                    pointer-events-none group-hover/slo:opacity-100 
+                                    group-hover/slo:translate-y-0 transition-all duration-200 z-50">
+                      <div className="flex items-center gap-2 mb-3 border-b border-sentinel-border pb-2">
+                        <Zap className="w-3 h-3 text-sentinel-accent" />
+                        <p className="text-[10px] font-bold text-white uppercase tracking-wider">
+                          Performance Metrics
+                        </p>
                       </div>
-                    )}
-                  </div>
+                      
+                      <div className="space-y-2.5">
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-sentinel-muted">Wall-clock Time</span>
+                          <span className={`font-mono ${report.slo_report.slo_1_time?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
+                            {report.slo_report.slo_1_time?.actual_seconds}s <span className="opacity-40">/ {report.slo_report.slo_1_time?.budget_seconds}s</span>
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-sentinel-muted">Token Budget</span>
+                          <span className={`font-mono ${report.slo_report.slo_2_tokens?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
+                            {Math.round(report.slo_report.slo_2_tokens?.actual_tokens / 1000)}k <span className="opacity-40">/ {Math.round(report.slo_report.slo_2_tokens?.budget_tokens / 1000)}k</span>
+                          </span>
+                        </div>
 
-                  <div className="mt-3 pt-2 text-[8px] text-sentinel-muted italic border-t border-sentinel-border/30 text-right">
-                    Verified by SLO Engine v1.2
+                        {report.slo_report.slo_breaches?.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-sentinel-border/50">
+                            <div className="flex items-start gap-1.5">
+                              <AlertCircle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
+                              <p className="text-[9px] text-red-400/90 leading-relaxed italic">
+                                {report.slo_report.slo_breaches[0]}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-3 pt-2 text-[8px] text-sentinel-muted italic border-t border-sentinel-border/30 text-right">
+                        Verified by SLO Engine v1.2
+                      </div>
+                    </div>
                   </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExportJson}
+                  className="p-2.5 bg-sentinel-surface border border-sentinel-border hover:border-sentinel-accent text-white rounded-xl transition-all shadow-lg active:scale-95 group"
+                  title="Download JSON"
+                >
+                  <FileJson className="w-5 h-5 text-sentinel-accent group-hover:scale-110 transition-transform" />
+                </button>
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    onClick={handleDownloadPdf}
+                    disabled={pdfLoading}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg 
+                                text-sm font-medium transition-all
+                                ${pdfLoading
+                                  ? 'bg-sentinel-surface border border-sentinel-border opacity-70 cursor-wait'
+                                  : 'bg-sentinel-accent hover:bg-blue-500 text-white cursor-pointer'
+                                }`}
+                  >
+                    {pdfLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 
+                                        border-t-white rounded-full animate-spin" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-4 h-4" />
+                        Download PDF
+                      </>
+                    )}
+                  </button>
+                  {pdfError && (
+                    <p className="text-xs text-red-400 max-w-48 text-right">
+                      {pdfError}
+                    </p>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleExportJson}
-              className="p-2.5 bg-sentinel-surface border border-sentinel-border hover:border-sentinel-accent text-white rounded-xl transition-all shadow-lg active:scale-95 group"
-              title="Download JSON"
-            >
-              <FileJson className="w-5 h-5 text-sentinel-accent group-hover:scale-110 transition-transform" />
-            </button>
-            <div className="flex flex-col items-end gap-1">
-              <button
-                onClick={handleDownloadPdf}
-                disabled={pdfLoading}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg 
-                            text-sm font-medium transition-all
-                            ${pdfLoading
-                              ? 'bg-sentinel-surface border border-sentinel-border opacity-70 cursor-wait'
-                              : 'bg-sentinel-accent hover:bg-blue-500 text-white cursor-pointer'
-                            }`}
-              >
-                {pdfLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 
-                                    border-t-white rounded-full animate-spin" />
-                    Downloading...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-4 h-4" />
-                    Download PDF
-                  </>
-                )}
-              </button>
-              {pdfError && (
-                <p className="text-xs text-red-400 max-w-48 text-right">
-                  {pdfError}
-                </p>
-              )}
             </div>
           </div>
         </div>
