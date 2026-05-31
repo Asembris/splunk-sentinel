@@ -121,6 +121,9 @@ export default function RecommendedActions({ actions }) {
           )
         })}
       </div>
+      <p className="text-xs text-sentinel-muted mt-3 pt-3 border-t border-sentinel-border/40">
+        Actions are prioritized by containment urgency and evidence confidence.
+      </p>
     </div>
   )
 }
