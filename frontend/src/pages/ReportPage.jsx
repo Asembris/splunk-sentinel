@@ -1900,29 +1900,38 @@ function DetectionGapPanel({ investigationId }) {
   }
 
   return (
-    <div className="mt-8 border border-sentinel-border rounded-2xl bg-sentinel-surface overflow-hidden">
+    <div
+      className="mt-8 border border-sentinel-border rounded-2xl bg-sentinel-surface overflow-hidden"
+      style={{ borderTop: '2px solid #3b82f6' }}
+    >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-6 py-4 cursor-pointer
+        className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between px-6 py-4 cursor-pointer
                    hover:bg-sentinel-bg/30 transition-colors"
         onClick={() => setExpanded(e => !e)}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-white uppercase tracking-widest">
-            Detection Gap Analysis
-          </span>
-          {gaps && (
-            <span className={`text-[11px] font-mono font-bold px-2 py-0.5
-                             rounded border ${labelBg(gaps.coverage_label)}`}>
-              {gaps.coverage_label}
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+            <span className="text-sm font-bold text-white tracking-wide">
+              Detection Gap Analysis
             </span>
-          )}
+          </div>
+          <p className="text-xs text-sentinel-muted ml-4">
+            Find uncovered MITRE techniques and generate Splunk detection SPL
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {gaps && (
-            <span className={`text-xs font-mono font-bold ${scoreColor(gaps.coverage_score)}`}>
-              {Math.round(gaps.coverage_score * 100)}% COVERED
-            </span>
+            <>
+              <span className={`text-[11px] font-mono font-bold px-2 py-0.5
+                               rounded border ${labelBg(gaps.coverage_label)}`}>
+                {gaps.coverage_label}
+              </span>
+              <span className={`text-xs font-mono font-bold ${scoreColor(gaps.coverage_score)}`}>
+                {Math.round(gaps.coverage_score * 100)}% COVERED
+              </span>
+            </>
           )}
           {!gaps && !loading && (
             <button
