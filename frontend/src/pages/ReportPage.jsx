@@ -2699,6 +2699,7 @@ export default function ReportPage() {
     report.investigation_confidence ??
     0
   const confidencePct = Math.round(primaryConfidence * 100)
+  const confidenceTone = getReportConfidenceTone(confidencePct)
   const confidenceLabel =
     report.confidence?.primary_label || 'Evidence Confidence'
   const sloStatus =
@@ -2763,10 +2764,20 @@ export default function ReportPage() {
             </div>
             <div className="flex items-center gap-4 flex-wrap lg:justify-end">
               <div className="text-right mr-4 border-r border-sentinel-border pr-6">
-                <div className="text-3xl font-bold text-sentinel-accent leading-none">
-                  {confidencePct}%
+                <div className="w-[160px] bg-sentinel-bg border border-sentinel-border rounded-lg px-4 py-3">
+                  <div className={`text-3xl font-bold leading-none ${confidenceTone.text}`}>
+                    {confidencePct}%
+                  </div>
+                  <div className="h-1.5 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden mt-2 mb-1">
+                    <div
+                      className={`h-full rounded-full ${confidenceTone.bar}`}
+                      style={{ width: `${confidencePct}%` }}
+                    />
+                  </div>
+                  <div className="text-[10px] text-sentinel-muted uppercase tracking-widest">
+                    {confidenceLabel}
+                  </div>
                 </div>
-                <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">{confidenceLabel}</div>
                 
                 {/* SLO Status Pill */}
                 {report.slo_report && (
