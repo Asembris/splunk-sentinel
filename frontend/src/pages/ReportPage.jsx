@@ -1486,10 +1486,29 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
       </div>
 
       {/* Ruled out alternatives */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-sentinel-muted">
+          Ruled-Out Alternatives
+        </span>
+        <span className="text-xs text-sentinel-muted">
+          {alternatives.length} checks
+        </span>
+      </div>
       <div className="space-y-3">
-        {alternatives.map((alt) => (
+        {alternatives.map((alt, index) => {
+          const isLast = index === alternatives.length - 1
+
+          return (
+          <div key={alt.originalIndex} className="flex gap-3">
+            <div className="flex flex-col items-center pt-4">
+              <div className="w-6 h-6 rounded-full border border-sentinel-border bg-sentinel-surface text-[10px] font-bold text-sentinel-muted flex items-center justify-center">
+                {String(index + 1).padStart(2, '0')}
+              </div>
+              {!isLast && (
+                <div className="w-px flex-1 bg-sentinel-border mt-2" />
+              )}
+            </div>
           <div
-            key={alt.originalIndex}
             className={`border border-sentinel-border border-l-4 ${
               CLASSIFICATION_LEFT_BORDERS[alt.classificationKey]
               || CLASSIFICATION_LEFT_BORDERS.UNKNOWN
@@ -1531,7 +1550,9 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
               </div>
             )}
           </div>
-        ))}
+          </div>
+          )
+        })}
       </div>
     </div>
   )
