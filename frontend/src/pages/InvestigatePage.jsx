@@ -44,7 +44,7 @@ export default function InvestigatePage() {
       {/* Hero */}
       <div className="text-center mb-12 animate-fade-in">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <BrandLogo variant="mark" className="h-14 w-14" />
+          <BrandLogo variant="mark" className="h-16 w-16" />
         </div>
         <h1 className="text-4xl font-bold mb-3 text-white">
           Autonomous SOC Investigation

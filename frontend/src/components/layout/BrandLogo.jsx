@@ -4,26 +4,54 @@ function LogoMark() {
   return (
     <g transform="translate(28, 28)">
       <polygon
-        fill="#0d1117"
-        stroke="#3b82f6"
-        points="0,-22 19,-11 19,11 0,22 -19,11 -19,-22"
-        strokeWidth="1"
+        fill="#08111f"
+        stroke="#60a5fa"
+        points="0,-23 20,-12 20,10 0,24 -20,10 -20,-12"
+        strokeWidth="1.6"
       />
       <polygon
-        fill="#161f2e"
-        stroke="#3b82f6"
-        points="0,-16 13.9,-8 13.9,8 0,16 -13.9,8 -13.9,-8"
-        strokeWidth="0.6"
-        opacity="0.85"
+        fill="#0f1b2e"
+        stroke="#2563eb"
+        points="0,-17 14.7,-8.5 14.7,8.5 0,17 -14.7,8.5 -14.7,-8.5"
+        strokeWidth="1"
+        opacity="0.95"
       />
-      <circle cx="0" cy="0" r="10" stroke="#3b82f6" fill="none" strokeWidth="0.45" opacity="0.35" />
-      <circle cx="0" cy="0" r="6" stroke="#3b82f6" fill="none" strokeWidth="0.55" opacity="0.55" />
-      <line x1="-13.9" y1="0" x2="13.9" y2="0" stroke="#3b82f6" fill="none" strokeWidth="0.5" opacity="0.75" />
-      <line x1="0" y1="-16" x2="0" y2="16" stroke="#3b82f6" fill="none" strokeWidth="0.5" opacity="0.75" />
-      <circle cx="0" cy="0" r="2" fill="#3b82f6" />
-      <line x1="-2" y1="0" x2="-6" y2="0" stroke="#3b82f6" fill="none" strokeWidth="0.8" />
-      <line x1="2" y1="0" x2="6" y2="0" stroke="#3b82f6" fill="none" strokeWidth="0.8" />
-      <line x1="0" y1="-2" x2="0" y2="-6" stroke="#3b82f6" fill="none" strokeWidth="0.8" />
+      <path
+        d="M-11 -6.5 L0 -12 L11 -6.5 M-11 6.5 L0 12 L11 6.5"
+        stroke="#1d4ed8"
+        fill="none"
+        strokeWidth="0.9"
+        opacity="0.9"
+      />
+      <path
+        d="M-11 -6.5 L-11 6.5 M11 -6.5 L11 6.5"
+        stroke="#1d4ed8"
+        fill="none"
+        strokeWidth="0.9"
+        opacity="0.65"
+      />
+      <circle cx="0" cy="0" r="10" stroke="#60a5fa" fill="none" strokeWidth="0.8" opacity="0.48" />
+      <circle cx="0" cy="0" r="5.7" stroke="#3b82f6" fill="#0b1220" strokeWidth="1" opacity="0.95" />
+      <path
+        d="M-13.5 0 H-6.4 M6.4 0 H13.5 M0 -13.5 V-6.4 M0 6.4 V13.5"
+        stroke="#60a5fa"
+        fill="none"
+        strokeWidth="0.9"
+        opacity="0.9"
+      />
+      <path
+        d="M-3.1 0.4 L-0.8 2.8 L4.2 -3.2"
+        stroke="#93c5fd"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <circle cx="-11" cy="-6.5" r="1.3" fill="#3b82f6" />
+      <circle cx="11" cy="-6.5" r="1.3" fill="#3b82f6" />
+      <circle cx="-11" cy="6.5" r="1.3" fill="#3b82f6" />
+      <circle cx="11" cy="6.5" r="1.3" fill="#3b82f6" />
+      <circle cx="0" cy="0" r="2.1" fill="#60a5fa" />
     </g>
   )
 }

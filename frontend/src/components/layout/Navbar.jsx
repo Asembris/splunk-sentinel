@@ -16,7 +16,7 @@ export default function Navbar() {
     <nav className="border-b border-sentinel-border bg-sentinel-surface px-6 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <BrandLogo variant="mark" className="h-8 w-8 shrink-0" />
+          <BrandLogo variant="mark" className="h-9 w-9 shrink-0" />
           <span className="text-xl font-bold tracking-tight text-white">
             Splunk <span className="text-sentinel-accent">Sentinel</span>
           </span>
