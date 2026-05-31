@@ -2063,19 +2063,89 @@ function DetectionGapPanel({ investigationId }) {
           {gaps && !loading && (
             <>
               {/* Summary row */}
-              <div className="mt-4 grid grid-cols-4 gap-3">
-                {[
-                  { label: 'Techniques Analyzed', value: gaps.techniques_analyzed },
-                  { label: 'Covered', value: gaps.covered, color: 'text-green-400' },
-                  { label: 'Gaps Found', value: gaps.not_covered, color: 'text-red-400' },
-                  { label: 'Saved Searches Checked', value: gaps.saved_searches_checked ?? '-' },
-                ].map(({ label, value, color }) => (
-                  <div key={label}
-                       className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
-                    <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">{label}</p>
-                    <p className={`text-xl font-bold font-mono ${color || 'text-white'}`}>{value}</p>
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                    <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">
+                      Techniques Analyzed
+                    </p>
+                    <p className="text-xl font-bold font-mono text-white">
+                      {gaps.techniques_analyzed}
+                    </p>
+                    <p className="text-[10px] text-sentinel-muted mt-1">
+                      mapped
+                    </p>
                   </div>
-                ))}
+                  <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                    <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">
+                      Covered
+                    </p>
+                    <p className="text-xl font-bold font-mono text-green-400">
+                      {gaps.covered}
+                    </p>
+                    <p className="text-[10px] text-sentinel-muted mt-1">
+                      matched
+                    </p>
+                  </div>
+                  <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                    <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">
+                      Gaps Found
+                    </p>
+                    <p className="text-xl font-bold font-mono text-red-400">
+                      {gaps.not_covered}
+                    </p>
+                    <p className="text-[10px] text-sentinel-muted mt-1">
+                      uncovered
+                    </p>
+                  </div>
+                  <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                    <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">
+                      Saved Searches Checked
+                    </p>
+                    <p className="text-xl font-bold font-mono text-white">
+                      {gaps.saved_searches_checked ?? '-'}
+                    </p>
+                    <p className="text-[10px] text-sentinel-muted mt-1">
+                      searched
+                    </p>
+                  </div>
+                </div>
+                <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <span className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                      Coverage posture
+                    </span>
+                    <span className={`text-xs font-mono font-bold ${scoreColor(gaps.coverage_score)}`}>
+                      {Math.round(gaps.coverage_score * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
+                    {gaps.coverage_score >= 0.75 && (
+                      <div
+                        className="h-full bg-green-500 rounded-full"
+                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                      />
+                    )}
+                    {gaps.coverage_score >= 0.50 && gaps.coverage_score < 0.75 && (
+                      <div
+                        className="h-full bg-amber-500 rounded-full"
+                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                      />
+                    )}
+                    {gaps.coverage_score >= 0.25 && gaps.coverage_score < 0.50 && (
+                      <div
+                        className="h-full bg-orange-500 rounded-full"
+                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                      />
+                    )}
+                    {gaps.coverage_score < 0.25 && (
+                      <div
+                        className="h-full bg-red-500 rounded-full"
+                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Gaps */}
