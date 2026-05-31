@@ -2557,6 +2557,10 @@ export default function ReportPage() {
   const [error, setError] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState(null)
+  const [jsonExported, setJsonExported] = useState(false)
+  const jsonResetTimeoutRef = useRef(null)
+  const pdfErrorTimeoutRef = useRef(null)
+  const pdfLoadingTimeoutRef = useRef(null)
   
   const [feedbackRating, setFeedbackRating] = useState(null)
   const [feedbackNotes, setFeedbackNotes] = useState('')
@@ -2653,14 +2657,49 @@ export default function ReportPage() {
     verifyChain()
   }, [report?.investigation_id, state.result?.investigation_id])
 
+  useEffect(() => {
+    return () => {
+      if (jsonResetTimeoutRef.current) {
+        clearTimeout(jsonResetTimeoutRef.current)
+      }
+      if (pdfErrorTimeoutRef.current) {
+        clearTimeout(pdfErrorTimeoutRef.current)
+      }
+      if (pdfLoadingTimeoutRef.current) {
+        clearTimeout(pdfLoadingTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleExportJson = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeResult, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href",     dataStr);
-    downloadAnchorNode.setAttribute("download", `sentinel-report-${id || state.investigationId}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+    if (!activeResult) return
+
+    const investigationId =
+      activeResult?.investigation_id ||
+      id ||
+      state.investigationId ||
+      'report'
+
+    const blob = new Blob(
+      [JSON.stringify(activeResult, null, 2)],
+      { type: 'application/json' }
+    )
+    const url = URL.createObjectURL(blob)
+    const downloadAnchorNode = document.createElement('a')
+    downloadAnchorNode.href = url
+    downloadAnchorNode.download = `sentinel-report-${investigationId}.json`
+    document.body.appendChild(downloadAnchorNode)
+    downloadAnchorNode.click()
+    document.body.removeChild(downloadAnchorNode)
+    URL.revokeObjectURL(url)
+
+    setJsonExported(true)
+    if (jsonResetTimeoutRef.current) {
+      clearTimeout(jsonResetTimeoutRef.current)
+    }
+    jsonResetTimeoutRef.current = setTimeout(() => {
+      setJsonExported(false)
+    }, 1500)
   }
 
   const handleDownloadPdf = async () => {
@@ -2677,6 +2716,7 @@ export default function ReportPage() {
     const startTime = Date.now()
     try {
       setPdfLoading(true)
+      setPdfError(null)
       const response = await fetch(
         `/api/investigations/${investigationId}/report/pdf`
       )
@@ -2704,14 +2744,21 @@ export default function ReportPage() {
     } catch (err) {
       console.error('PDF download error:', err)
       setPdfError(err.message)
-      // Clear error after 4 seconds
-      setTimeout(() => setPdfError(null), 4000)
+      if (pdfErrorTimeoutRef.current) {
+        clearTimeout(pdfErrorTimeoutRef.current)
+      }
+      pdfErrorTimeoutRef.current = setTimeout(() => {
+        setPdfError(null)
+      }, 4000)
     } finally {
       // Ensure the loading state is visible for at least 800ms
       const duration = Date.now() - startTime
       const delay = Math.max(0, 800 - duration)
       
-      setTimeout(() => {
+      if (pdfLoadingTimeoutRef.current) {
+        clearTimeout(pdfLoadingTimeoutRef.current)
+      }
+      pdfLoadingTimeoutRef.current = setTimeout(() => {
         setPdfLoading(false)
       }, delay)
     }
@@ -2932,15 +2979,20 @@ export default function ReportPage() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleExportJson}
-                  className="p-2.5 bg-sentinel-surface border border-sentinel-border hover:border-sentinel-accent text-white rounded-xl transition-all shadow-lg active:scale-95 group"
-                  title="Download JSON"
-                >
-                  <FileJson className="w-5 h-5 text-sentinel-accent group-hover:scale-110 transition-transform" />
-                </button>
-                <div className="flex flex-col items-end gap-1">
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportJson}
+                    className="p-2.5 bg-sentinel-surface border border-sentinel-border hover:border-sentinel-accent text-white rounded-xl transition-all shadow-lg active:scale-95 group"
+                    title="Download JSON"
+                  >
+                    {jsonExported ? (
+                      <CheckCircle2 className="w-5 h-5 text-green-400" />
+                    ) : (
+                      <FileJson className="w-5 h-5 text-sentinel-accent group-hover:scale-110 transition-transform" />
+                    )}
+                  </button>
                   <button
                     onClick={handleDownloadPdf}
                     disabled={pdfLoading}
@@ -2955,7 +3007,7 @@ export default function ReportPage() {
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 
                                         border-t-white rounded-full animate-spin" />
-                        Downloading...
+                        Preparing PDF
                       </>
                     ) : (
                       <>
@@ -2964,12 +3016,12 @@ export default function ReportPage() {
                       </>
                     )}
                   </button>
-                  {pdfError && (
-                    <p className="text-xs text-red-400 max-w-48 text-right">
-                      {pdfError}
-                    </p>
-                  )}
                 </div>
+                {pdfError && (
+                  <p className="text-xs text-red-400 text-right max-w-56">
+                    {pdfError}
+                  </p>
+                )}
               </div>
             </div>
           </div>
