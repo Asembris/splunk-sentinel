@@ -2020,12 +2020,42 @@ function DetectionGapPanel({ investigationId }) {
 
           {/* Loading */}
           {loading && (
-            <div className="mt-4 py-8 flex flex-col items-center gap-3">
-              <div className="w-6 h-6 border-2 border-sentinel-accent border-t-transparent
-                              rounded-full animate-spin" />
-              <p className="text-xs text-sentinel-muted">
-                Checking {gaps?.techniques_analyzed || ''} MITRE techniques against Splunk saved searches...
+            <div className="mt-4 bg-sentinel-bg rounded-lg p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-sentinel-accent animate-pulse" />
+                <h4 className="text-sm font-semibold text-white">
+                  Analyzing Coverage
+                </h4>
+              </div>
+              <p className="text-xs text-sentinel-muted leading-relaxed mb-4">
+                Checking mapped ATT&amp;CK techniques against deployed Splunk saved searches.
               </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
+                  <p className="text-xs font-semibold text-white">
+                    Technique inventory
+                  </p>
+                  <p className="text-xs text-sentinel-muted mt-1">
+                    Mapped ATT&amp;CK set
+                  </p>
+                </div>
+                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
+                  <p className="text-xs font-semibold text-white">
+                    Coverage comparison
+                  </p>
+                  <p className="text-xs text-sentinel-muted mt-1">
+                    Saved search match
+                  </p>
+                </div>
+                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
+                  <p className="text-xs font-semibold text-white">
+                    SPL generation
+                  </p>
+                  <p className="text-xs text-sentinel-muted mt-1">
+                    Missing detections
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
