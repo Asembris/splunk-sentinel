@@ -1384,14 +1384,20 @@ function FeedbackCard({
       )}
 
       {/* Submit button */}
-      <div className="flex items-center justify-between">
-        <div>
-          {feedbackStatus === 'error' && (
-            <p className="text-xs text-red-400">
-              Failed to submit feedback. Please try again.
-            </p>
-          )}
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        {feedbackStatus === 'error' ? (
+          <p className="text-xs text-red-400">
+            Failed to submit feedback. Please try again.
+          </p>
+        ) : (
+          <p className="text-xs text-sentinel-muted">
+            {!feedbackRating
+              ? 'Select a verdict to enable submission'
+              : feedbackNotes.trim().length > 0
+                ? 'Ready to submit verdict + notes'
+                : 'Ready to submit verdict'}
+          </p>
+        )}
         <button
           onClick={onSubmit}
           disabled={!feedbackRating || feedbackStatus === 'submitting'}
@@ -1399,7 +1405,7 @@ function FeedbackCard({
                       text-sm font-medium transition-all
                       ${!feedbackRating || feedbackStatus === 'submitting'
                         ? 'bg-sentinel-surface border border-sentinel-border opacity-40 cursor-not-allowed'
-                        : 'bg-sentinel-accent hover:bg-blue-500 text-white cursor-pointer'
+                        : 'bg-sentinel-accent hover:bg-blue-500 text-white cursor-pointer shadow-sm shadow-blue-500/20'
                       }`}
         >
           {feedbackStatus === 'submitting' ? (
