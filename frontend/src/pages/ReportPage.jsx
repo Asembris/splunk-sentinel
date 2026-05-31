@@ -1292,22 +1292,31 @@ function FeedbackCard({
       </p>
 
       {/* Rating buttons */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         {FEEDBACK_RATINGS.map((rating) => (
           <button
             key={rating.key}
             onClick={() => setFeedbackRating(rating.key)}
             disabled={feedbackStatus === 'submitting'}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg 
-                        border text-sm font-medium transition-all
+            className={`flex flex-col items-start gap-2 p-3 rounded-lg 
+                        border text-left transition-all
                         disabled:opacity-50 disabled:cursor-not-allowed
                         ${feedbackRating === rating.key
                           ? rating.activeClass
                           : rating.inactiveClass
                         }`}
           >
-            <span className="font-bold">{rating.icon}</span>
-            {rating.shortLabel}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-sentinel-bg border border-sentinel-border">
+                {rating.icon}
+              </span>
+              <span className="text-sm font-semibold">
+                {rating.label}
+              </span>
+            </div>
+            <p className="text-xs opacity-80 leading-relaxed">
+              {rating.description}
+            </p>
           </button>
         ))}
       </div>
