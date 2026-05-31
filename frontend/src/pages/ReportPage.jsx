@@ -1907,6 +1907,118 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
   )
 }
 
+const formatSloSeconds = (value) => (
+  value === null || value === undefined ? '--' : `${value}s`
+)
+
+const formatSloTokens = (value) => (
+  value === null || value === undefined
+    ? '--'
+    : `${Math.round(value / 1000)}k`
+)
+
+function SloDetailsPanel({ sloReport, sloStatus }) {
+  const time = sloReport?.slo_1_time || {}
+  const tokens = sloReport?.slo_2_tokens || {}
+  const breaches = asArray(sloReport?.slo_breaches)
+  const isPass = sloStatus === 'PASS'
+
+  const timeValueClass =
+    time.met === true
+      ? "font-mono text-green-400"
+      : time.met === false
+        ? "font-mono text-red-400 font-bold"
+        : "font-mono text-sentinel-muted"
+
+  const tokenValueClass =
+    tokens.met === true
+      ? "font-mono text-green-400"
+      : tokens.met === false
+        ? "font-mono text-red-400 font-bold"
+        : "font-mono text-sentinel-muted"
+
+  return (
+    <div className="mt-4 pt-4 border-t border-sentinel-border/40">
+      <div
+        className={
+          isPass
+            ? "rounded-lg border border-green-500/20 bg-green-500/5 p-3"
+            : "rounded-lg border border-red-500/20 bg-red-500/5 p-3"
+        }
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Zap className={
+                isPass
+                  ? "w-3.5 h-3.5 text-green-400"
+                  : "w-3.5 h-3.5 text-red-400"
+              } />
+              <span className="text-xs font-semibold text-sentinel-muted uppercase tracking-wider">
+                Performance Metrics
+              </span>
+              <span className={
+                isPass
+                  ? "text-xs font-bold text-green-400"
+                  : "text-xs font-bold text-red-400"
+              }>
+                {sloStatus}
+              </span>
+            </div>
+            <p className="text-xs text-sentinel-muted leading-relaxed">
+              System performance compliance for this investigation run.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 shrink-0 w-full lg:w-[420px]">
+            <div className="bg-sentinel-bg rounded-lg p-2">
+              <div className="text-xs text-sentinel-muted mb-1">
+                Wall-clock Time
+              </div>
+              <div className={timeValueClass}>
+                {formatSloSeconds(time.actual_seconds)}
+                <span className="opacity-40">
+                  {' '}/ {formatSloSeconds(time.budget_seconds)}
+                </span>
+              </div>
+            </div>
+            <div className="bg-sentinel-bg rounded-lg p-2">
+              <div className="text-xs text-sentinel-muted mb-1">
+                Token Budget
+              </div>
+              <div className={tokenValueClass}>
+                {formatSloTokens(tokens.actual_tokens)}
+                <span className="opacity-40">
+                  {' '}/ {formatSloTokens(tokens.budget_tokens)}
+                </span>
+              </div>
+            </div>
+            <div className="bg-sentinel-bg rounded-lg p-2">
+              <div className="text-xs text-sentinel-muted mb-1">
+                Engine
+              </div>
+              <div className="text-xs font-bold text-white">
+                SLO v1.2
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {breaches.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-sentinel-border/40">
+            <div className="flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-400/90 leading-relaxed">
+                {breaches[0]}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function DetectionGapPanel({ investigationId }) {
   const [gaps, setGaps] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2454,6 +2566,7 @@ export default function ReportPage() {
   const [auditChain, setAuditChain] = useState(null)
   // null = loading, object = result
   const [auditExpanded, setAuditExpanded] = useState(false)
+  const [sloExpanded, setSloExpanded] = useState(false)
   const [enrichedTtpMappings, setEnrichedTtpMappings] = useState(null)
 
   // Use state.result if available, otherwise use historicalData
@@ -2539,17 +2652,6 @@ export default function ReportPage() {
 
     verifyChain()
   }, [report?.investigation_id, state.result?.investigation_id])
-
-  useEffect(() => {
-    if (!auditExpanded) return
-    const handleClick = (e) => {
-      if (!e.target.closest('[data-audit-badge]')) {
-        setAuditExpanded(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [auditExpanded])
 
   const handleExportJson = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeResult, null, 2));
@@ -2811,9 +2913,11 @@ export default function ReportPage() {
                 
                 {/* SLO Status Pill */}
                 {report.slo_report && (
-                  <div className="mt-4 flex justify-end group/slo relative">
-                    <div 
-                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border cursor-help transition-all
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSloExpanded(prev => !prev)}
+                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border cursor-pointer transition-all
                         ${sloTone.chip}`}
                       title="System Performance Compliance"
                     >
@@ -2821,52 +2925,10 @@ export default function ReportPage() {
                       <span className="text-[10px] font-bold font-mono tracking-tight">
                         SLO: {sloStatus}
                       </span>
-                    </div>
-
-                    {/* Refined Glassmorphism Tooltip */}
-                    <div className="absolute top-full right-0 mt-3 w-52 p-4 
-                                    bg-sentinel-surface/95 backdrop-blur-xl 
-                                    border border-sentinel-border rounded-xl 
-                                    shadow-[0_20px_50px_rgba(0,0,0,0.5)] opacity-0 translate-y-1 
-                                    pointer-events-none group-hover/slo:opacity-100 
-                                    group-hover/slo:translate-y-0 transition-all duration-200 z-50">
-                      <div className="flex items-center gap-2 mb-3 border-b border-sentinel-border pb-2">
-                        <Zap className="w-3 h-3 text-sentinel-accent" />
-                        <p className="text-[10px] font-bold text-white uppercase tracking-wider">
-                          Performance Metrics
-                        </p>
-                      </div>
-                      
-                      <div className="space-y-2.5">
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-sentinel-muted">Wall-clock Time</span>
-                          <span className={`font-mono ${report.slo_report.slo_1_time?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
-                            {report.slo_report.slo_1_time?.actual_seconds}s <span className="opacity-40">/ {report.slo_report.slo_1_time?.budget_seconds}s</span>
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-sentinel-muted">Token Budget</span>
-                          <span className={`font-mono ${report.slo_report.slo_2_tokens?.met ? 'text-green-400' : 'text-red-400 font-bold'}`}>
-                            {Math.round(report.slo_report.slo_2_tokens?.actual_tokens / 1000)}k <span className="opacity-40">/ {Math.round(report.slo_report.slo_2_tokens?.budget_tokens / 1000)}k</span>
-                          </span>
-                        </div>
-
-                        {report.slo_report.slo_breaches?.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-sentinel-border/50">
-                            <div className="flex items-start gap-1.5">
-                              <AlertCircle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
-                              <p className="text-[9px] text-red-400/90 leading-relaxed italic">
-                                {report.slo_report.slo_breaches[0]}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 pt-2 text-[8px] text-sentinel-muted italic border-t border-sentinel-border/30 text-right">
-                        Verified by SLO Engine v1.2
-                      </div>
-                    </div>
+                      <span className={`transition-transform ${sloExpanded ? 'rotate-180' : ''}`}>
+                        v
+                      </span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -2915,6 +2977,12 @@ export default function ReportPage() {
             <AuditChainDetailsPanel
               auditChain={auditChain}
               splAuditLog={activeResult?.spl_audit_log || []}
+            />
+          )}
+          {sloExpanded && report.slo_report && (
+            <SloDetailsPanel
+              sloReport={report.slo_report}
+              sloStatus={sloStatus}
             />
           )}
         </div>
