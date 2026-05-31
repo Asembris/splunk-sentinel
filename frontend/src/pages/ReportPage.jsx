@@ -1970,11 +1970,42 @@ function DetectionGapPanel({ investigationId }) {
 
           {/* Idle prompt */}
           {!gaps && !loading && !error && (
-            <div className="mt-4 text-center py-8">
-              <p className="text-sm text-sentinel-muted mb-4">
-                Identify MITRE ATT&amp;CK techniques not covered by existing Splunk saved searches
-                and get recommended detection SPL.
-              </p>
+            <div className="mt-4 bg-sentinel-bg rounded-lg p-5">
+              <div className="mb-4">
+                <h4 className="text-sm font-semibold text-white">
+                  Coverage Analysis Ready
+                </h4>
+                <p className="text-xs text-sentinel-muted mt-1 leading-relaxed">
+                  Compare mapped ATT&amp;CK techniques against deployed Splunk
+                  saved searches and generate missing detection SPL.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
+                  <p className="text-xs font-semibold text-white">
+                    MITRE Coverage
+                  </p>
+                  <p className="text-xs text-sentinel-muted mt-1">
+                    Mapped techniques
+                  </p>
+                </div>
+                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
+                  <p className="text-xs font-semibold text-white">
+                    Saved Search Match
+                  </p>
+                  <p className="text-xs text-sentinel-muted mt-1">
+                    Splunk coverage
+                  </p>
+                </div>
+                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
+                  <p className="text-xs font-semibold text-white">
+                    Detection SPL
+                  </p>
+                  <p className="text-xs text-sentinel-muted mt-1">
+                    Recommended searches
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={fetchGaps}
                 className="px-4 py-2 text-xs font-semibold uppercase tracking-wider
