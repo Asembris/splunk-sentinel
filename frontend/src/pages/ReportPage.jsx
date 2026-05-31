@@ -2157,24 +2157,41 @@ function DetectionGapPanel({ investigationId }) {
                   <div className="space-y-3">
                     {gaps.gaps.map(gap => (
                       <div key={gap.technique_id}
-                           className="border border-red-500/20 rounded-xl bg-red-500/5">
+                           className="border border-red-500/20 rounded-xl bg-red-500/5 overflow-hidden">
                         {/* Gap header */}
                         <div
                           className="flex items-center justify-between px-4 py-3
-                                     cursor-pointer hover:bg-red-500/10 transition-colors rounded-xl"
+                                     cursor-pointer hover:bg-red-500/10 transition-colors"
                           onClick={() => toggleGap(gap.technique_id)}
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-bold text-red-400 uppercase">GAP</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold text-red-400 uppercase">
+                              Detection Gap
+                            </span>
                             <span className="text-xs font-mono font-bold text-sentinel-accent">
                               {gap.technique_id}
                             </span>
                             <span className="text-xs text-white">{gap.technique_name}</span>
-                            <span className="text-xs text-sentinel-muted">- {gap.tactic}</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded
+                                             border border-sentinel-border
+                                             bg-sentinel-bg text-sentinel-muted">
+                              {gap.tactic}
+                            </span>
                           </div>
-                          <span className="text-sentinel-muted text-xs">
-                            {expandedGaps[gap.technique_id] ? '^' : 'v'}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {gap.recommended_spl && (
+                              <span className="text-[10px] font-bold
+                                               text-amber-300 border
+                                               border-amber-500/30
+                                               bg-amber-500/10 rounded
+                                               px-2 py-0.5">
+                                SPL Ready
+                              </span>
+                            )}
+                            <span className="text-sentinel-muted text-xs">
+                              {expandedGaps[gap.technique_id] ? '^' : 'v'}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Gap SPL */}
