@@ -1704,29 +1704,7 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
   )
 }
 
-function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
-  if (!auditChain) {
-    return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 
-                      bg-sentinel-surface border border-sentinel-border 
-                      rounded-lg text-xs text-sentinel-muted">
-        <div className="w-3 h-3 border border-sentinel-muted 
-                        border-t-transparent rounded-full animate-spin" />
-        Verifying audit chain...
-      </div>
-    )
-  }
-
-  if (auditChain.error) {
-    return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5
-                      bg-sentinel-surface border border-sentinel-border
-                      rounded-lg text-xs text-sentinel-muted">
-        Audit verification unavailable
-      </div>
-    )
-  }
-
+function getAuditChainViewModel(auditChain, splAuditLog) {
   const isValid = auditChain.valid === true
 
   let totalEntries = auditChain.total_entries || 0
@@ -1763,6 +1741,146 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
     }
   }
 
+  return {
+    isValid,
+    totalEntries,
+    brokenIndex,
+    recentEntries,
+  }
+}
+
+function AuditChainDetailsPanel({ auditChain, splAuditLog }) {
+  const {
+    isValid,
+    totalEntries,
+    recentEntries,
+  } = getAuditChainViewModel(auditChain, splAuditLog)
+
+  return (
+    <div className="mt-4 pt-4 border-t border-sentinel-border/40">
+      <div
+        className={
+          isValid
+            ? "rounded-lg border border-green-500/20 bg-green-500/5 p-3"
+            : "rounded-lg border border-red-500/20 bg-red-500/5 p-3"
+        }
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className={
+                isValid
+                  ? "w-3.5 h-3.5 text-green-400"
+                  : "w-3.5 h-3.5 text-red-400"
+              } />
+              <span className="text-xs font-semibold text-sentinel-muted uppercase tracking-wider">
+                Hash Chain Integrity
+              </span>
+              <span className={
+                isValid
+                  ? "text-xs font-bold text-green-400"
+                  : "text-xs font-bold text-red-400"
+              }>
+                {isValid ? 'INTACT' : 'BROKEN'}
+              </span>
+            </div>
+            <p className="text-xs text-sentinel-muted leading-relaxed">
+              {auditChain.details}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 shrink-0 w-full lg:w-[360px]">
+            {[
+              { label: 'Entries', value: totalEntries },
+              { label: 'Status', value: isValid ? 'Valid' : 'Invalid' },
+              { label: 'Algorithm', value: 'SHA-256' },
+            ].map(stat => (
+              <div
+                key={stat.label}
+                className="bg-sentinel-bg rounded-lg p-2 text-center"
+              >
+                <div className="text-xs font-bold text-white">
+                  {stat.value}
+                </div>
+                <div className="text-xs text-sentinel-muted">
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {recentEntries.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-sentinel-border/40">
+            <div className="text-xs font-semibold text-sentinel-muted uppercase tracking-wider mb-2">
+              Recent SPL Entries
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+              {recentEntries.slice(-3).map((entry, i) => (
+                <div
+                  key={i}
+                  className="bg-sentinel-bg rounded-lg p-2 font-mono"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={
+                      entry.was_corrected
+                        ? "text-xs font-bold text-amber-400"
+                        : "text-xs font-bold text-green-400"
+                    }>
+                      {entry.was_corrected ? 'corrected' : 'clean'}
+                    </span>
+                    <span className="text-xs text-sentinel-muted">
+                      {entry.rows_returned ?? '?'} rows
+                    </span>
+                  </div>
+                  <div className="text-xs text-sentinel-muted truncate">
+                    {entry.spl?.slice(0, 60)}...
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-sentinel-muted/40 mt-3 text-right">
+          Verified {auditChain.verified_at
+            ? new Date(auditChain.verified_at).toLocaleTimeString()
+            : 'just now'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
+  if (!auditChain) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5 
+                      bg-sentinel-surface border border-sentinel-border 
+                      rounded-lg text-xs text-sentinel-muted">
+        <div className="w-3 h-3 border border-sentinel-muted 
+                        border-t-transparent rounded-full animate-spin" />
+        Verifying audit chain...
+      </div>
+    )
+  }
+
+  if (auditChain.error) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5
+                      bg-sentinel-surface border border-sentinel-border
+                      rounded-lg text-xs text-sentinel-muted">
+        Audit verification unavailable
+      </div>
+    )
+  }
+
+  const {
+    isValid,
+    totalEntries,
+    brokenIndex,
+  } = getAuditChainViewModel(auditChain, splAuditLog)
+
   return (
     <div className="relative" data-audit-badge>
       <button
@@ -1785,94 +1903,6 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
           v
         </span>
       </button>
-
-      {/* Expanded dropdown */}
-      {expanded && (
-        <div className="absolute right-0 top-full mt-2 z-50
-                        bg-sentinel-surface border border-sentinel-border
-                        rounded-xl shadow-2xl p-4 w-96">
-
-          {/* Chain summary */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-sentinel-muted uppercase tracking-wider">
-              Hash Chain Integrity
-            </span>
-            <span className={`text-xs font-bold ${
-              isValid ? 'text-green-400' : 'text-red-400'
-            }`}>
-              {isValid ? 'INTACT' : 'BROKEN'}
-            </span>
-          </div>
-
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {[
-              { label: 'Entries', value: totalEntries },
-              { label: 'Status', value: isValid ? 'Valid' : 'Invalid' },
-              { label: 'Algorithm', value: 'SHA-256' },
-            ].map(stat => (
-              <div key={stat.label}
-                   className="bg-sentinel-bg rounded-lg p-2 text-center">
-                <div className="text-xs font-bold text-white">
-                  {stat.value}
-                </div>
-                <div className="text-xs text-sentinel-muted">
-                  {stat.label}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Details */}
-          <p className="text-xs text-sentinel-muted mb-3 leading-relaxed break-all">
-            {auditChain.details}
-          </p>
-
-          {/* Recent entries */}
-          {recentEntries.length > 0 && (
-            <>
-              <div className="text-xs font-semibold text-sentinel-muted 
-                              uppercase tracking-wider mb-2">
-                Recent SPL Entries
-              </div>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {recentEntries.map((entry, i) => (
-                  <div key={i}
-                       className="bg-sentinel-bg rounded-lg p-2 font-mono">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-bold ${
-                        entry.was_corrected
-                          ? 'text-amber-400'
-                          : 'text-green-400'
-                      }`}>
-                        {entry.was_corrected ? 'corrected' : 'clean'}
-                      </span>
-                      <span className="text-xs text-sentinel-muted">
-                        {entry.rows_returned ?? '?'} rows
-                      </span>
-                    </div>
-                    <div className="text-xs text-sentinel-muted truncate">
-                      {entry.spl?.slice(0, 60)}...
-                    </div>
-                    {entry.entry_hash && (
-                      <div className="text-xs text-sentinel-muted/40 mt-1">
-                        #{entry.entry_hash.slice(0, 16)}...
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Verification timestamp */}
-          <p className="text-xs text-sentinel-muted/40 mt-3 text-right">
-            Verified {auditChain.verified_at
-              ? new Date(auditChain.verified_at).toLocaleTimeString()
-              : 'just now'}
-          </p>
-        </div>
-      )}
     </div>
   )
 }
@@ -2881,6 +2911,12 @@ export default function ReportPage() {
               </div>
             </div>
           </div>
+          {auditExpanded && auditChain && !auditChain.error && (
+            <AuditChainDetailsPanel
+              auditChain={auditChain}
+              splAuditLog={activeResult?.spl_audit_log || []}
+            />
+          )}
         </div>
       </div>
 
