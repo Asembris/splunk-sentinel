@@ -1,8 +1,34 @@
 const PRIORITY_CONFIG = {
-  IMMEDIATE:   { color: 'border-sentinel-danger text-sentinel-danger',   bg: 'bg-red-900/10' },
-  SHORT_TERM:  { color: 'border-sentinel-warning text-sentinel-warning', bg: 'bg-yellow-900/10' },
-  LONG_TERM:   { color: 'border-sentinel-success text-sentinel-success', bg: 'bg-green-900/10' },
+  IMMEDIATE: {
+    label: 'Immediate',
+    border: 'border-l-red-500',
+    badge: 'bg-red-900/30 text-red-300 border-red-500/30',
+    dot: 'bg-red-400',
+    text: 'text-red-400',
+    empty: 'No immediate containment action defined',
+    helper: 'Review after triage confirms the active threat path.',
+  },
+  SHORT_TERM: {
+    label: 'Short Term',
+    border: 'border-l-amber-500',
+    badge: 'bg-amber-900/30 text-amber-300 border-amber-500/30',
+    dot: 'bg-amber-400',
+    text: 'text-amber-400',
+    empty: 'No short-term recovery action defined',
+    helper: 'Review after containment actions are complete.',
+  },
+  LONG_TERM: {
+    label: 'Long Term',
+    border: 'border-l-emerald-500',
+    badge: 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30',
+    dot: 'bg-emerald-400',
+    text: 'text-emerald-400',
+    empty: 'No long-term hardening action defined',
+    helper: 'Review after containment and recovery are complete.',
+  },
 }
+
+const PRIORITY_ORDER = ['IMMEDIATE', 'SHORT_TERM', 'LONG_TERM']
 
 export default function RecommendedActions({ actions }) {
   const grouped = actions.reduce((acc, a) => {
@@ -33,25 +59,54 @@ export default function RecommendedActions({ actions }) {
           3 phases
         </span>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {['IMMEDIATE', 'SHORT_TERM', 'LONG_TERM'].map(priority => {
-          const { color, bg } = PRIORITY_CONFIG[priority]
+      <div className="flex flex-col gap-3">
+        {PRIORITY_ORDER.map(priority => {
+          const config = PRIORITY_CONFIG[priority]
           const items = grouped[priority] || []
           return (
-            <div key={priority} className={`rounded-xl border p-4 shadow-inner ${bg} ${color.split(' ')[0]}`}>
-              <div className={`text-[10px] font-black mb-4 uppercase tracking-[0.2em] flex items-center gap-2 ${color.split(' ')[1]}`}>
-                <span className={`w-1.5 h-1.5 rounded-full bg-current`} />
-                {priority.replace('_', ' ')}
+            <div
+              key={priority}
+              className={`bg-sentinel-bg border border-sentinel-border border-l-4 ${config.border} rounded-lg p-4`}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-xs font-bold px-2 py-1 rounded border ${config.badge}`}>
+                    <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${config.dot}`} />
+                    {config.label}
+                  </span>
+                  <span className="text-xs text-sentinel-muted">
+                    {items.length} action{items.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${config.text}`}>
+                  {priority.replace('_', ' ')}
+                </span>
               </div>
               {items.length === 0 ? (
-                <p className="text-[10px] text-sentinel-muted uppercase tracking-wider italic">No actions defined</p>
+                <div>
+                  <p className="text-sm text-sentinel-muted italic">
+                    {config.empty}
+                  </p>
+                  <p className="text-xs text-sentinel-muted/70 mt-1">
+                    {config.helper}
+                  </p>
+                </div>
               ) : (
-                <div className="space-y-4">
+                <div>
                   {items.map((a, i) => (
-                    <div key={i} className="group/action">
-                      <p className="text-sm text-white font-semibold leading-tight">{a.action}</p>
-                      <p className="text-[11px] text-sentinel-muted mt-2 leading-relaxed">{a.rationale}</p>
-                      {a.mitre_technique && (
+                    <div
+                      key={i}
+                      className={i === 0 ? '' : 'border-t border-sentinel-border/40 pt-3 mt-3'}
+                    >
+                      <p className="text-sm text-white font-semibold leading-tight">
+                        {a.action}
+                      </p>
+                      <p className="text-xs text-sentinel-muted mt-2 leading-relaxed">
+                        {a.rationale}
+                      </p>
+                      {a.mitre_technique &&
+                        a.mitre_technique !== 'N/A' &&
+                        a.mitre_technique.trim().length > 0 && (
                         <div className="mt-2 flex items-center gap-1.5">
                           <span className="text-[9px] font-mono text-sentinel-accent bg-blue-900/20 px-1.5 py-0.5 rounded uppercase">
                             {a.mitre_technique}
