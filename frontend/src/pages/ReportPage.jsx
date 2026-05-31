@@ -1261,8 +1261,10 @@ function FeedbackCard({
   if (feedbackStatus === 'submitted') {
     return (
       <div className="bg-sentinel-surface border border-green-500/30 
-                      rounded-xl p-6 mt-6">
-        <div className="flex items-center gap-3">
+                      rounded-xl p-6 mt-6"
+           style={{ borderTop: '2px solid #10b981' }}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
           <div className="w-8 h-8 bg-green-500/20 rounded-full 
                           flex items-center justify-center flex-shrink-0">
             <span className="text-green-400 font-bold">OK</span>
@@ -1272,10 +1274,30 @@ function FeedbackCard({
               Feedback submitted
             </p>
             <p className="text-xs text-sentinel-muted mt-0.5">
-              Thank you. This investigation has been rated and 
-              saved to the evaluation dataset.
+              This investigation has been saved to the evaluation dataset.
             </p>
+            <div className="flex gap-2 flex-wrap mt-3">
+              <span className="text-xs px-2 py-1 rounded 
+                               bg-sentinel-bg border
+                               border-sentinel-border
+                               text-sentinel-muted">
+                Human validation captured
+              </span>
+              <span className="text-xs px-2 py-1 rounded 
+                               bg-sentinel-bg border
+                               border-sentinel-border
+                               text-sentinel-muted">
+                Calibration signal recorded
+              </span>
+            </div>
           </div>
+          </div>
+          <span className="text-xs px-2 py-1 rounded 
+                           bg-green-500/10 border
+                           border-green-500/30 text-green-400
+                           whitespace-nowrap">
+            Evaluation Updated
+          </span>
         </div>
       </div>
     )
