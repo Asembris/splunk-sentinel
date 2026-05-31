@@ -61,6 +61,9 @@ export default function CveList({ cves }) {
           </a>
         ))}
       </div>
+      <p className="text-xs text-sentinel-muted mt-3 pt-3 border-t border-sentinel-border/40">
+        Referenced vulnerabilities inform the remediation plan above.
+      </p>
     </div>
   )
 }
