@@ -1824,12 +1824,34 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
 function DetectionGapPanel({ investigationId }) {
   const [gaps, setGaps] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [analysisStep, setAnalysisStep] = useState(0)
   const [error, setError] = useState(null)
   const [expanded, setExpanded] = useState(true)
   const [expandedGaps, setExpandedGaps] = useState({})
   const [copied, setCopied] = useState({})
   const [deploying, setDeploying] = useState({})
   const [deployed, setDeployed] = useState({})
+
+  const analysisStages = [
+    'Inventorying mapped MITRE techniques',
+    'Comparing against Splunk saved searches',
+    'Identifying uncovered techniques',
+    'Generating detection SPL',
+  ]
+
+  useEffect(() => {
+    if (!loading) {
+      setAnalysisStep(0)
+      return undefined
+    }
+
+    setAnalysisStep(0)
+    const intervalId = setInterval(() => {
+      setAnalysisStep(prev => (prev + 1) % analysisStages.length)
+    }, 900)
+
+    return () => clearInterval(intervalId)
+  }, [loading, analysisStages.length])
 
   const fetchGaps = async () => {
     if (!investigationId) return
@@ -2030,31 +2052,46 @@ function DetectionGapPanel({ investigationId }) {
               <p className="text-xs text-sentinel-muted leading-relaxed mb-4">
                 Checking mapped ATT&amp;CK techniques against deployed Splunk saved searches.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
-                  <p className="text-xs font-semibold text-white">
-                    Technique inventory
-                  </p>
-                  <p className="text-xs text-sentinel-muted mt-1">
-                    Mapped ATT&amp;CK set
-                  </p>
-                </div>
-                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
-                  <p className="text-xs font-semibold text-white">
-                    Coverage comparison
-                  </p>
-                  <p className="text-xs text-sentinel-muted mt-1">
-                    Saved search match
-                  </p>
-                </div>
-                <div className="bg-sentinel-surface border border-sentinel-border rounded-lg p-3">
-                  <p className="text-xs font-semibold text-white">
-                    SPL generation
-                  </p>
-                  <p className="text-xs text-sentinel-muted mt-1">
-                    Missing detections
-                  </p>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {analysisStages.map((stage, idx) => {
+                  const isActive = idx === analysisStep
+                  const isComplete = idx < analysisStep
+                  return (
+                    <div
+                      key={stage}
+                      className={
+                        isActive
+                          ? "bg-sentinel-surface border border-sentinel-accent/40 rounded-lg p-3"
+                          : isComplete
+                            ? "bg-sentinel-surface border border-green-500/20 rounded-lg p-3"
+                            : "bg-sentinel-surface border border-sentinel-border rounded-lg p-3 opacity-50"
+                      }
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={
+                            isActive
+                              ? "w-2 h-2 rounded-full bg-sentinel-accent shrink-0"
+                              : isComplete
+                                ? "w-2 h-2 rounded-full bg-green-400/70 shrink-0"
+                                : "w-2 h-2 rounded-full bg-sentinel-muted/40 shrink-0"
+                          }
+                        />
+                        <p
+                          className={
+                            isActive
+                              ? "text-xs font-semibold text-white"
+                              : isComplete
+                                ? "text-xs font-semibold text-green-400/80"
+                                : "text-xs font-semibold text-sentinel-muted"
+                          }
+                        >
+                          {stage}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
