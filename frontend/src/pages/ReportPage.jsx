@@ -5,7 +5,7 @@ import {
   Download, ArrowLeft, FileJson, Printer, 
   Share2, Loader2, AlertCircle, FileText,
   Zap, Shield, Play, RotateCcw, CheckCircle2, Circle, Clock,
-  Send, Sparkles
+  Send, Sparkles, ChevronDown
 } from 'lucide-react'
 import ExecutiveSummary from '../components/report/ExecutiveSummary'
 import FindingsGrid from '../components/report/FindingsGrid'
@@ -1899,9 +1899,10 @@ function AuditChainBadge({ auditChain, expanded, onToggle, splAuditLog }) {
             : `Chain Integrity Failure - Entry ${brokenIndex} modified`
           }
         </span>
-        <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
-          v
-        </span>
+        <ChevronDown
+          className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
       </button>
     </div>
   )
@@ -2972,9 +2973,10 @@ export default function ReportPage() {
                       <span className="text-[10px] font-bold font-mono tracking-tight">
                         SLO: {sloStatus}
                       </span>
-                      <span className={`transition-transform ${sloExpanded ? 'rotate-180' : ''}`}>
-                        v
-                      </span>
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform ${sloExpanded ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
                     </button>
                   </div>
                 )}
