@@ -1202,6 +1202,36 @@ function MltkEnrichmentStatus({
   return null
 }
 
+const FEEDBACK_RATINGS = [
+  {
+    key: 'correct',
+    label: 'Correct',
+    shortLabel: 'Correct',
+    icon: 'OK',
+    description: 'Investigation is accurate',
+    activeClass: 'border-green-500 bg-green-500/10 text-green-400',
+    inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-green-500/50',
+  },
+  {
+    key: 'partial',
+    label: 'Partially Correct',
+    shortLabel: 'Partial',
+    icon: '~',
+    description: 'Some findings need correction',
+    activeClass: 'border-amber-500 bg-amber-500/10 text-amber-400',
+    inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-amber-500/50',
+  },
+  {
+    key: 'incorrect',
+    label: 'Incorrect',
+    shortLabel: 'Incorrect',
+    icon: 'X',
+    description: 'Classification or evidence is wrong',
+    activeClass: 'border-red-500 bg-red-500/10 text-red-400',
+    inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-red-500/50',
+  },
+]
+
 function FeedbackCard({
   feedbackRating,
   setFeedbackRating,
@@ -1210,30 +1240,6 @@ function FeedbackCard({
   feedbackStatus,
   onSubmit,
 }) {
-  const RATINGS = [
-    {
-      key: 'correct',
-      label: 'Correct',
-      icon: 'OK',
-      activeClass: 'border-green-500 bg-green-500/10 text-green-400',
-      inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-green-500/50',
-    },
-    {
-      key: 'partial',
-      label: 'Partial',
-      icon: '~',
-      activeClass: 'border-amber-500 bg-amber-500/10 text-amber-400',
-      inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-amber-500/50',
-    },
-    {
-      key: 'incorrect',
-      label: 'Incorrect',
-      icon: 'X',
-      activeClass: 'border-red-500 bg-red-500/10 text-red-400',
-      inactiveClass: 'border-sentinel-border text-sentinel-muted hover:border-red-500/50',
-    },
-  ]
-
   if (feedbackStatus === 'submitted') {
     return (
       <div className="bg-sentinel-surface border border-green-500/30 
@@ -1280,7 +1286,7 @@ function FeedbackCard({
 
       {/* Rating buttons */}
       <div className="flex items-center gap-3 mb-4">
-        {RATINGS.map((rating) => (
+        {FEEDBACK_RATINGS.map((rating) => (
           <button
             key={rating.key}
             onClick={() => setFeedbackRating(rating.key)}
@@ -1294,7 +1300,7 @@ function FeedbackCard({
                         }`}
           >
             <span className="font-bold">{rating.icon}</span>
-            {rating.label}
+            {rating.shortLabel}
           </button>
         ))}
       </div>
