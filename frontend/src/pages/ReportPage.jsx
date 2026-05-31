@@ -17,6 +17,62 @@ import KillChainTimeline from '../components/report/KillChainTimeline'
 
 const asArray = (value) => (Array.isArray(value) ? value : [])
 
+const REPORT_SEVERITY_TONES = {
+  CRITICAL: 'bg-red-900/30 text-sentinel-danger border-sentinel-danger',
+  HIGH: 'bg-orange-900/30 text-orange-400 border-orange-400',
+  MEDIUM: 'bg-yellow-900/30 text-sentinel-warning border-sentinel-warning',
+  LOW: 'bg-green-900/30 text-sentinel-success border-sentinel-success',
+}
+
+const REPORT_CLASSIFICATION_TONES = {
+  APT: 'text-sentinel-accent bg-blue-900/20 border-blue-900',
+  RANSOMWARE: 'text-sentinel-accent bg-blue-900/20 border-blue-900',
+  INSIDER_THREAT: 'text-sentinel-accent bg-blue-900/20 border-blue-900',
+  UNKNOWN: 'text-sentinel-muted bg-sentinel-bg border-sentinel-border',
+}
+
+const REPORT_CONFIDENCE_TONES = {
+  high: {
+    text: 'text-green-400',
+    bar: 'bg-green-400',
+    chip: 'bg-green-500/10 text-green-400 border-green-500/30',
+  },
+  medium: {
+    text: 'text-amber-400',
+    bar: 'bg-amber-400',
+    chip: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  },
+  low: {
+    text: 'text-red-400',
+    bar: 'bg-red-400',
+    chip: 'bg-red-500/10 text-red-400 border-red-500/30',
+  },
+}
+
+const REPORT_SLO_TONES = {
+  PASS: {
+    chip: 'bg-green-500/5 border-green-500/20 text-green-400/80 hover:border-green-500/40',
+    icon: 'text-green-400',
+  },
+  BREACH: {
+    chip: 'bg-red-500/5 border-red-500/20 text-red-400/80 hover:border-red-500/40',
+    icon: 'text-red-400',
+  },
+}
+
+const normalizeReportToken = (value) => (
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+)
+
+const getReportConfidenceTone = (confidencePct) => {
+  if (confidencePct >= 75) return REPORT_CONFIDENCE_TONES.high
+  if (confidencePct >= 50) return REPORT_CONFIDENCE_TONES.medium
+  return REPORT_CONFIDENCE_TONES.low
+}
+
 const normalizeContainmentPlan = (plan) => {
   if (!plan || typeof plan !== 'object') {
     return { phases: [], chat_history: [] }
@@ -2624,12 +2680,14 @@ export default function ReportPage() {
     )
   }
 
-  const severityColors = {
-    CRITICAL: 'bg-red-900/30 text-sentinel-danger border-sentinel-danger',
-    HIGH: 'bg-orange-900/30 text-orange-400 border-orange-400',
-    MEDIUM: 'bg-yellow-900/30 text-sentinel-warning border-sentinel-warning',
-    LOW: 'bg-green-900/30 text-sentinel-success border-sentinel-success',
-  }
+  const normalizedSeverity =
+    REPORT_SEVERITY_TONES[normalizeReportToken(report.severity)]
+      ? normalizeReportToken(report.severity)
+      : 'HIGH'
+  const normalizedClassification =
+    REPORT_CLASSIFICATION_TONES[normalizeReportToken(report.classification)]
+      ? normalizeReportToken(report.classification)
+      : 'UNKNOWN'
   const reportInvestigationId =
     report.investigation_id ||
     activeResult?.investigation_id ||
@@ -2640,8 +2698,12 @@ export default function ReportPage() {
     report.confidence_breakdown?.overall ??
     report.investigation_confidence ??
     0
+  const confidencePct = Math.round(primaryConfidence * 100)
   const confidenceLabel =
     report.confidence?.primary_label || 'Evidence Confidence'
+  const sloStatus =
+    report.slo_report?.overall_slo_status === 'ALL_MET' ? 'PASS' : 'BREACH'
+  const sloTone = REPORT_SLO_TONES[sloStatus] || REPORT_SLO_TONES.BREACH
   const safeContainmentPlan = normalizeContainmentPlan(report.containment_plan)
   const safeMitreTechniques = asArray(report.mitre_techniques_used).filter(
     (technique) => typeof technique === 'string' && technique.trim().length > 0
@@ -2663,12 +2725,14 @@ export default function ReportPage() {
           </button>
           <div className="flex items-center gap-3 mb-2">
             <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${
-              severityColors[report.severity] || severityColors.HIGH
+              REPORT_SEVERITY_TONES[normalizedSeverity]
             }`}>
               {report.severity}
             </span>
-            <span className="text-[10px] font-mono text-sentinel-accent bg-blue-900/20 border border-blue-900 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-              {report.classification}
+            <span className={`text-[10px] font-mono border px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+              REPORT_CLASSIFICATION_TONES[normalizedClassification]
+            }`}>
+              {report.classification || normalizedClassification}
             </span>
             
             <AuditChainBadge
@@ -2688,7 +2752,7 @@ export default function ReportPage() {
         <div className="flex items-center gap-4">
           <div className="text-right mr-4 border-r border-sentinel-border pr-6">
             <div className="text-3xl font-bold text-sentinel-accent leading-none">
-              {Math.round(primaryConfidence * 100)}%
+              {confidencePct}%
             </div>
             <div className="text-[10px] text-sentinel-muted uppercase tracking-widest mt-1">{confidenceLabel}</div>
             
@@ -2697,17 +2761,12 @@ export default function ReportPage() {
               <div className="mt-4 flex justify-end group/slo relative">
                 <div 
                   className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border cursor-help transition-all
-                    ${report.slo_report.overall_slo_status === 'ALL_MET' 
-                      ? 'bg-green-500/5 border-green-500/20 text-green-400/80 hover:border-green-500/40' 
-                      : 'bg-red-500/5 border-red-500/20 text-red-400/80 hover:border-red-500/40'
-                    }`}
+                    ${sloTone.chip}`}
                   title="System Performance Compliance"
                 >
-                  <Zap className={`w-2.5 h-2.5 ${
-                    report.slo_report.overall_slo_status === 'ALL_MET' ? 'text-green-400' : 'text-red-400'
-                  }`} />
+                  <Zap className={`w-2.5 h-2.5 ${sloTone.icon}`} />
                   <span className="text-[10px] font-bold font-mono tracking-tight">
-                    SLO: {report.slo_report.overall_slo_status === 'ALL_MET' ? 'PASS' : 'BREACH'}
+                    SLO: {sloStatus}
                   </span>
                 </div>
 
