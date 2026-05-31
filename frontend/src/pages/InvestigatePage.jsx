@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useInvestigation } from '../store/InvestigationContext'
 import { Shield, Zap, AlertTriangle, User } from 'lucide-react'
+import BrandLogo from '../components/layout/BrandLogo'
 
 const EXAMPLE_TRIGGERS = [
   {
@@ -43,7 +44,7 @@ export default function InvestigatePage() {
       {/* Hero */}
       <div className="text-center mb-12 animate-fade-in">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <Shield className="w-12 h-12 text-sentinel-accent" />
+          <BrandLogo variant="mark" className="h-14 w-14" />
         </div>
         <h1 className="text-4xl font-bold mb-3 text-white">
           Autonomous SOC Investigation

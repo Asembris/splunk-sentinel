@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { Shield, Activity, FileText, Clock } from 'lucide-react'
+import BrandLogo from './BrandLogo'
 
 const navItems = [
   { path: '/', label: 'Investigate', icon: Shield },
@@ -15,7 +16,7 @@ export default function Navbar() {
     <nav className="border-b border-sentinel-border bg-sentinel-surface px-6 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Shield className="text-sentinel-accent w-7 h-7" />
+          <BrandLogo variant="mark" className="h-8 w-8 shrink-0" />
           <span className="text-xl font-bold tracking-tight text-white">
             Splunk <span className="text-sentinel-accent">Sentinel</span>
           </span>
