@@ -1501,7 +1501,7 @@ function CounterfactualCard({ counterfactual, confirmedClassification }) {
           return (
           <div key={alt.originalIndex} className="flex gap-3">
             <div className="flex flex-col items-center pt-4">
-              <div className="w-6 h-6 rounded-full border border-sentinel-border bg-sentinel-surface text-[10px] font-bold text-sentinel-muted flex items-center justify-center">
+              <div className="w-6 h-6 rounded-full border border-sentinel-accent/40 bg-sentinel-bg text-[10px] font-bold text-blue-300 flex items-center justify-center shadow-sm">
                 {String(index + 1).padStart(2, '0')}
               </div>
               {!isLast && (
