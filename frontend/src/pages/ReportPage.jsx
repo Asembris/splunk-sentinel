@@ -1265,16 +1265,23 @@ function FeedbackCard({
 
   return (
     <div className="bg-sentinel-surface border border-sentinel-border 
-                    rounded-xl p-6 mt-6">
+                    rounded-xl p-6 mt-6"
+         style={{ borderTop: '2px solid #3b82f6' }}>
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-1.5 h-4 bg-sentinel-accent rounded-full" />
-        <h3 className="text-sm font-semibold text-sentinel-muted 
-                       uppercase tracking-wider">
-          Analyst Feedback
-        </h3>
-        <span className="text-xs text-sentinel-muted opacity-50 ml-1">
-          - contributes to evaluation dataset
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+            <h3 className="text-sm font-bold text-white tracking-wide">
+              Analyst Feedback
+            </h3>
+          </div>
+          <p className="text-xs text-sentinel-muted ml-4">
+            Human validation used to calibrate future confidence scores
+          </p>
+        </div>
+        <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
+          Evaluation Dataset
         </span>
       </div>
 
