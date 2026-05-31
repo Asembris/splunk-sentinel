@@ -1232,6 +1232,24 @@ const FEEDBACK_RATINGS = [
   },
 ]
 
+const FEEDBACK_NOTE_COPY = {
+  correct: {
+    title: 'Validation Note',
+    helper: 'Optional: add context that confirms what the investigation got right.',
+    placeholder: 'Optional: note what was accurate or useful in this investigation.',
+  },
+  partial: {
+    title: 'Correction Needed',
+    helper: 'Describe the specific finding, timeline detail, or evidence point that needs correction.',
+    placeholder: 'Describe what needs correction, such as patient zero, impacted asset, or missing evidence.',
+  },
+  incorrect: {
+    title: 'Ground Truth Correction',
+    helper: 'Describe the correct classification or evidence so the evaluation dataset can learn from it.',
+    placeholder: 'Describe what was wrong and provide the correct ground truth if known.',
+  },
+}
+
 function FeedbackCard({
   feedbackRating,
   setFeedbackRating,
@@ -1262,6 +1280,13 @@ function FeedbackCard({
       </div>
     )
   }
+
+  const selectedRating = FEEDBACK_RATINGS.find(
+    (rating) => rating.key === feedbackRating
+  )
+  const noteCopy = feedbackRating
+    ? FEEDBACK_NOTE_COPY[feedbackRating] ?? FEEDBACK_NOTE_COPY.correct
+    : null
 
   return (
     <div className="bg-sentinel-surface border border-sentinel-border 
@@ -1322,12 +1347,27 @@ function FeedbackCard({
       </div>
 
       {/* Notes input - only shown when rating selected */}
-      {feedbackRating && (
-        <div className="mb-4">
+      {selectedRating && noteCopy && (
+        <div className="bg-sentinel-bg rounded-lg p-4 mb-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <div className="text-[10px] font-bold text-sentinel-muted 
+                              uppercase tracking-wider">
+                Analyst Notes
+              </div>
+              <p className="text-xs text-sentinel-muted mt-1">
+                {noteCopy.helper}
+              </p>
+            </div>
+            <span className={`text-xs px-2 py-0.5 rounded border 
+                              shrink-0 ${selectedRating.activeClass}`}>
+              {selectedRating.label}
+            </span>
+          </div>
           <textarea
             value={feedbackNotes}
             onChange={(e) => setFeedbackNotes(e.target.value)}
-            placeholder="Optional: describe what was correct or incorrect (e.g. 'Patient zero IP was wrong - actual source was 54.67.127.227')"
+            placeholder={noteCopy.placeholder}
             disabled={feedbackStatus === 'submitting'}
             rows={3}
             className="w-full bg-sentinel-bg border border-sentinel-border 
@@ -1337,8 +1377,8 @@ function FeedbackCard({
                        resize-none disabled:opacity-50
                        transition-colors"
           />
-          <p className="text-xs text-sentinel-muted mt-1 opacity-60">
-            Your notes help build the ground truth evaluation dataset
+          <p className="text-xs text-sentinel-muted mt-2 opacity-70">
+            Saved as evaluation context for future calibration.
           </p>
         </div>
       )}
