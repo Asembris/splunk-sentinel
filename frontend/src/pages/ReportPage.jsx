@@ -2198,9 +2198,14 @@ function DetectionGapPanel({ investigationId }) {
                         {expandedGaps[gap.technique_id] && gap.recommended_spl && (
                           <div className="px-4 pb-4">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-[10px] text-sentinel-muted font-mono">
-                                RECOMMENDED SPL ({gap.generation_method})
-                              </span>
+                              <div>
+                                <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                                  Generated Detection SPL
+                                </span>
+                                <p className="text-[10px] text-sentinel-muted font-mono mt-0.5">
+                                  method: {gap.generation_method}
+                                </p>
+                              </div>
                               <div className="flex gap-2">
                                 <button
                                   onClick={() => handleCopy(gap.technique_id, gap.recommended_spl)}
@@ -2233,9 +2238,12 @@ function DetectionGapPanel({ investigationId }) {
 
                             <pre className="bg-sentinel-bg border border-sentinel-border
                                            rounded-lg p-3 text-xs font-mono text-sentinel-accent
-                                           overflow-x-auto whitespace-pre-wrap break-all">
+                                           overflow-x-auto whitespace-pre">
                               {gap.recommended_spl}
                             </pre>
+                            <p className="text-xs text-sentinel-muted mt-2">
+                              Review and tune before production deployment.
+                            </p>
 
                             {deployed[gap.technique_id] && (
                               <div className="mt-2 text-[11px]">
