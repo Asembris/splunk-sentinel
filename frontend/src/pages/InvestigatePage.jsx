@@ -25,6 +25,39 @@ const EXAMPLE_TRIGGERS = [
   },
 ]
 
+const PIPELINE_AGENTS = [
+  {
+    name: 'Triage',
+    description: 'Classifies alert type and escalation path',
+    dotClass: 'w-2 h-2 rounded-full bg-red-400',
+  },
+  {
+    name: 'Reconstruction',
+    description: 'Builds chronological attack path',
+    dotClass: 'w-2 h-2 rounded-full bg-blue-400',
+  },
+  {
+    name: 'Threat Intel',
+    description: 'Correlates CVEs, IPs, and actor signals',
+    dotClass: 'w-2 h-2 rounded-full bg-amber-400',
+  },
+  {
+    name: 'MITRE Mapping',
+    description: 'Maps evidence to ATT&CK techniques',
+    dotClass: 'w-2 h-2 rounded-full bg-purple-400',
+  },
+  {
+    name: 'Detection Gap',
+    description: 'Finds uncovered techniques and SPL gaps',
+    dotClass: 'w-2 h-2 rounded-full bg-teal-400',
+  },
+  {
+    name: 'Report',
+    description: 'Generates analyst-ready investigation record',
+    dotClass: 'w-2 h-2 rounded-full bg-green-400',
+  },
+]
+
 export default function InvestigatePage() {
   const [trigger, setTrigger] = useState('')
   const [loading, setLoading] = useState(false)
@@ -55,39 +88,101 @@ export default function InvestigatePage() {
         </p>
       </div>
 
-      {/* Input */}
-      <div className="w-full max-w-3xl animate-fade-in" style={{ animationDelay: '0.1s' }}>
-        <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 mb-4 shadow-xl">
-          <label className="block text-sm font-medium text-sentinel-muted mb-3">
-            SECURITY ALERT TRIGGER
-          </label>
-          <textarea
-            value={trigger}
-            onChange={e => setTrigger(e.target.value)}
-            placeholder="Describe the security alert or incident trigger..."
-            className="w-full bg-sentinel-bg border border-sentinel-border rounded-lg p-4 text-white placeholder-sentinel-muted resize-none focus:outline-none focus:border-sentinel-accent transition-colors text-sm leading-relaxed"
-            rows={4}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
-            }}
-          />
-          <div className="flex items-center justify-between mt-4">
-            <span className="text-xs text-sentinel-muted">
-              Press Ctrl+Enter to investigate
-            </span>
-            <button
-              onClick={handleSubmit}
-              disabled={!trigger.trim() || loading}
-              className="flex items-center gap-2 px-6 py-2.5 bg-sentinel-accent hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all transform active:scale-95 text-sm"
-            >
-              <Shield className="w-4 h-4" />
-              {loading ? 'Starting...' : 'Investigate'}
-            </button>
+      {/* Investigation work zone */}
+      <div className="w-full max-w-6xl mx-auto animate-fade-in" style={{ animationDelay: '0.1s' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-8">
+          <div
+            className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 shadow-xl"
+            style={{ borderTop: '2px solid #3b82f6' }}
+          >
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+                  <label className="text-sm font-bold text-white tracking-wide">
+                    Security Alert Intake
+                  </label>
+                </div>
+                <p className="text-xs text-sentinel-muted ml-4">
+                  Paste raw alert context, detection notes, or incident telemetry.
+                </p>
+              </div>
+              <span className="text-xs px-2 py-1 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted whitespace-nowrap">
+                Ctrl+Enter
+              </span>
+            </div>
+            <textarea
+              value={trigger}
+              onChange={e => setTrigger(e.target.value)}
+              placeholder="Describe the security alert or incident trigger..."
+              className="w-full bg-sentinel-bg border border-sentinel-border rounded-lg p-4 text-white placeholder-sentinel-muted resize-none focus:outline-none focus:border-sentinel-accent transition-colors text-sm leading-relaxed"
+              rows={4}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+              }}
+            />
+            <div className="flex items-center justify-between mt-4">
+              <span className="text-xs text-sentinel-muted">
+                Raw alert will be routed through autonomous triage.
+              </span>
+              <button
+                onClick={handleSubmit}
+                disabled={!trigger.trim() || loading}
+                className="flex items-center gap-2 px-6 py-2.5 bg-sentinel-accent hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all transform active:scale-95 text-sm"
+              >
+                <Shield className="w-4 h-4" />
+                {loading ? 'Launching...' : 'Launch Investigation'}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 shadow-xl h-full">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
+                  <h2 className="text-sm font-bold text-white tracking-wide">
+                    Autonomous Pipeline
+                  </h2>
+                </div>
+                <p className="text-xs text-sentinel-muted ml-4">
+                  Six-agent investigation architecture.
+                </p>
+              </div>
+              <span className="text-xs px-2 py-1 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted whitespace-nowrap">
+                6 Agents
+              </span>
+            </div>
+            <div className="relative">
+              <div className="absolute left-[9px] top-3 bottom-3 w-px bg-sentinel-border" />
+              <div className="space-y-4">
+                {PIPELINE_AGENTS.map(agent => (
+                  <div key={agent.name} className="relative flex gap-3">
+                    <div className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-sentinel-border bg-sentinel-bg shrink-0">
+                      <span className={agent.dotClass} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-white leading-tight">
+                          {agent.name}
+                        </h3>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted uppercase tracking-wider">
+                          Ready
+                        </span>
+                      </div>
+                      <p className="text-xs text-sentinel-muted leading-relaxed mt-0.5">
+                        {agent.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Example triggers */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3 mt-4 max-w-3xl mx-auto">
           {EXAMPLE_TRIGGERS.map(({ icon: Icon, label, color, trigger: t }) => (
             <button
               key={label}
