@@ -185,6 +185,25 @@ export default function InvestigatePage() {
           </div>
         </div>
 
+        {/* Capability strip */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5 max-w-4xl mx-auto">
+          {[
+            { value: '2M+', label: 'Log Events Analyzed' },
+            { value: '697', label: 'MITRE Techniques' },
+            { value: '~100', label: 'Investigation Time' },
+            { value: '6', label: 'AI Agents' },
+          ].map(({ value, label }) => (
+            <div key={label} className="text-center">
+              <div className="text-xl font-bold text-sentinel-accent">
+                {value}
+              </div>
+              <div className="text-[10px] text-sentinel-muted uppercase tracking-wider mt-1">
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* Example triggers */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 max-w-3xl mx-auto">
           {SCENARIO_PRESETS.map(preset => {
@@ -215,21 +234,6 @@ export default function InvestigatePage() {
             )
           })}
         </div>
-      </div>
-
-      {/* Stats footer */}
-      <div className="flex items-center gap-8 mt-16 text-center animate-fade-in" style={{ animationDelay: '0.2s' }}>
-        {[
-          { value: '2M+', label: 'Log Events Analyzed' },
-          { value: '697', label: 'MITRE Techniques' },
-          { value: '~100', label: 'Investigation Time' },
-          { value: '6', label: 'AI Agents' },
-        ].map(({ value, label }) => (
-          <div key={label}>
-            <div className="text-2xl font-bold text-sentinel-accent">{value}</div>
-            <div className="text-xs text-sentinel-muted mt-1">{label}</div>
-          </div>
-        ))}
       </div>
     </div>
   )
