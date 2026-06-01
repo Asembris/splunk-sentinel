@@ -28,33 +28,33 @@ const EXAMPLE_TRIGGERS = [
 const PIPELINE_AGENTS = [
   {
     name: 'Triage',
-    description: 'Classifies alert type and escalation path',
-    dotClass: 'w-2 h-2 rounded-full bg-red-400',
+    description: 'Classifies attack type across APT, ransomware, and insider threat',
+    dotClass: 'w-2 h-2 rounded-full bg-red-400 animate-pulse',
   },
   {
     name: 'Reconstruction',
-    description: 'Builds chronological attack path',
-    dotClass: 'w-2 h-2 rounded-full bg-blue-400',
+    description: 'Rebuilds attack sequence from 2M+ Splunk log events',
+    dotClass: 'w-2 h-2 rounded-full bg-blue-400 animate-pulse',
   },
   {
     name: 'Threat Intel',
-    description: 'Correlates CVEs, IPs, and actor signals',
-    dotClass: 'w-2 h-2 rounded-full bg-amber-400',
+    description: 'Correlates IPs and CVEs against live threat intelligence',
+    dotClass: 'w-2 h-2 rounded-full bg-amber-400 animate-pulse',
   },
   {
     name: 'MITRE Mapping',
-    description: 'Maps evidence to ATT&CK techniques',
-    dotClass: 'w-2 h-2 rounded-full bg-purple-400',
+    description: 'Maps evidence to 697 ATT&CK techniques via RAG',
+    dotClass: 'w-2 h-2 rounded-full bg-purple-400 animate-pulse',
   },
   {
     name: 'Detection Gap',
-    description: 'Finds uncovered techniques and SPL gaps',
-    dotClass: 'w-2 h-2 rounded-full bg-teal-400',
+    description: 'Finds uncovered techniques and generates deployment-ready SPL',
+    dotClass: 'w-2 h-2 rounded-full bg-teal-400 animate-pulse',
   },
   {
     name: 'Report',
-    description: 'Generates analyst-ready investigation record',
-    dotClass: 'w-2 h-2 rounded-full bg-green-400',
+    description: 'Produces analyst-ready PDF with containment and audit trail',
+    dotClass: 'w-2 h-2 rounded-full bg-green-400 animate-pulse',
   },
 ]
 
@@ -154,7 +154,7 @@ export default function InvestigatePage() {
               </span>
             </div>
             <div className="relative">
-              <div className="absolute left-[9px] top-3 bottom-3 w-px bg-sentinel-border" />
+              <div className="absolute left-[9px] top-3 bottom-3 w-px bg-blue-500/30" />
               <div className="space-y-4">
                 {PIPELINE_AGENTS.map(agent => (
                   <div key={agent.name} className="relative flex gap-3">
@@ -162,14 +162,9 @@ export default function InvestigatePage() {
                       <span className={agent.dotClass} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-white leading-tight">
-                          {agent.name}
-                        </h3>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted uppercase tracking-wider">
-                          Ready
-                        </span>
-                      </div>
+                      <h3 className="text-sm font-semibold text-white leading-tight">
+                        {agent.name}
+                      </h3>
                       <p className="text-xs text-sentinel-muted leading-relaxed mt-0.5">
                         {agent.description}
                       </p>
