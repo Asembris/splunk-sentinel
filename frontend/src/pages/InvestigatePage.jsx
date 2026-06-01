@@ -125,7 +125,7 @@ export default function InvestigatePage() {
               onChange={e => setTrigger(e.target.value)}
               placeholder="Describe the security alert or incident trigger..."
               className="w-full bg-sentinel-bg border border-sentinel-border rounded-lg p-4 text-white placeholder-sentinel-muted resize-none focus:outline-none focus:border-sentinel-accent transition-colors text-sm leading-relaxed"
-              rows={4}
+              rows={5}
               onKeyDown={e => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
               }}
@@ -186,7 +186,7 @@ export default function InvestigatePage() {
         </div>
 
         {/* Capability strip */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5 max-w-4xl mx-auto">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6 pt-5 border-t border-sentinel-border/30 max-w-4xl mx-auto">
           {[
             { value: '2M+', label: 'Log Events Analyzed' },
             { value: '697', label: 'MITRE Techniques' },
