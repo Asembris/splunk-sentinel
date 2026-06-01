@@ -4,23 +4,32 @@ import { useInvestigation } from '../store/InvestigationContext'
 import { Shield, Zap, AlertTriangle, User } from 'lucide-react'
 import BrandLogo from '../components/layout/BrandLogo'
 
-const EXAMPLE_TRIGGERS = [
+const SCENARIO_PRESETS = [
   {
+    key: 'apt-ssrf',
     icon: Zap,
     label: 'APT / SSRF',
-    color: 'text-sentinel-danger',
+    iconClass: 'w-4 h-4 text-red-400 shrink-0',
+    borderColor: 'border-red-500/30 hover:border-red-400/70',
+    description: 'AWS metadata endpoint targeted from internal web server — credential theft via SSRF',
     trigger: 'Suspicious outbound requests to AWS metadata endpoint detected from internal web server. Possible SSRF attack leading to IAM credential exposure.',
   },
   {
+    key: 'ransomware',
     icon: AlertTriangle,
     label: 'Ransomware',
-    color: 'text-sentinel-warning',
+    iconClass: 'w-4 h-4 text-amber-400 shrink-0',
+    borderColor: 'border-amber-500/30 hover:border-amber-400/70',
+    description: 'Shadow copy deletion, WMIC lateral movement, and mass file encryption detected',
     trigger: 'High volume of WMIC and cmd.exe process creation detected from non-interactive sessions. Registry modification activity observed across multiple internal hosts.',
   },
   {
+    key: 'insider-threat',
     icon: User,
     label: 'Insider Threat',
-    color: 'text-sentinel-success',
+    iconClass: 'w-4 h-4 text-green-400 shrink-0',
+    borderColor: 'border-green-500/30 hover:border-green-400/70',
+    description: 'Privileged account abuse with anomalous mass file access and EventCode 4673',
     trigger: 'Privileged service abuse detected. Multiple EventCode 4673 entries from single internal account outside business hours. No external communication observed.',
   },
 ]
@@ -177,19 +186,34 @@ export default function InvestigatePage() {
         </div>
 
         {/* Example triggers */}
-        <div className="grid grid-cols-3 gap-3 mt-4 max-w-3xl mx-auto">
-          {EXAMPLE_TRIGGERS.map(({ icon: Icon, label, color, trigger: t }) => (
-            <button
-              key={label}
-              onClick={() => setTrigger(t)}
-              className="flex items-center gap-2 p-3 bg-sentinel-surface border border-sentinel-border hover:border-sentinel-accent rounded-lg text-left transition-colors group"
-            >
-              <Icon className={`w-4 h-4 ${color} flex-shrink-0`} />
-              <span className="text-sm text-sentinel-muted group-hover:text-white transition-colors">
-                {label}
-              </span>
-            </button>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 max-w-3xl mx-auto">
+          {SCENARIO_PRESETS.map(preset => {
+            const Icon = preset.icon
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                onClick={() => setTrigger(preset.trigger)}
+                className={[
+                  'bg-sentinel-surface border rounded-xl p-4 text-left transition-colors cursor-pointer group',
+                  preset.borderColor,
+                ].join(' ')}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className={preset.iconClass} />
+                  <span className="text-sm font-semibold text-white">
+                    {preset.label}
+                  </span>
+                </div>
+                <p className="text-xs text-sentinel-muted leading-relaxed mt-2">
+                  {preset.description}
+                </p>
+                <div className="text-[10px] text-sentinel-accent uppercase tracking-wider mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                  Load scenario
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
