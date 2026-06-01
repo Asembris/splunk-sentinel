@@ -10,16 +10,19 @@ const navItems = [
 ]
 
 const ACTIVE_NAV_LINK_CLASSES =
-  'flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-400/30 text-sm font-semibold bg-sentinel-accent text-white shadow-sm shadow-blue-500/20 transition-all active:scale-[0.98]'
+  'flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-400/30 text-sm font-semibold bg-sentinel-accent text-white shadow-sm shadow-blue-500/20 transition-all duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50'
 
 const INACTIVE_NAV_LINK_CLASSES =
-  'flex items-center gap-2 px-4 py-2 rounded-lg border border-transparent text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 hover:border-blue-500/20 transition-all active:scale-[0.98]'
+  'flex items-center gap-2 px-4 py-2 rounded-lg border border-transparent text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 hover:border-blue-500/20 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50'
 
 export default function Navbar() {
   const location = useLocation()
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-white/10 bg-sentinel-surface/95 px-6 py-3 shadow-lg shadow-black/25 backdrop-blur">
+    <nav
+      aria-label="Main navigation"
+      className="sticky top-0 z-50 border-b border-white/10 bg-sentinel-surface/95 px-6 py-3 shadow-lg shadow-black/25 backdrop-blur"
+    >
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-6">
         <div className="flex items-center gap-3 rounded-xl border border-sentinel-border/60 bg-sentinel-bg/40 px-3 py-2">
           <BrandLogo variant="mark" className="h-9 w-9 shrink-0" />
@@ -27,7 +30,7 @@ export default function Navbar() {
             <span className="text-xl font-bold tracking-tight text-white">
               Splunk <span className="text-sentinel-accent">Sentinel</span>
             </span>
-            <span className="text-xs text-sentinel-muted border border-sentinel-border rounded px-2 py-0.5">
+            <span className="hidden sm:inline-flex text-xs text-sentinel-muted border border-sentinel-border rounded px-2 py-0.5">
               Agentic SOC
             </span>
           </div>
@@ -39,6 +42,7 @@ export default function Navbar() {
               <Link
                 key={path}
                 to={path}
+                aria-current={isActive ? 'page' : undefined}
                 className={
                   isActive
                     ? ACTIVE_NAV_LINK_CLASSES
@@ -46,7 +50,7 @@ export default function Navbar() {
                 }
               >
                 <Icon className="w-4 h-4" />
-                {label}
+                <span className="hidden lg:inline">{label}</span>
               </Link>
             )
           })}
