@@ -3022,8 +3022,12 @@ export default function ReportPage() {
   const confidenceTone = getReportConfidenceTone(confidencePct)
   const confidenceLabel =
     report.confidence?.primary_label || 'Evidence Confidence'
+  const sloReport =
+    report.slo_report ||
+    activeResult?.slo_report ||
+    activeResult?.report_json?.slo_report
   const sloStatus =
-    report.slo_report?.overall_slo_status === 'ALL_MET' ? 'PASS' : 'BREACH'
+    sloReport?.overall_slo_status === 'ALL_MET' ? 'PASS' : 'BREACH'
   const sloTone = REPORT_SLO_TONES[sloStatus] || REPORT_SLO_TONES.BREACH
   const safeContainmentPlan = normalizeContainmentPlan(report.containment_plan)
   const safeMitreTechniques = asArray(report.mitre_techniques_used).filter(
@@ -3100,7 +3104,7 @@ export default function ReportPage() {
                 </div>
                 
                 {/* SLO Status Pill */}
-                {report.slo_report && (
+                {sloReport && (
                   <div className="mt-4 flex justify-end">
                     <button
                       type="button"
@@ -3173,9 +3177,9 @@ export default function ReportPage() {
               splAuditLog={activeResult?.spl_audit_log || []}
             />
           )}
-          {sloExpanded && report.slo_report && (
+          {sloExpanded && sloReport && (
             <SloDetailsPanel
-              sloReport={report.slo_report}
+              sloReport={sloReport}
               sloStatus={sloStatus}
             />
           )}
