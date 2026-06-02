@@ -132,6 +132,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
   const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef(null)
   const chatContainerRef = useRef(null)
+  const inputTextareaRef = useRef(null)
 
   // Sync local plan with props if props change
   useEffect(() => {
@@ -159,6 +160,17 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
   }, [chatMessages])
+
+  // Keep the copilot composer compact for short prompts and readable for long ones.
+  useEffect(() => {
+    const textarea = inputTextareaRef.current
+    if (!textarea) return
+
+    textarea.style.height = 'auto'
+    const nextHeight = Math.min(textarea.scrollHeight, 128)
+    textarea.style.height = `${nextHeight}px`
+    textarea.style.overflowY = textarea.scrollHeight > 128 ? 'auto' : 'hidden'
+  }, [inputValue])
 
   // Fetch initial message and chat history on mount
   useEffect(() => {
@@ -898,19 +910,30 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
               </div>
             )}
             
-            <div className="relative">
-              <input 
-                type="text"
+            <div className="relative rounded-xl border border-sentinel-border bg-sentinel-bg transition-colors focus-within:border-sentinel-accent">
+              <textarea
+                ref={inputTextareaRef}
+                rows={1}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault()
+                    handleSendMessage()
+                  }
+                }}
                 disabled={isStreaming}
                 placeholder={isStreaming ? "AI Copilot is streaming response..." : "Ask Copilot to add/delete/modify actions..."}
-                className="w-full bg-sentinel-bg border border-sentinel-border rounded-xl pl-3 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-sentinel-accent transition-colors disabled:opacity-50"
+                className="block w-full min-h-[44px] max-h-32 resize-none overflow-y-hidden bg-transparent border-0 rounded-xl pl-3 pr-12 py-2.5 text-xs text-white leading-relaxed focus:outline-none disabled:opacity-50 custom-scrollbar"
               />
               <button 
                 type="submit"
                 disabled={isStreaming || !inputValue.trim()}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-sentinel-accent hover:bg-blue-500 text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-sentinel-accent flex items-center justify-center"
+                className="absolute right-2 bottom-2 p-1.5 bg-sentinel-accent hover:bg-blue-500 text-white rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-sentinel-accent flex items-center justify-center"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>
