@@ -182,6 +182,7 @@ export default function MitreTable({ techniques, ttpMappings }) {
           : null
         const totalCves = enriched.reduce((sum, t) => sum + t.cveChips.length, 0)
         const detectionCount = enriched.filter(t => t.hasDetection).length
+        const detectionOpportunities = enriched.length - detectionCount
         return (
           <div className="mb-4 p-3 rounded-lg bg-sentinel-bg border border-sentinel-border">
             <div className="flex items-center justify-between mb-3">
@@ -200,8 +201,18 @@ export default function MitreTable({ techniques, ttpMappings }) {
                   </span>
                 )}
                 <span className="text-xs text-sentinel-muted">
-                  <span className="text-teal-400 font-bold">{detectionCount}</span>/{enriched.length} detection
+                  <span className="text-teal-400 font-bold">{detectionCount}</span> deployed detection{detectionCount !== 1 ? 's' : ''}
                 </span>
+                {detectionOpportunities > 0 && (
+                  <span className="text-xs text-sentinel-muted">
+                    <span className="text-amber-300 font-bold">{detectionOpportunities}</span> detection opportunit{detectionOpportunities !== 1 ? 'ies' : 'y'}
+                  </span>
+                )}
+                {detectionOpportunities === 0 && (
+                  <span className="text-xs text-green-400 font-bold">
+                    full detection coverage
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-0">
