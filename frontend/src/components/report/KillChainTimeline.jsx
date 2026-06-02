@@ -315,7 +315,8 @@ const KillChainTimeline = ({ stages = [] }) => {
   const isFinalImpact = finalStage.name
     ?.toLowerCase()
     .match(/impact|encrypt|exfil|compromise|credential/)
-  const useScroll = normalized.length > 4
+  const isDense = normalized.length > 5 && normalized.length <= 7
+  const useScroll = normalized.length > 7
 
   return (
     <div
@@ -601,7 +602,9 @@ const KillChainTimeline = ({ stages = [] }) => {
                   {/* Telemetry capsule above rail */}
                   <div
                     className={joinClasses(
-                      "w-full p-2.5 rounded-lg",
+                      isDense
+                        ? "w-full h-[116px] overflow-hidden p-2 rounded-lg"
+                        : "w-full h-[132px] overflow-hidden p-2.5 rounded-lg",
                       "bg-sentinel-bg border border-sentinel-border",
                       "border-l-4 opacity-100",
                       tacticStyle.border,
@@ -680,7 +683,9 @@ const KillChainTimeline = ({ stages = [] }) => {
                     )}
 
                     {/* Timestamp - compact */}
-                    {stage.timestamp && stage.timestamp !== "unknown" && (
+                    {!isDense &&
+                      stage.timestamp &&
+                      stage.timestamp !== "unknown" && (
                       <p
                         className="text-xs text-sentinel-muted font-mono mt-1 opacity-75"
                         title={stage.timestamp}
