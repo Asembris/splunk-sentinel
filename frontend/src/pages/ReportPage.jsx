@@ -92,7 +92,7 @@ const COPILOT_MESSAGE_STYLES = {
   userWrapper: 'flex flex-col max-w-[85%] self-end items-end',
   assistantWrapper: 'flex flex-col max-w-[88%] self-start items-start',
   userBubble: 'rounded-2xl rounded-tr-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-accent text-white shadow-sm shadow-blue-500/10 whitespace-pre-wrap break-words',
-  assistantBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-bg/70 border border-sentinel-border text-gray-200 whitespace-pre-wrap break-words',
+  assistantBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-bg/70 border border-sentinel-border text-gray-200 break-words',
   pendingBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-bg/70 border border-blue-500/20 text-sentinel-muted',
   errorBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-red-500/10 border border-red-500/25 text-red-300 whitespace-pre-wrap break-words',
   timestamp: 'text-[9px] text-sentinel-muted mt-1 px-1',
@@ -187,6 +187,53 @@ const renderableCopilotParagraphs = (text = '') => (
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
 )
+
+const COPILOT_RESPONSE_STYLES = {
+  container: 'space-y-2',
+  header: 'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sentinel-muted',
+  headerIcon: 'w-1.5 h-1.5 rounded-full bg-sentinel-accent shrink-0',
+  headerText: 'text-sentinel-muted',
+  section: 'space-y-2',
+  paragraph: 'block whitespace-pre-wrap break-words text-gray-200',
+  bulletList: 'space-y-1.5',
+  bulletItem: 'flex items-start gap-2 text-gray-200',
+  bulletDot: 'w-1.5 h-1.5 rounded-full bg-sentinel-accent/80 shrink-0 mt-1.5',
+  mutedMeta: 'text-[10px] text-sentinel-muted',
+}
+
+const parseCopilotResponseBlocks = (text = '') => {
+  const normalized = normalizeCopilotMessageText(text)
+  if (!normalized) return []
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((section) => section.trim())
+    .filter(Boolean)
+    .map((section) => {
+      const lines = section
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+      const bulletItems = lines
+        .map((line) => {
+          const bulletMatch = line.match(/^(?:[-*]\s+|\d+\.\s+)(.+)$/)
+          return bulletMatch?.[1]?.trim() || null
+        })
+        .filter(Boolean)
+
+      if (bulletItems.length >= 2 && bulletItems.length === lines.length) {
+        return {
+          type: 'bullets',
+          items: bulletItems,
+        }
+      }
+
+      return {
+        type: 'paragraph',
+        text: section,
+      }
+    })
+}
 
 class RouteSectionErrorBoundary extends Component {
   constructor(props) {
@@ -956,6 +1003,14 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                 )
                   ? renderableCopilotParagraphs(normalizedAssistantText)
                   : []
+                const responseBlocks = (
+                  !isUserMessage &&
+                  !isPendingAssistant &&
+                  !isErrorAssistant &&
+                  !isActiveStreamingMessage
+                )
+                  ? parseCopilotResponseBlocks(normalizedAssistantText)
+                  : []
                 const wrapperClass = isUserMessage
                   ? COPILOT_MESSAGE_STYLES.userWrapper
                   : COPILOT_MESSAGE_STYLES.assistantWrapper
@@ -1049,16 +1104,54 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                         )}
                       </div>
                     ) : (
-                      <div className={COPILOT_ACTION_SUMMARY_STYLES.paragraphStack}>
-                        {assistantParagraphs.map((paragraph, paragraphIdx) => (
-                          <span
-                            key={`${msg.id || i}-paragraph-${paragraphIdx}`}
-                            className={COPILOT_ACTION_SUMMARY_STYLES.paragraph}
-                          >
-                            {paragraph}
-                          </span>
-                        ))}
-                      </div>
+                      isActiveStreamingMessage ? (
+                        <div className={COPILOT_ACTION_SUMMARY_STYLES.paragraphStack}>
+                          {assistantParagraphs.map((paragraph, paragraphIdx) => (
+                            <span
+                              key={`${msg.id || i}-paragraph-${paragraphIdx}`}
+                              className={COPILOT_ACTION_SUMMARY_STYLES.paragraph}
+                            >
+                              {paragraph}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className={COPILOT_RESPONSE_STYLES.container}>
+                          <div className={COPILOT_RESPONSE_STYLES.header}>
+                            <span className={COPILOT_RESPONSE_STYLES.headerIcon} />
+                            <span className={COPILOT_RESPONSE_STYLES.headerText}>
+                              Containment guidance
+                            </span>
+                          </div>
+                          <div className={COPILOT_RESPONSE_STYLES.section}>
+                            {responseBlocks.map((block, blockIdx) => (
+                              block.type === 'bullets' ? (
+                                <div
+                                  key={`${msg.id || i}-block-${blockIdx}`}
+                                  className={COPILOT_RESPONSE_STYLES.bulletList}
+                                >
+                                  {block.items.map((item, itemIdx) => (
+                                    <div
+                                      key={`${msg.id || i}-block-${blockIdx}-item-${itemIdx}`}
+                                      className={COPILOT_RESPONSE_STYLES.bulletItem}
+                                    >
+                                      <span className={COPILOT_RESPONSE_STYLES.bulletDot} />
+                                      <span className="min-w-0">{item}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span
+                                  key={`${msg.id || i}-block-${blockIdx}`}
+                                  className={COPILOT_RESPONSE_STYLES.paragraph}
+                                >
+                                  {block.text}
+                                </span>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      )
                     )}
                     
                     {/* Legacy singular render for old messages */}
