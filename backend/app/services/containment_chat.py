@@ -111,6 +111,13 @@ CRITICAL RULES:
 - After all tool executions are complete, write a conversational response summarizing the successful actions and any errors that occurred (based on the tool execution results).
 """
 
+_CONTAINMENT_RESPONSE_FORMAT_INSTRUCTION = (
+    "Never use markdown headings like ###, never use bold markers like **, "
+    "never use bullet dashes for prose explanations. Use plain sentences only. "
+    "For action lists, use numbered format with plain labels like Type:, "
+    "Target:, Status:, Description: on separate lines."
+)
+
 def get_initial_chat_message() -> dict:
     """
     Generates the deterministic initial assistant message.
@@ -181,6 +188,11 @@ CRITICAL RULES:
         fallback=_CONTAINMENT_REFINEMENT_FALLBACK,
         containment_plan=containment_plan_str,
     )
+    if _CONTAINMENT_RESPONSE_FORMAT_INSTRUCTION not in system_prompt:
+        system_prompt = (
+            f"{system_prompt.rstrip()}\n\n"
+            f"{_CONTAINMENT_RESPONSE_FORMAT_INSTRUCTION}"
+        )
 
     messages = [SystemMessage(content=system_prompt)]
     

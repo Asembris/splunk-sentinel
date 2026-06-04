@@ -100,7 +100,23 @@ const COPILOT_MESSAGE_STYLES = {
 
 const normalizeCopilotMessageText = (text = '') => (
   String(text)
+    .replace(/#{3,6}\s*/g, '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+)
+
+const sanitizeCopilotDisplayText = (text = '') => (
+  normalizeCopilotMessageText(text)
+    .split(/\r?\n/)
+    .map((line) => (
+      line
+        .replace(/^#{1,6}\s*/, '')
+        .replace(/\*\*/g, '')
+        .trimEnd()
+    ))
+    .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 )
@@ -182,7 +198,7 @@ const parseCopilotActionSummary = (text = '') => {
 }
 
 const renderableCopilotParagraphs = (text = '') => (
-  normalizeCopilotMessageText(text)
+  sanitizeCopilotDisplayText(text)
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
@@ -202,10 +218,10 @@ const COPILOT_RESPONSE_STYLES = {
 }
 
 const parseCopilotResponseBlocks = (text = '') => {
-  const normalized = normalizeCopilotMessageText(text)
+  const normalized = sanitizeCopilotDisplayText(text)
   if (!normalized) return []
 
-  return normalized
+  const blocks = normalized
     .split(/\n{2,}/)
     .map((section) => section.trim())
     .filter(Boolean)
@@ -233,6 +249,12 @@ const parseCopilotResponseBlocks = (text = '') => {
         text: section,
       }
     })
+
+  const hasStructuredBlock = blocks.some((block) => (
+    block.type === 'bullets' && block.items.length >= 2
+  ))
+
+  return hasStructuredBlock ? blocks : []
 }
 
 class RouteSectionErrorBoundary extends Component {
@@ -1115,7 +1137,7 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                             </span>
                           ))}
                         </div>
-                      ) : (
+                      ) : responseBlocks.length > 0 ? (
                         <div className={COPILOT_RESPONSE_STYLES.container}>
                           <div className={COPILOT_RESPONSE_STYLES.header}>
                             <span className={COPILOT_RESPONSE_STYLES.headerIcon} />
@@ -1150,6 +1172,17 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                               )
                             ))}
                           </div>
+                        </div>
+                      ) : (
+                        <div className={COPILOT_ACTION_SUMMARY_STYLES.paragraphStack}>
+                          {assistantParagraphs.map((paragraph, paragraphIdx) => (
+                            <span
+                              key={`${msg.id || i}-paragraph-${paragraphIdx}`}
+                              className={COPILOT_ACTION_SUMMARY_STYLES.paragraph}
+                            >
+                              {paragraph}
+                            </span>
+                          ))}
                         </div>
                       )
                     )}
