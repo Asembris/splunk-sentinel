@@ -105,6 +105,89 @@ const normalizeCopilotMessageText = (text = '') => (
     .trim()
 )
 
+const COPILOT_ACTION_SUMMARY_STYLES = {
+  intro: 'text-sentinel-muted mb-2 block',
+  outro: 'text-sentinel-muted mt-2 block',
+  list: 'mt-2 space-y-2',
+  card: 'rounded-lg border border-sentinel-border bg-sentinel-surface/60 p-2',
+  header: 'text-[11px] font-bold text-white leading-snug mb-1.5',
+  metaGrid: 'grid grid-cols-1 gap-1.5',
+  label: 'text-[9px] text-sentinel-muted uppercase tracking-wider',
+  chip: 'text-[10px] font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted',
+  target: 'text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-300 break-all',
+  status: 'text-[10px] font-mono px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted',
+  description: 'text-[10px] text-sentinel-muted leading-relaxed mt-1.5',
+  paragraphStack: 'space-y-2',
+  paragraph: 'block whitespace-pre-wrap break-words',
+}
+
+const parseCopilotActionSummary = (text = '') => {
+  const normalized = normalizeCopilotMessageText(text)
+  if (!normalized) return null
+
+  const lines = normalized
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const firstActionIndex = lines.findIndex((line) => /^\d+\.\s+/.test(line))
+  if (firstActionIndex < 0) return null
+
+  const actions = []
+  const intro = lines.slice(0, firstActionIndex).join('\n')
+  let currentAction = null
+
+  lines.slice(firstActionIndex).forEach((line) => {
+    const actionMatch = line.match(/^(\d+)\.\s+(.+)$/)
+    if (actionMatch) {
+      currentAction = {
+        title: actionMatch[2].trim(),
+        type: '',
+        target: '',
+        description: '',
+        status: '',
+      }
+      actions.push(currentAction)
+      return
+    }
+
+    if (!currentAction) return
+
+    const fieldMatch = line.match(/^-\s*(Type|Target|Description|Status):\s*(.+)$/i)
+    if (fieldMatch) {
+      const key = fieldMatch[1].toLowerCase()
+      const value = fieldMatch[2].trim()
+      if (key === 'type') currentAction.type = value
+      if (key === 'target') currentAction.target = value
+      if (key === 'description') currentAction.description = value
+      if (key === 'status') currentAction.status = value
+      return
+    }
+
+    if (currentAction.description) {
+      currentAction.description = `${currentAction.description} ${line}`.trim()
+    } else {
+      currentAction.description = line
+    }
+  })
+
+  const validActions = actions.filter((action) => action.title)
+  if (validActions.length < 1) return null
+
+  return {
+    intro,
+    actions: validActions,
+    outro: '',
+  }
+}
+
+const renderableCopilotParagraphs = (text = '') => (
+  normalizeCopilotMessageText(text)
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+)
+
 class RouteSectionErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -853,6 +936,26 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                     'Error connecting to Sentinel Copilot'
                   )
                 )
+                const isActiveStreamingMessage = (
+                  !isUserMessage &&
+                  isStreaming &&
+                  i === chatMessages.length - 1
+                )
+                const actionSummary = (
+                  !isUserMessage &&
+                  !isPendingAssistant &&
+                  !isErrorAssistant &&
+                  !isActiveStreamingMessage
+                )
+                  ? parseCopilotActionSummary(normalizedAssistantText)
+                  : null
+                const assistantParagraphs = (
+                  !isUserMessage &&
+                  !isPendingAssistant &&
+                  !isErrorAssistant
+                )
+                  ? renderableCopilotParagraphs(normalizedAssistantText)
+                  : []
                 const wrapperClass = isUserMessage
                   ? COPILOT_MESSAGE_STYLES.userWrapper
                   : COPILOT_MESSAGE_STYLES.assistantWrapper
@@ -883,8 +986,79 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                       </span>
                     ) : isUserMessage ? (
                       msg.text
+                    ) : actionSummary ? (
+                      <div>
+                        {actionSummary.intro && (
+                          <span className={COPILOT_ACTION_SUMMARY_STYLES.intro}>
+                            {actionSummary.intro}
+                          </span>
+                        )}
+                        <div className={COPILOT_ACTION_SUMMARY_STYLES.list}>
+                          {actionSummary.actions.map((action, actionIdx) => (
+                            <div
+                              key={`${msg.id || i}-action-${actionIdx}`}
+                              className={COPILOT_ACTION_SUMMARY_STYLES.card}
+                            >
+                              <div className={COPILOT_ACTION_SUMMARY_STYLES.header}>
+                                {action.title}
+                              </div>
+                              <div className={COPILOT_ACTION_SUMMARY_STYLES.metaGrid}>
+                                {action.type && (
+                                  <div>
+                                    <div className={COPILOT_ACTION_SUMMARY_STYLES.label}>
+                                      Type
+                                    </div>
+                                    <span className={COPILOT_ACTION_SUMMARY_STYLES.chip}>
+                                      {action.type}
+                                    </span>
+                                  </div>
+                                )}
+                                {action.target && (
+                                  <div>
+                                    <div className={COPILOT_ACTION_SUMMARY_STYLES.label}>
+                                      Target
+                                    </div>
+                                    <span className={COPILOT_ACTION_SUMMARY_STYLES.target}>
+                                      {action.target}
+                                    </span>
+                                  </div>
+                                )}
+                                {action.status && (
+                                  <div>
+                                    <div className={COPILOT_ACTION_SUMMARY_STYLES.label}>
+                                      Status
+                                    </div>
+                                    <span className={COPILOT_ACTION_SUMMARY_STYLES.status}>
+                                      {action.status}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              {action.description && (
+                                <p className={COPILOT_ACTION_SUMMARY_STYLES.description}>
+                                  {action.description}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {actionSummary.outro && (
+                          <span className={COPILOT_ACTION_SUMMARY_STYLES.outro}>
+                            {actionSummary.outro}
+                          </span>
+                        )}
+                      </div>
                     ) : (
-                      normalizedAssistantText
+                      <div className={COPILOT_ACTION_SUMMARY_STYLES.paragraphStack}>
+                        {assistantParagraphs.map((paragraph, paragraphIdx) => (
+                          <span
+                            key={`${msg.id || i}-paragraph-${paragraphIdx}`}
+                            className={COPILOT_ACTION_SUMMARY_STYLES.paragraph}
+                          >
+                            {paragraph}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     
                     {/* Legacy singular render for old messages */}
