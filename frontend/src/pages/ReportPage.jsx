@@ -88,6 +88,23 @@ const normalizeContainmentPlan = (plan) => {
   }
 }
 
+const COPILOT_MESSAGE_STYLES = {
+  userWrapper: 'flex flex-col max-w-[85%] self-end items-end',
+  assistantWrapper: 'flex flex-col max-w-[88%] self-start items-start',
+  userBubble: 'rounded-2xl rounded-tr-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-accent text-white shadow-sm shadow-blue-500/10 whitespace-pre-wrap break-words',
+  assistantBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-bg/70 border border-sentinel-border text-gray-200 whitespace-pre-wrap break-words',
+  pendingBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-sentinel-bg/70 border border-blue-500/20 text-sentinel-muted',
+  errorBubble: 'rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed bg-red-500/10 border border-red-500/25 text-red-300 whitespace-pre-wrap break-words',
+  timestamp: 'text-[9px] text-sentinel-muted mt-1 px-1',
+}
+
+const normalizeCopilotMessageText = (text = '') => (
+  String(text)
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+)
+
 class RouteSectionErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -815,19 +832,60 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                 <p className="text-xs">Initializing refinement chat...</p>
               </div>
             ) : (
-              chatMessages.map((msg, i) => (
+              chatMessages.map((msg, i) => {
+                const isUserMessage = msg.sender === 'user'
+                const normalizedAssistantText = isUserMessage
+                  ? ''
+                  : normalizeCopilotMessageText(msg.text)
+                const isPendingAssistant = (
+                  !isUserMessage &&
+                  !normalizedAssistantText &&
+                  isStreaming
+                )
+                const isEmptyAssistant = (
+                  !isUserMessage &&
+                  !normalizedAssistantText &&
+                  !isStreaming
+                )
+                const isErrorAssistant = (
+                  !isUserMessage &&
+                  normalizedAssistantText.startsWith(
+                    'Error connecting to Sentinel Copilot'
+                  )
+                )
+                const wrapperClass = isUserMessage
+                  ? COPILOT_MESSAGE_STYLES.userWrapper
+                  : COPILOT_MESSAGE_STYLES.assistantWrapper
+                const bubbleClass = isUserMessage
+                  ? COPILOT_MESSAGE_STYLES.userBubble
+                  : isPendingAssistant
+                  ? COPILOT_MESSAGE_STYLES.pendingBubble
+                  : isErrorAssistant
+                  ? COPILOT_MESSAGE_STYLES.errorBubble
+                  : COPILOT_MESSAGE_STYLES.assistantBubble
+
+                return (
                 <div 
                   key={msg.id || i}
-                  className={`flex flex-col max-w-[85%] ${msg.sender === 'user' ? 'self-end items-end' : 'self-start items-start'}`}
+                  className={wrapperClass}
                 >
-                  <div 
-                    className={`rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
-                      msg.sender === 'user'
-                        ? 'bg-sentinel-accent text-white rounded-tr-none'
-                        : 'bg-sentinel-bg/60 border border-sentinel-border text-gray-200 rounded-tl-none'
-                    }`}
-                  >
-                    {msg.text}
+                  <div className={bubbleClass}>
+                    {isPendingAssistant ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-sentinel-accent shrink-0" />
+                        <span>
+                          Sentinel Copilot is composing containment guidance
+                        </span>
+                      </span>
+                    ) : isEmptyAssistant ? (
+                      <span className="text-sentinel-muted">
+                        No copilot response returned.
+                      </span>
+                    ) : isUserMessage ? (
+                      msg.text
+                    ) : (
+                      normalizedAssistantText
+                    )}
                     
                     {/* Legacy singular render for old messages */}
                     {msg.added_action && !msg.added_actions?.length && (
@@ -893,11 +951,12 @@ function ContainmentPlanPanel({ investigationId, plan, onUpdate }) {
                       </div>
                     ))}
                   </div>
-                  <span className="text-[9px] text-sentinel-muted mt-1 px-1">
+                  <span className={COPILOT_MESSAGE_STYLES.timestamp}>
                     {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                   </span>
                 </div>
-              ))
+                )
+              })
             )}
             <div ref={messagesEndRef} />
           </div>
