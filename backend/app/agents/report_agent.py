@@ -176,6 +176,17 @@ async def report_agent(state: AgentState, config=None) -> AgentState:
         updates["slo_report"] = {}
         updates["slo_breaches"] = []
 
+    # Idempotency guard: if report_agent already completed on a prior run,
+    # skip all side-effectful steps to prevent duplicate PDF, Supabase upsert,
+    # MLTK task, and Splunk notable event.
+    if state.get("supabase_record_id"):
+        logger.info(
+            "[%s] report_agent already completed (supabase_record_id=%s) — skipping side effects on resume",
+            investigation_id,
+            state.get("supabase_record_id"),
+        )
+        return {}
+
     # ── STEP 2: Generate PDF ─────────────────────────────────────────
     try:
         # Pass updates into generate_pdf so it has SLO data if needed

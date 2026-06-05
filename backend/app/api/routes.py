@@ -343,6 +343,40 @@ async def investigate(request: Request, body: InvestigateRequest):
     return JSONResponse(content=final_state)
 
 
+@router.get("/investigations/{investigation_id}/checkpoint-status")
+async def get_checkpoint_status(investigation_id: str):
+    """
+    Returns whether a checkpoint exists for this investigation_id.
+    Used to verify checkpointing is working and to enable resume demo.
+    """
+    try:
+        graph = get_graph()
+        config = {"configurable": {"thread_id": investigation_id}}
+        state = await graph.aget_state(config)
+        if state and state.values:
+            completed_nodes = list(state.values.keys())
+            return {
+                "investigation_id": investigation_id,
+                "checkpoint_exists": True,
+                "completed_fields": len(completed_nodes),
+                "next": list(state.next) if state.next else [],
+                "is_complete": len(state.next) == 0,
+            }
+        return {
+            "investigation_id": investigation_id,
+            "checkpoint_exists": False,
+            "completed_fields": 0,
+            "next": [],
+            "is_complete": False,
+        }
+    except Exception as e:
+        return {
+            "investigation_id": investigation_id,
+            "checkpoint_exists": False,
+            "error": str(e),
+        }
+
+
 
 # ---------------------------------------------------------------------------
 # GET /api/health
