@@ -67,3 +67,39 @@ def test_agent_state_has_supabase_record_id_field():
     import typing
     hints = typing.get_type_hints(AgentState)
     assert "supabase_record_id" in hints
+
+
+@pytest.mark.asyncio
+async def test_resume_endpoint_returns_404_for_unknown_id():
+    """Resume endpoint should return 404 when no checkpoint exists."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as client:
+        response = client.post("/api/investigations/nonexistent-resume-id-99999/resume")
+    assert response.status_code == 404
+    data = response.json()
+    assert "No checkpoint found" in data["detail"]
+
+
+@pytest.mark.asyncio
+async def test_resume_endpoint_returns_already_complete_for_finished_investigation():
+    """Resume endpoint should return already_complete for a finished investigation."""
+    from fastapi.testclient import TestClient
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.main import app
+
+    mock_state = MagicMock()
+    mock_state.values = {"field1": "val1", "field2": "val2"}
+    mock_state.next = ()  # Empty tuple means complete
+
+    with patch("app.api.routes.get_graph") as mock_get_graph:
+        mock_graph = MagicMock()
+        mock_graph.aget_state = AsyncMock(return_value=mock_state)
+        mock_get_graph.return_value = mock_graph
+
+        client = TestClient(app)
+        response = client.post("/api/investigations/test-complete-id/resume")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "already_complete"
+        assert data["investigation_id"] == "test-complete-id"

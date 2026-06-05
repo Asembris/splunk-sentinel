@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -375,6 +375,139 @@ async def get_checkpoint_status(investigation_id: str):
             "checkpoint_exists": False,
             "error": str(e),
         }
+
+
+async def _stream_resume(investigation_id: str, next_nodes: tuple) -> AsyncGenerator[dict, None]:
+    """
+    Stream a resumed investigation from checkpoint.
+    Passes None as input so LangGraph resumes from last checkpoint.
+    """
+    queue = asyncio.Queue()
+    final_state_container = {}
+
+    async def progress_callback(event_data):
+        await queue.put(event_data)
+
+    async def run_resume():
+        try:
+            async for chunk in get_graph().astream(
+                None,
+                config={
+                    "run_name": "Investigation Resume",
+                    "configurable": {
+                        "thread_id": investigation_id,
+                        "progress_callback": progress_callback,
+                    }
+                }
+            ):
+                for node_name, node_state in chunk.items():
+                    final_state_container.update(node_state)
+                    await queue.put({
+                        "event": "progress",
+                        "stage": node_name,
+                        "investigation_id": investigation_id,
+                        "resumed": True,
+                    })
+            await queue.put({"event": "complete"})
+        except Exception as e:
+            logger.error("[%s] Resume graph error: %s", investigation_id, e)
+            await queue.put({"event": "error", "error": str(e)})
+
+    task = asyncio.create_task(run_resume())
+
+    yield {
+        "event": "progress",
+        "data": json.dumps({
+            "stage": "resuming",
+            "investigation_id": investigation_id,
+            "resuming_from": list(next_nodes),
+        })
+    }
+
+    while True:
+        item = await queue.get()
+        event_type = item.get("event")
+        if event_type == "complete":
+            await task
+            yield {
+                "event": "complete",
+                "data": json.dumps(final_state_container)
+            }
+            break
+        elif event_type == "error":
+            yield {
+                "event": "error",
+                "data": json.dumps({
+                    "error": item.get("error"),
+                    "investigation_id": investigation_id
+                })
+            }
+            break
+        else:
+            yield {
+                "event": event_type,
+                "data": json.dumps(item)
+            }
+
+
+@router.post("/investigations/{investigation_id}/resume")
+async def resume_investigation(investigation_id: str, request: Request):
+    """
+    Resume an investigation from its last checkpoint.
+    Passes None as input to LangGraph so checkpointed state takes precedence.
+    Only works if a checkpoint exists and the investigation is not yet complete.
+    If investigation is already complete, returns the existing Supabase record.
+    """
+    try:
+        graph = get_graph()
+        config = {"configurable": {"thread_id": investigation_id}}
+
+        # Check checkpoint state first
+        state = await graph.aget_state(config)
+
+        if not state or not state.values:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No checkpoint found for investigation {investigation_id}"
+            )
+
+        # If already complete, return existing report location
+        if len(state.next) == 0:
+            return {
+                "investigation_id": investigation_id,
+                "status": "already_complete",
+                "message": "Investigation already completed. View report at /report/{investigation_id}",
+                "completed_fields": len(state.values.keys()),
+            }
+
+        # Investigation is incomplete - resume from checkpoint
+        # Pass None as input so LangGraph uses checkpointed state
+        accept = request.headers.get("accept", "")
+        if "text/event-stream" in accept:
+            return StreamingResponse(
+                _stream_resume(investigation_id, state.next),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
+        # Non-streaming resume
+        final_state = await graph.ainvoke(
+            None,
+            config={
+                "run_name": "Investigation Resume",
+                "configurable": {"thread_id": investigation_id},
+            }
+        )
+        return JSONResponse(content=final_state)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[%s] Resume failed: %s", investigation_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 
