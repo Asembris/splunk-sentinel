@@ -201,7 +201,7 @@ async def run_investigation_from_webhook(
     Background task: runs the full investigation pipeline.
     Called after the webhook endpoint returns 202 Accepted.
     """
-    from app.graph.investigation_graph import compiled_graph
+    from app.graph.investigation_graph import get_graph
     from app.models.state import AgentState
 
     logger.info(
@@ -251,11 +251,12 @@ async def run_investigation_from_webhook(
         config = {
             "configurable": {
                 "investigation_id": investigation_id,
+                "thread_id": investigation_id,
             }
         }
         
         # Run the full pipeline
-        final_state = await compiled_graph.ainvoke(
+        final_state = await get_graph().ainvoke(
             initial_state,
             config=config,
         )

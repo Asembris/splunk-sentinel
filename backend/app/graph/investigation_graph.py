@@ -14,10 +14,12 @@ Current graph (Phase 4 - Triage + Reconstruction + Parallel Enrichment + Synthes
 """
 
 import logging
+import os
 from typing import Union, Literal
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.constants import Send
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.agents.synthesis_agent import synthesis_agent
 from app.agents.threat_intel_agent import threat_intel_agent
@@ -242,8 +244,30 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-compiled_graph = _build_graph().compile()
-logger.info(
-    "Investigation graph compiled "
-    "(Phase 4 — triage + reconstruction + parallel intel + synthesis)."
-)
+_checkpointer_context = None
+_checkpointer: AsyncSqliteSaver | None = None
+_compiled_graph = None
+
+
+async def init_graph():
+    global _checkpointer_context, _checkpointer, _compiled_graph
+    if _compiled_graph is not None:
+        return _compiled_graph
+
+    db_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "checkpoints.db"
+    )
+    _checkpointer_context = AsyncSqliteSaver.from_conn_string(db_path)
+    _checkpointer = await _checkpointer_context.__aenter__()
+    _compiled_graph = _build_graph().compile(checkpointer=_checkpointer)
+    logger.info(
+        "Investigation graph compiled "
+        "(Phase 4 — triage + reconstruction + parallel intel + synthesis)."
+    )
+    return _compiled_graph
+
+
+def get_graph():
+    if _compiled_graph is None:
+        raise RuntimeError("Graph not initialized. Call init_graph() first.")
+    return _compiled_graph

@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from app.graph.investigation_graph import compiled_graph
+from app.graph.investigation_graph import get_graph
 from app.models.state import AgentState
 from app.tools.splunk_tools import SplunkClient
 from app.services.supabase_client import (
@@ -157,11 +157,14 @@ async def _stream_investigation(initial_state: AgentState) -> AsyncGenerator[dic
 
     async def run_graph():
         try:
-            async for chunk in compiled_graph.astream(
+            async for chunk in get_graph().astream(
                 initial_state, 
                 config={
                     "run_name": "Investigation Pipeline",
-                    "configurable": {"progress_callback": progress_callback}
+                    "configurable": {
+                        "thread_id": investigation_id,
+                        "progress_callback": progress_callback,
+                    }
                 }
             ):
                 for node_name, node_state in chunk.items():
@@ -300,9 +303,12 @@ async def investigate(request: Request, body: InvestigateRequest):
 
     # Non-streaming path: await full graph execution
     try:
-        final_state: AgentState = await compiled_graph.ainvoke(
+        final_state: AgentState = await get_graph().ainvoke(
             initial_state,
-            config={"run_name": "Triage Agent"}
+            config={
+                "run_name": "Triage Agent",
+                "configurable": {"thread_id": investigation_id},
+            }
         )
     except Exception as exc:
         logger.error(

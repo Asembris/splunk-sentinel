@@ -21,3 +21,5 @@ openai>=1.0.0
 reportlab==4.2.2
 truststore==0.10.4
 langfuse==3.14.6
+langgraph-checkpoint-sqlite==2.0.10
+aiosqlite==0.21.0

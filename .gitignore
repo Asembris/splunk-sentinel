@@ -66,3 +66,6 @@ backend/reports/*.pdf
 skills-lock.json
 .agents/
 backend/scratch/
+backend/checkpoints.db
+backend/checkpoints.db-shm
+backend/checkpoints.db-wal

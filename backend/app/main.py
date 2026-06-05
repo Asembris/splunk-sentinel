@@ -28,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
+from app.graph.investigation_graph import init_graph
 from app.utils.prompt_loader import validate_prompts_on_startup
 
 # ---------------------------------------------------------------------------
@@ -105,6 +106,8 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.critical("Configuration error: %s", exc)
         raise
+
+    await init_graph()
 
     # Test Splunk connection
     try:
