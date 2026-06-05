@@ -139,7 +139,7 @@ async def semantic_search_with_fallback(
             collection_name
         )
         try:
-            scroll_results, _ = await _qdrant_client.scroll(
+            scroll_results, _ = await _get_qdrant().scroll(
                 collection_name=collection_name,
                 limit=top_k,
                 with_payload=True,
