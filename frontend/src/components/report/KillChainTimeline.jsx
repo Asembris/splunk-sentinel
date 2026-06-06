@@ -303,6 +303,41 @@ const splitTimelineRows = (stages) => {
   return [stages.slice(0, 5), stages.slice(5)]
 }
 
+const extractEvidenceHighlight = (evidence) => {
+  if (!evidence) return null
+
+  const ipMatch = evidence.match(
+    /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
+  )
+  const eventCodeMatch = evidence.match(/EventCode\s+(\d{4,5})/i)
+  const processMatch = evidence.match(/\b(\w+\.exe)\b/i)
+  const uriMatch = evidence.match(/(\/[\w\-./]{8,40})/)
+  const credMatch = evidence.match(
+    /\b(EC2InstanceRole|AccessKey|SecretKey|IAM\w+)\b/i
+  )
+
+  if (ipMatch?.[1]) {
+    return {
+      label: ipMatch[1] === "169.254.169.254" ? "Meta IP" : "IP",
+      value: ipMatch[1],
+    }
+  }
+  if (eventCodeMatch?.[1]) {
+    return { label: "EventCode", value: eventCodeMatch[1] }
+  }
+  if (processMatch?.[1]) {
+    return { label: "Process", value: processMatch[1] }
+  }
+  if (uriMatch?.[1]) {
+    return { label: "URI", value: uriMatch[1] }
+  }
+  if (credMatch?.[1]) {
+    return { label: "Credential", value: credMatch[1] }
+  }
+
+  return null
+}
+
 const joinClasses = (...classes) => classes.filter(Boolean).join(" ")
 
 // --------------- Main Component ---------------
@@ -513,34 +548,7 @@ const KillChainTimeline = ({ stages = [] }) => {
               tacticStyle.badge
             )
 
-            let highlight = null
-            if (stage.evidence) {
-              const ipMatch = stage.evidence.match(
-                /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
-              )
-              const eventCodeMatch = stage.evidence.match(
-                /EventCode\s+(\d{4,5})/i
-              )
-              const processMatch = stage.evidence.match(
-                /\b(\w+\.exe)\b/i
-              )
-              const uriMatch = stage.evidence.match(
-                /(\/[\w\-./]{8,40})/
-              )
-              const credMatch = stage.evidence.match(
-                /\b(EC2InstanceRole|AccessKey|SecretKey|IAM\w+)\b/i
-              )
-              if (ipMatch?.[1]) highlight = ipMatch[1]
-              else if (eventCodeMatch?.[1]) {
-                highlight = "EventCode " + eventCodeMatch[1]
-              } else if (processMatch?.[1]) {
-                highlight = processMatch[1]
-              } else if (uriMatch?.[1]) {
-                highlight = uriMatch[1]
-              } else if (credMatch?.[1]) {
-                highlight = credMatch[1]
-              }
-            }
+            const highlight = extractEvidenceHighlight(stage.evidence)
 
             return (
               <React.Fragment key={stage.originalIndex}>
@@ -622,12 +630,13 @@ const KillChainTimeline = ({ stages = [] }) => {
                     {highlight && (
                       <div className="mt-1">
                         <span
-                          className="text-xs px-1 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 block truncate"
-                          title={highlight}
+                          className="text-[10px] px-1 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 block whitespace-nowrap overflow-hidden"
+                          title={`${highlight.label}: ${highlight.value}`}
                         >
-                          {highlight.length > 24
-                            ? highlight.slice(0, 24) + "..."
-                            : highlight}
+                          <span className="text-sentinel-muted">
+                            {highlight.label}:{" "}
+                          </span>
+                          {highlight.value}
                         </span>
                       </div>
                     )}
