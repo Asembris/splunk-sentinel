@@ -460,7 +460,7 @@ const KillChainTimeline = ({ stages = [] }) => {
         {/* Row 1: Title left, chips right */}
         <div className="flex flex-row items-start justify-between gap-3">
           {/* Left: title + subtitle */}
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
               <h3 className="text-sm font-bold text-white tracking-wide">
@@ -518,7 +518,7 @@ const KillChainTimeline = ({ stages = [] }) => {
 
         {/* Row 2: Full-width story strip */}
         {normalized.length >= 2 && (
-          <div className="flex items-center gap-1.5 flex-wrap ml-4">
+          <div className="flex items-center gap-1.5 flex-wrap ml-4 min-w-0">
             <span className="text-xs text-sentinel-muted uppercase tracking-wider font-medium shrink-0">
               Path
             </span>
@@ -735,9 +735,9 @@ const KillChainTimeline = ({ stages = [] }) => {
 
                     {/* Forensic highlight chip */}
                     {highlight && (
-                      <div className="mt-1">
+                      <div className="mt-1 min-w-0">
                         <span
-                          className="text-[10px] px-1 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 block whitespace-nowrap overflow-hidden"
+                          className="text-[10px] px-1 py-0.5 rounded font-mono bg-sentinel-surface border border-sentinel-border text-blue-300 block truncate"
                           title={`${highlight.label}: ${highlight.value}`}
                         >
                           <span className="text-sentinel-muted">
