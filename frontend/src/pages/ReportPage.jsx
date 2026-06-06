@@ -2640,6 +2640,26 @@ function DetectionGapPanel({ investigationId }) {
     return 'border-red-500/30 text-red-400 bg-red-500/5'
   }
 
+  const formatMatchConfidence = (confidence) => {
+    if (!confidence || confidence === 'NONE') return 'Uncertain'
+    return confidence
+  }
+
+  const coveredTechniques = (gaps?.covered_techniques || []).filter(
+    tech => tech.match_confidence === 'HIGH' || tech.match_confidence === 'MEDIUM'
+  )
+  const legacyWeakMatches = (gaps?.covered_techniques || []).filter(
+    tech => tech.match_confidence !== 'HIGH' && tech.match_confidence !== 'MEDIUM'
+  )
+  const weakMatches = [...(gaps?.weak_matches || []), ...legacyWeakMatches]
+  const detectionGaps = gaps?.gaps || []
+  const coveredCount = coveredTechniques.length
+  const weakMatchCount = weakMatches.length
+  const gapCount = detectionGaps.length
+  const displayedCoverageScore = gaps?.techniques_analyzed > 0
+    ? coveredCount / gaps.techniques_analyzed
+    : gaps?.coverage_score ?? 0
+
   return (
     <div
       className="mt-8 border border-sentinel-border rounded-2xl bg-sentinel-surface overflow-hidden"
@@ -2669,8 +2689,8 @@ function DetectionGapPanel({ investigationId }) {
                                rounded border ${labelBg(gaps.coverage_label)}`}>
                 {gaps.coverage_label}
               </span>
-              <span className={`text-xs font-mono font-bold ${scoreColor(gaps.coverage_score)}`}>
-                {Math.round(gaps.coverage_score * 100)}% COVERED
+              <span className={`text-xs font-mono font-bold ${scoreColor(displayedCoverageScore)}`}>
+                {Math.round(displayedCoverageScore * 100)}% COVERED
               </span>
             </>
           )}
@@ -2837,21 +2857,34 @@ function DetectionGapPanel({ investigationId }) {
                       Covered
                     </p>
                     <p className="text-xl font-bold font-mono text-green-400">
-                      {gaps.covered}
+                      {coveredCount}
                     </p>
                     <p className="text-[10px] text-sentinel-muted mt-1">
-                      matched
+                      high/medium confidence
                     </p>
                   </div>
+                  {weakMatchCount > 0 && (
+                    <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
+                      <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">
+                        Weak Matches
+                      </p>
+                      <p className="text-xl font-bold font-mono text-amber-400">
+                        {weakMatchCount}
+                      </p>
+                      <p className="text-[10px] text-sentinel-muted mt-1">
+                        needs review
+                      </p>
+                    </div>
+                  )}
                   <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
                     <p className="text-[10px] text-sentinel-muted uppercase tracking-wider mb-1">
                       Gaps Found
                     </p>
                     <p className="text-xl font-bold font-mono text-red-400">
-                      {gaps.not_covered}
+                      {gapCount}
                     </p>
                     <p className="text-[10px] text-sentinel-muted mt-1">
-                      uncovered
+                      no usable coverage
                     </p>
                   </div>
                   <div className="border border-sentinel-border rounded-xl p-3 bg-sentinel-bg">
@@ -2871,47 +2904,81 @@ function DetectionGapPanel({ investigationId }) {
                     <span className="text-[10px] text-sentinel-muted uppercase tracking-wider">
                       Coverage posture
                     </span>
-                    <span className={`text-xs font-mono font-bold ${scoreColor(gaps.coverage_score)}`}>
-                      {Math.round(gaps.coverage_score * 100)}%
+                    <span className={`text-xs font-mono font-bold ${scoreColor(displayedCoverageScore)}`}>
+                      {Math.round(displayedCoverageScore * 100)}%
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-sentinel-surface border border-sentinel-border overflow-hidden">
-                    {gaps.coverage_score >= 0.75 && (
+                    {displayedCoverageScore >= 0.75 && (
                       <div
                         className="h-full bg-green-500 rounded-full"
-                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                        style={{ width: `${Math.round(displayedCoverageScore * 100)}%` }}
                       />
                     )}
-                    {gaps.coverage_score >= 0.50 && gaps.coverage_score < 0.75 && (
+                    {displayedCoverageScore >= 0.50 && displayedCoverageScore < 0.75 && (
                       <div
                         className="h-full bg-amber-500 rounded-full"
-                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                        style={{ width: `${Math.round(displayedCoverageScore * 100)}%` }}
                       />
                     )}
-                    {gaps.coverage_score >= 0.25 && gaps.coverage_score < 0.50 && (
+                    {displayedCoverageScore >= 0.25 && displayedCoverageScore < 0.50 && (
                       <div
                         className="h-full bg-orange-500 rounded-full"
-                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                        style={{ width: `${Math.round(displayedCoverageScore * 100)}%` }}
                       />
                     )}
-                    {gaps.coverage_score < 0.25 && (
+                    {displayedCoverageScore < 0.25 && (
                       <div
                         className="h-full bg-red-500 rounded-full"
-                        style={{ width: `${Math.round(gaps.coverage_score * 100)}%` }}
+                        style={{ width: `${Math.round(displayedCoverageScore * 100)}%` }}
                       />
                     )}
                   </div>
                 </div>
               </div>
 
+              {/* Weak matches */}
+              {weakMatches.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-3">
+                    Weak Matches - {weakMatches.length} uncertain saved-search match{weakMatches.length !== 1 ? 'es' : ''}
+                  </p>
+                  <div className="space-y-2">
+                    {weakMatches.map(tech => (
+                      <div key={tech.technique_id}
+                           className="border border-amber-500/20 rounded-xl p-3
+                                      bg-amber-500/5 flex flex-col gap-2 sm:flex-row
+                                      sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-amber-400">WEAK MATCH</span>
+                          <span className="text-xs font-mono text-sentinel-accent">
+                            {tech.technique_id}
+                          </span>
+                          <span className="text-xs text-white">{tech.technique_name}</span>
+                          <span className="text-xs text-sentinel-muted">- {tech.tactic}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-sentinel-muted">Confidence:</span>
+                          <span className="text-[10px] font-bold font-mono px-1.5 py-0.5
+                                           rounded border border-amber-500/30
+                                           text-amber-400 bg-amber-500/5">
+                            {formatMatchConfidence(tech.match_confidence)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Gaps */}
-              {gaps.gaps && gaps.gaps.length > 0 && (
+              {detectionGaps.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3">
-                    Uncovered Techniques - {gaps.gaps.length} Gap{gaps.gaps.length !== 1 ? 's' : ''}
+                    Detection Gaps - {detectionGaps.length} Technique{detectionGaps.length !== 1 ? 's' : ''}
                   </p>
                   <div className="space-y-3">
-                    {gaps.gaps.map(gap => (
+                    {detectionGaps.map(gap => (
                       <div key={gap.technique_id}
                            className="border border-red-500/20 rounded-xl bg-red-500/5 overflow-hidden">
                         {/* Gap header */}
@@ -2959,7 +3026,7 @@ function DetectionGapPanel({ investigationId }) {
                                   Generated Detection SPL
                                 </span>
                                 <p className="text-[10px] text-sentinel-muted font-mono mt-0.5">
-                                  method: {gap.generation_method}
+                                  Generated by Detection Gap Agent
                                 </p>
                               </div>
                               <div className="flex gap-2">
@@ -2994,9 +3061,21 @@ function DetectionGapPanel({ investigationId }) {
 
                             <pre className="bg-sentinel-bg border border-sentinel-border
                                            rounded-lg p-3 text-xs font-mono text-sentinel-accent
-                                           overflow-x-auto whitespace-pre">
+                                           whitespace-pre-wrap break-words">
                               {gap.recommended_spl}
                             </pre>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded border
+                                               border-green-500/30 text-green-400 bg-green-500/5">
+                                SPL allowed by safety checks
+                              </span>
+                              {gap.generation_method === 'template' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded border
+                                                 border-amber-500/30 text-amber-300 bg-amber-500/10">
+                                  Template fallback
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-sentinel-muted mt-2">
                               Review and tune before production deployment.
                             </p>
@@ -3005,7 +3084,7 @@ function DetectionGapPanel({ investigationId }) {
                               <div className="mt-2 text-[11px]">
                                 {deployed[gap.technique_id].success ? (
                                   <span className="text-green-400">
-                                    OK {deployed[gap.technique_id].message || 'Successfully deployed!'}
+                                    Deployed in Splunk. Re-run analysis to refresh saved-search coverage.
                                   </span>
                                 ) : (
                                   <span className="text-red-400">
@@ -3023,13 +3102,13 @@ function DetectionGapPanel({ investigationId }) {
               )}
 
               {/* Covered techniques */}
-              {gaps.covered_techniques && gaps.covered_techniques.length > 0 && (
+              {coveredTechniques.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-green-400 uppercase tracking-wider mb-3">
                     Covered Techniques
                   </p>
                   <div className="space-y-2">
-                    {gaps.covered_techniques.map(tech => (
+                    {coveredTechniques.map(tech => (
                       <div key={tech.technique_id}
                            className="border border-green-500/20 rounded-xl p-3
                                       bg-green-500/5 flex items-center justify-between">

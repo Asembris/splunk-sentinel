@@ -19,6 +19,7 @@ Never modifies AgentState or investigation pipeline.
 
 import asyncio
 import logging
+import re
 import time
 from typing import Optional
 
@@ -28,6 +29,28 @@ from langchain_core.messages import HumanMessage
 from app.guardrails.spl_guardrail import validate_spl
 
 logger = logging.getLogger(__name__)
+
+PLACEHOLDER_SPL_TERMS = (
+    "your_sourcetype",
+    "<sourcetype>",
+    "todo",
+    "replace_me",
+    "your_index",
+    "<index>",
+    "your_field",
+    "<field>",
+    "field_name",
+    "fake_field",
+    "placeholder",
+)
+
+RAW_SOURCETYPE_TOKENS = (
+    "stream:http",
+    "stream:dns",
+    "stream:tcp",
+    "stream:udp",
+    "WinEventLog:Security",
+)
 
 # In-memory cache for saved searches
 # Risk 1 mitigation: 5-minute TTL
@@ -92,6 +115,10 @@ TECHNIQUE_KEYWORDS = {
         ],
         "description": "Valid Accounts",
         "tactic": "Defense Evasion",
+        "tactics": [
+            "Defense Evasion", "Persistence",
+            "Privilege Escalation", "Initial Access",
+        ],
         "high_confidence_keywords": [
             "4624", "4625", "privileged",
         ],
@@ -158,6 +185,7 @@ TECHNIQUE_KEYWORDS = {
         ],
         "description": "Process Injection",
         "tactic": "Defense Evasion",
+        "tactics": ["Defense Evasion", "Privilege Escalation"],
         "high_confidence_keywords": [
             "CreateRemoteThread", "hollowing",
         ],
@@ -235,18 +263,20 @@ TEMPLATE_SPL = {
     "T1078": (
         "index=botsv3 earliest=0"
         " sourcetype=WinEventLog:Security"
-        " EventCode=4624"
-        " Logon_Type=3"
-        " | stats count by src_ip, Account_Name"
-        " | where count > 5"
+        " (EventCode=4624 OR EventCode=4672 OR EventCode=4673)"
+        " | eval account=coalesce(Account_Name, user)"
+        " | stats count dc(host) as host_count"
+        " by account, src_ip, EventCode"
+        " | where count > 3 OR host_count > 1"
         " | sort -count"
     ),
     "T1562.004": (
         "index=botsv3 earliest=0"
         " sourcetype=WinEventLog:Security"
         " EventCode=4688"
-        " | where match(New_Process_Name,"
-        " \"(?i)netsh|auditpol\")"
+        " | where match(New_Process_Name, \"(?i)netsh\")"
+        " OR match(Process_Command_Line,"
+        " \"(?i)firewall|advfirewall|disable\")"
         " | table _time, host, Account_Name,"
         " New_Process_Name, Process_Command_Line"
     ),
@@ -331,6 +361,62 @@ TEMPLATE_SPL = {
         " Process_Command_Line"
     ),
 }
+
+
+def _contains_placeholder_spl(spl: str) -> bool:
+    """Reject generated SPL that still contains analyst-facing placeholders."""
+    spl_lower = spl.lower()
+    if any(term in spl_lower for term in PLACEHOLDER_SPL_TERMS):
+        return True
+    return bool(
+        re.search(r"<[^|>\s]+>", spl_lower)
+        or re.search(r"\byour_[a-z0-9_]+\b", spl_lower)
+        or re.search(r"\breplace_[a-z0-9_]+\b", spl_lower)
+    )
+
+
+def _contains_unfielded_sourcetype(spl: str) -> bool:
+    """Require concrete sourcetypes to be expressed as sourcetype=<value>."""
+    spl_lower = spl.lower()
+    for token in RAW_SOURCETYPE_TOKENS:
+        token_lower = token.lower()
+        for match in re.finditer(re.escape(token_lower), spl_lower):
+            prefix = spl_lower[:match.start()]
+            compact_prefix = re.sub(r"\s+", "", prefix[-30:])
+            if not compact_prefix.endswith("sourcetype="):
+                return True
+    return False
+
+
+def _is_detection_spl_safe(spl: str) -> bool:
+    guard_result = validate_spl(spl)
+    return (
+        not _contains_placeholder_spl(spl)
+        and not _contains_unfielded_sourcetype(spl)
+        and not guard_result.is_blocked
+        and spl.lower().startswith("index=botsv3 earliest=0")
+    )
+
+
+def _canonical_technique_name(tech_id: str, reported_name: str = "") -> str:
+    config = TECHNIQUE_KEYWORDS.get(tech_id)
+    if not config and "." in tech_id:
+        config = TECHNIQUE_KEYWORDS.get(tech_id.split(".")[0])
+    if config and config.get("description"):
+        return config["description"]
+    return reported_name or tech_id
+
+
+def _display_tactic(tech_id: str, reported_tactic: str = "") -> str:
+    tactic = (reported_tactic or "").strip()
+    if tactic and tactic.lower() != "unknown":
+        return tactic
+    config = TECHNIQUE_KEYWORDS.get(tech_id)
+    if not config and "." in tech_id:
+        config = TECHNIQUE_KEYWORDS.get(tech_id.split(".")[0])
+    if config and len(config.get("tactics", [])) > 1:
+        return " / ".join(config["tactics"])
+    return config.get("tactic", "Unknown") if config else "Unknown"
 
 def _get_saved_searches(splunk_service) -> list[dict]:
     """
@@ -517,7 +603,17 @@ Investigation evidence from botsv3 dataset:
 
 Requirements:
 - Query must start with: index=botsv3 earliest=0
-- Use appropriate sourcetypes from the evidence
+- Use concrete sourcetypes only, such as stream:http,
+  stream:dns, or WinEventLog:Security
+- Sourcetypes must always use explicit fielded filters,
+  for example sourcetype=stream:http. Never write raw
+  sourcetype terms like stream:http OR stream:dns.
+- Do not invent placeholders, fake fields, TODO values,
+  your_sourcetype, <sourcetype>, or replace_me tokens
+- For T1078 Valid Accounts, use account/authentication
+  fields and Windows auth events such as EventCode=4624,
+  EventCode=4672, or EventCode=4673. Do not produce
+  generic src_ip-only counting.
 - Include meaningful filtering (stats, where, eval)
 - Should detect the specific technique not just log it
 - Keep it concise — under 200 characters preferred
@@ -545,6 +641,22 @@ Return ONLY the SPL query, no explanation, no markdown."""
                 if not l.startswith("```")
             ).strip()
 
+        if _contains_placeholder_spl(generated_spl):
+            logger.warning(
+                "[GAPS] Generated SPL contained placeholder "
+                "tokens for %s. Using template.",
+                technique_id,
+            )
+            return _get_guarded_template_spl(technique_id), "template"
+
+        if _contains_unfielded_sourcetype(generated_spl):
+            logger.warning(
+                "[GAPS] Generated SPL contained raw sourcetype "
+                "tokens for %s. Using template.",
+                technique_id,
+            )
+            return _get_guarded_template_spl(technique_id), "template"
+
         # Risk 5: Validate through guardrail
         guard_result = validate_spl(generated_spl)
         if guard_result.is_blocked:
@@ -554,7 +666,7 @@ Return ONLY the SPL query, no explanation, no markdown."""
                 technique_id,
                 guard_result.reason,
             )
-            return _get_template_spl(technique_id), "template"
+            return _get_guarded_template_spl(technique_id), "template"
 
         # Ensure it targets botsv3
         if "botsv3" not in generated_spl.lower():
@@ -563,7 +675,7 @@ Return ONLY the SPL query, no explanation, no markdown."""
                 "botsv3 for %s. Using template.",
                 technique_id,
             )
-            return _get_template_spl(technique_id), "template"
+            return _get_guarded_template_spl(technique_id), "template"
 
         logger.info(
             "[GAPS] LLM generated SPL for %s",
@@ -576,14 +688,14 @@ Return ONLY the SPL query, no explanation, no markdown."""
             "[GAPS] LLM timeout for %s. Using template.",
             technique_id,
         )
-        return _get_template_spl(technique_id), "template"
+        return _get_guarded_template_spl(technique_id), "template"
     except Exception as e:
         logger.error(
             "[GAPS] LLM error for %s: %s. Using template.",
             technique_id,
             str(e),
         )
-        return _get_template_spl(technique_id), "template"
+        return _get_guarded_template_spl(technique_id), "template"
 
 
 def _get_template_spl(technique_id: str) -> str:
@@ -601,6 +713,33 @@ def _get_template_spl(technique_id: str) -> str:
     # Generic fallback
     return (
         f"index=botsv3 earliest=0"
+        f" sourcetype=WinEventLog:Security"
+        f" | stats count by sourcetype, host"
+        f" | sort -count"
+        f" | head 100"
+        f" | eval technique=\"{technique_id}\""
+    )
+
+
+def _get_guarded_template_spl(technique_id: str) -> str:
+    """
+    Return template SPL only after the same placeholder and guardrail
+    checks used for generated SPL.
+    """
+    spl = _get_template_spl(technique_id)
+    guard_result = validate_spl(spl)
+    if _is_detection_spl_safe(spl):
+        return spl
+
+    logger.warning(
+        "[GAPS] Template SPL failed safety checks for %s: %s. "
+        "Using generic fallback.",
+        technique_id,
+        guard_result.reason if guard_result.is_blocked else "syntax",
+    )
+    return (
+        f"index=botsv3 earliest=0"
+        f" sourcetype=WinEventLog:Security"
         f" | stats count by sourcetype, host"
         f" | sort -count"
         f" | head 100"
@@ -651,6 +790,7 @@ async def analyze_detection_gaps(
             "coverage_score": 0.0,
             "coverage_label": "NO DATA",
             "gaps": [],
+            "weak_matches": [],
             "covered_techniques": [],
             "error": "No MITRE techniques identified "
                      "in this investigation",
@@ -695,23 +835,16 @@ async def analyze_detection_gaps(
         if not tech_id or tech_id in technique_ids:
             continue
         technique_ids.append(tech_id)
+        reported_name = ttp.get("technique_name", "")
+        reported_tactic = ttp.get("tactic", "")
         technique_details[tech_id] = {
-            "name": ttp.get(
-                "technique_name",
-                TECHNIQUE_KEYWORDS.get(
-                    tech_id, {}
-                ).get("description", tech_id),
-            ),
-            "tactic": ttp.get(
-                "tactic",
-                TECHNIQUE_KEYWORDS.get(
-                    tech_id, {}
-                ).get("tactic", "Unknown"),
-            ),
+            "name": _canonical_technique_name(tech_id, reported_name),
+            "tactic": _display_tactic(tech_id, reported_tactic),
             "confidence": ttp.get("confidence", 0.0),
         }
 
     gaps = []
+    weak_matches = []
     covered_techniques = []
 
     # Check coverage for each technique
@@ -723,12 +856,22 @@ async def analyze_detection_gaps(
         )
         details = technique_details.get(tech_id, {})
 
-        if is_covered:
+        if is_covered and confidence in ("HIGH", "MEDIUM"):
             covered_techniques.append({
                 "technique_id": tech_id,
                 "technique_name": details.get("name", tech_id),
                 "tactic": details.get("tactic", "Unknown"),
                 "covered": True,
+                "existing_searches": matching_searches,
+                "match_confidence": confidence,
+            })
+        elif is_covered:
+            weak_matches.append({
+                "technique_id": tech_id,
+                "technique_name": details.get("name", tech_id),
+                "tactic": details.get("tactic", "Unknown"),
+                "covered": False,
+                "status": "weak_match",
                 "existing_searches": matching_searches,
                 "match_confidence": confidence,
             })
@@ -768,13 +911,14 @@ async def analyze_detection_gaps(
         for i, result in enumerate(spl_results):
             if isinstance(result, Exception):
                 gaps[i]["recommended_spl"] = (
-                    _get_template_spl(gaps[i]["technique_id"])
+                    _get_guarded_template_spl(gaps[i]["technique_id"])
                 )
                 gaps[i]["generation_method"] = "template"
             else:
                 spl, method = result
                 gaps[i]["recommended_spl"] = spl
                 gaps[i]["generation_method"] = method
+            gaps[i]["spl_guardrail_passed"] = True
 
     # Compute coverage score
     total = len(technique_ids)
@@ -785,10 +929,12 @@ async def analyze_detection_gaps(
         "investigation_id": investigation_id,
         "techniques_analyzed": total,
         "covered": covered_count,
+        "weak_matches_count": len(weak_matches),
         "not_covered": len(gaps),
         "coverage_score": round(score, 2),
         "coverage_label": _coverage_label(score),
         "gaps": gaps,
+        "weak_matches": weak_matches,
         "covered_techniques": covered_techniques,
         "saved_searches_checked": len(saved_searches),
         "cache_used": (
@@ -827,6 +973,20 @@ async def deploy_detection(
 
     Returns deployment result dict.
     """
+    if _contains_placeholder_spl(spl):
+        return {
+            "success": False,
+            "error": "SPL blocked by guardrail: placeholder token detected",
+            "technique_id": technique_id,
+        }
+
+    if _contains_unfielded_sourcetype(spl):
+        return {
+            "success": False,
+            "error": "SPL blocked by guardrail: raw sourcetype token detected",
+            "technique_id": technique_id,
+        }
+
     # Risk 5: Validate SPL before deploy
     guard_result = validate_spl(spl)
     if guard_result.is_blocked:
