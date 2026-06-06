@@ -129,7 +129,7 @@ class HealthResponse(BaseModel):
 class FeedbackRequest(BaseModel):
     """Body for POST /api/investigations/{id}/feedback."""
 
-    rating: str = Field(..., description="'helpful' | 'unhelpful' | 'needs_tuning'")
+    rating: str = Field(..., description="'correct' | 'partial' | 'incorrect'")
     notes: str = Field("", description="Optional analyst notes.")
 
 

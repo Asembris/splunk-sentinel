@@ -1861,10 +1861,10 @@ function FeedbackCard({
                 Human validation captured
               </span>
               <span className="text-xs px-2 py-1 rounded 
-                               bg-sentinel-bg border
-                               border-sentinel-border
-                               text-sentinel-muted">
-                Calibration signal recorded
+                bg-sentinel-bg border
+                border-sentinel-border
+                text-sentinel-muted">
+                Evaluation context recorded
               </span>
             </div>
           </div>
@@ -1901,7 +1901,7 @@ function FeedbackCard({
             </h3>
           </div>
           <p className="text-xs text-sentinel-muted ml-4">
-            Human validation used to calibrate future confidence scores
+            Human validation saved for evaluation and future calibration
           </p>
         </div>
         <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
@@ -1911,8 +1911,8 @@ function FeedbackCard({
 
       <p className="text-xs text-sentinel-muted mb-4">
         Was this autonomous investigation accurate? Your rating 
-        is stored in Supabase and used to calibrate future 
-        confidence scores.
+        is stored with this investigation as evaluation context 
+        for future calibration.
       </p>
 
       {/* Rating buttons */}
@@ -1977,7 +1977,7 @@ function FeedbackCard({
                        transition-colors"
           />
           <p className="text-xs text-sentinel-muted mt-2 opacity-70">
-            Saved as evaluation context for future calibration.
+            Saved as evaluation context; it does not automatically change this investigation.
           </p>
         </div>
       )}
