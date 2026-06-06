@@ -5,7 +5,7 @@ const PRIORITY_CONFIG = {
     badge: 'bg-red-900/30 text-red-300 border-red-500/30',
     dot: 'bg-red-400',
     text: 'text-red-400',
-    empty: 'No immediate containment action defined',
+    empty: 'No immediate advisory action generated yet.',
     helper: 'Review after triage confirms the active threat path.',
   },
   SHORT_TERM: {
@@ -14,7 +14,7 @@ const PRIORITY_CONFIG = {
     badge: 'bg-amber-900/30 text-amber-300 border-amber-500/30',
     dot: 'bg-amber-400',
     text: 'text-amber-400',
-    empty: 'No short-term recovery action defined',
+    empty: 'No short-term recovery guidance generated yet.',
     helper: 'Review after containment actions are complete.',
   },
   LONG_TERM: {
@@ -23,7 +23,7 @@ const PRIORITY_CONFIG = {
     badge: 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30',
     dot: 'bg-emerald-400',
     text: 'text-emerald-400',
-    empty: 'No long-term hardening action defined',
+    empty: 'No long-term hardening action generated yet.',
     helper: 'Review after containment and recovery are complete.',
   },
 }
@@ -52,7 +52,7 @@ export default function RecommendedActions({ actions }) {
             </h2>
           </div>
           <p className="text-xs text-sentinel-muted ml-4">
-            Prioritized containment, recovery, and hardening
+            Prioritized containment, recovery, and hardening recommendations
           </p>
         </div>
         <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
@@ -122,7 +122,7 @@ export default function RecommendedActions({ actions }) {
         })}
       </div>
       <p className="text-xs text-sentinel-muted mt-3 pt-3 border-t border-sentinel-border/40">
-        Actions are prioritized by containment urgency and evidence confidence.
+        Advisory remediation guidance only. Actions shown here are not executed; executable containment actions are handled in the Containment Plan section.
       </p>
     </div>
   )

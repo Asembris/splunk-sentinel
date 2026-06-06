@@ -15,15 +15,15 @@ export default function CveList({ cves }) {
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
             <h2 className="text-sm font-bold text-white tracking-wide">
-              Vulnerabilities Identified
+              Referenced Vulnerabilities
             </h2>
           </div>
           <p className="text-xs text-sentinel-muted ml-4">
-            Referenced CVEs linked to mapped techniques
+            CVEs are linked to mapped ATT&amp;CK techniques or remediation context; they are not asserted as confirmed exploited unless direct evidence is present.
           </p>
         </div>
         <span className="text-xs px-2 py-1 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted whitespace-nowrap">
-          {normalizedCves.length} CVE{normalizedCves.length !== 1 ? 's' : ''}
+          {normalizedCves.length} reference{normalizedCves.length !== 1 ? 's' : ''}
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3">
@@ -46,12 +46,12 @@ export default function CveList({ cves }) {
                   </span>
                 </div>
                 <p className="text-xs text-sentinel-muted mt-2 leading-relaxed">
-                  Referenced by mapped MITRE techniques or remediation actions.
+                  Linked to mapped ATT&amp;CK techniques or remediation guidance for analyst review.
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <span className="text-[10px] uppercase tracking-wider text-sentinel-muted">
-                  Mapped Evidence
+                  ATT&amp;CK / Remediation Context
                 </span>
                 <span className="text-xs font-mono text-sentinel-accent">
                   NVD -&gt;
@@ -62,7 +62,7 @@ export default function CveList({ cves }) {
         ))}
       </div>
       <p className="text-xs text-sentinel-muted mt-3 pt-3 border-t border-sentinel-border/40">
-        Referenced vulnerabilities inform the remediation plan above.
+        Review referenced CVEs in NVD before treating them as confirmed exploitation.
       </p>
     </div>
   )
