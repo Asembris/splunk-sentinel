@@ -3081,9 +3081,11 @@ export default function ReportPage() {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState(null)
   const [jsonExported, setJsonExported] = useState(false)
+  const [latestReportPhase, setLatestReportPhase] = useState('no_live')
   const jsonResetTimeoutRef = useRef(null)
   const pdfErrorTimeoutRef = useRef(null)
   const pdfLoadingTimeoutRef = useRef(null)
+  const latestReportPhaseTimeoutRef = useRef(null)
   
   const [feedbackRating, setFeedbackRating] = useState(null)
   const [feedbackNotes, setFeedbackNotes] = useState('')
@@ -3193,6 +3195,64 @@ export default function ReportPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (id || report || loading) return
+
+    let cancelled = false
+    setLatestReportPhase('no_live')
+
+    const waitForLatestReportPhase = (delay) =>
+      new Promise((resolve) => {
+        latestReportPhaseTimeoutRef.current = setTimeout(() => {
+          latestReportPhaseTimeoutRef.current = null
+          resolve()
+        }, delay)
+      })
+
+    const fetchLatestInvestigation = async () => {
+      try {
+        const res = await fetch('/api/investigations/history?page=1&limit=1')
+        if (!res.ok) return null
+
+        const data = await res.json()
+        return data?.investigations?.[0] || null
+      } catch {
+        return null
+      }
+    }
+
+    const runLatestReportFlow = async () => {
+      const latestInvestigationPromise = fetchLatestInvestigation()
+
+      await waitForLatestReportPhase(1400)
+      if (cancelled) return
+
+      setLatestReportPhase('retrieving')
+      const [latestInvestigation] = await Promise.all([
+        latestInvestigationPromise,
+        waitForLatestReportPhase(1400),
+      ])
+      if (cancelled) return
+
+      if (latestInvestigation?.investigation_id) {
+        navigate(`/report/${latestInvestigation.investigation_id}`)
+        return
+      }
+
+      setLatestReportPhase('empty')
+    }
+
+    runLatestReportFlow()
+
+    return () => {
+      cancelled = true
+      if (latestReportPhaseTimeoutRef.current) {
+        clearTimeout(latestReportPhaseTimeoutRef.current)
+        latestReportPhaseTimeoutRef.current = null
+      }
+    }
+  }, [id, report, loading, navigate])
 
   const handleExportJson = () => {
     if (!activeResult) return
@@ -3367,15 +3427,73 @@ export default function ReportPage() {
   }
 
   if (!report) {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-[calc(100vh-57px)] px-6">
+          <div className="bg-sentinel-surface border border-sentinel-border rounded-xl px-6 py-5 text-center">
+            <Loader2 className="w-8 h-8 text-sentinel-accent animate-spin mx-auto mb-3" />
+            <p className="text-sm text-white font-medium">Loading latest report</p>
+          </div>
+        </div>
+      )
+    }
+
+    if (!id) {
+      if (latestReportPhase === 'no_live') {
+        return (
+          <div className="flex items-center justify-center h-[calc(100vh-57px)] px-6">
+            <div className="bg-sentinel-surface border border-sentinel-border rounded-xl px-6 py-5 text-center">
+              <div className="w-3 h-3 rounded-full bg-slate-500 animate-pulse mx-auto mb-3" />
+              <h2 className="text-white font-semibold mb-1">No live investigation</h2>
+              <p className="text-xs text-sentinel-muted">
+                Checking persistent history for the latest forensic report
+              </p>
+            </div>
+          </div>
+        )
+      }
+
+      if (latestReportPhase === 'retrieving') {
+        return (
+          <div className="flex items-center justify-center h-[calc(100vh-57px)] px-6">
+            <div className="bg-sentinel-surface border border-sentinel-border rounded-xl px-6 py-5 text-center">
+              <div className="w-3 h-3 rounded-full bg-sentinel-accent animate-pulse mx-auto mb-3" />
+              <h2 className="text-white font-semibold mb-1">Retrieving latest report</h2>
+              <p className="text-xs text-sentinel-muted">
+                Loading most recent investigation from persistent storage
+              </p>
+            </div>
+          </div>
+        )
+      }
+
+      return (
+        <div className="flex items-center justify-center h-[calc(100vh-57px)] px-6">
+          <div className="bg-sentinel-surface border border-sentinel-border rounded-xl px-8 py-7 text-center max-w-md w-full">
+            <h2 className="text-white font-semibold mb-2">No investigations yet</h2>
+            <p className="text-sm text-sentinel-muted mb-6">
+              Run your first investigation to generate a forensic report
+            </p>
+            <button
+              onClick={() => navigate('/')}
+              className="px-6 py-2 bg-sentinel-accent text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors"
+            >
+              Start Investigation
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-57px)]">
-        <div className="text-center animate-fade-in">
-          <p className="text-sentinel-muted mb-4">No report available in current session</p>
+      <div className="flex items-center justify-center h-[calc(100vh-57px)] px-6">
+        <div className="bg-sentinel-surface border border-sentinel-border rounded-xl px-8 py-7 text-center max-w-md w-full">
+          <p className="text-white text-lg font-semibold mb-4">Report not found</p>
           <button
-            onClick={() => navigate('/')}
-            className="px-6 py-2 bg-sentinel-accent text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors"
+            onClick={() => navigate('/history')}
+            className="px-6 py-2 bg-sentinel-surface border border-sentinel-border text-white rounded-lg text-sm font-medium hover:border-sentinel-accent/50 transition-colors"
           >
-            Start Investigation
+            Back to History
           </button>
         </div>
       </div>
