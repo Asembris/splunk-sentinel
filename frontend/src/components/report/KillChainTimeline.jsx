@@ -407,6 +407,20 @@ const shouldShowActivitySubtitle = (
   )
 }
 
+const getConfidenceMeta = (confidence) => {
+  if (confidence === "CONFIRMED") {
+    return {
+      label: "CONF",
+      description: "Confirmed by direct telemetry evidence",
+    }
+  }
+
+  return {
+    label: "INF",
+    description: "Inferred from attack sequence; no direct telemetry event",
+  }
+}
+
 const joinClasses = (...classes) => classes.filter(Boolean).join(" ")
 
 // --------------- Main Component ---------------
@@ -469,6 +483,9 @@ const KillChainTimeline = ({ stages = [] }) => {
               <span className="text-sentinel-muted">
                 {" "}&bull; MITRE mapped
               </span>
+            </p>
+            <p className="text-[10px] text-sentinel-muted/80 ml-4 mt-0.5">
+              CONF = direct telemetry evidence &middot; INF = inferred from sequence
             </p>
           </div>
 
@@ -595,6 +612,7 @@ const KillChainTimeline = ({ stages = [] }) => {
             const isLast = idx === normalized.length - 1
             const isLastInRow = rowStageIdx === rowStages.length - 1
             const isConfirmed = stage.confidence === "CONFIRMED"
+            const confidenceMeta = getConfidenceMeta(stage.confidence)
             const isImpact = isLast && isFinalImpact
             const isFinalStage = isLast
             const isDenseCard = isLongChain
@@ -651,7 +669,11 @@ const KillChainTimeline = ({ stages = [] }) => {
                   >
                     {/* Stage number + tactic label */}
                     <div className="flex items-center justify-end mb-1">
-                      <span className="flex items-center gap-1">
+                      <span
+                        className="flex items-center gap-1"
+                        title={confidenceMeta.description}
+                        aria-label={confidenceMeta.description}
+                      >
                         <span
                           className={
                             isConfirmed
@@ -666,7 +688,7 @@ const KillChainTimeline = ({ stages = [] }) => {
                               : "text-xs font-medium text-amber-400"
                           }
                         >
-                          {isConfirmed ? "CONF" : "INF"}
+                          {confidenceMeta.label}
                         </span>
                       </span>
                     </div>
