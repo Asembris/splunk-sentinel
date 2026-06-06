@@ -1113,6 +1113,10 @@ async def get_confidence_breakdown(
 )
 async def get_detection_gaps(
     investigation_id: str,
+    force_refresh: bool = Query(
+        False,
+        description="Bypass saved-search cache and fetch fresh Splunk searches.",
+    ),
 ) -> dict:
     """
     Analyze detection coverage for an investigation.
@@ -1157,6 +1161,7 @@ async def get_detection_gaps(
         threat_intel=threat_intel,
         blast_radius=blast_radius,
         splunk_service=splunk_service,
+        force_refresh=force_refresh,
     )
 
     return result

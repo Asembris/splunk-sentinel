@@ -643,6 +643,75 @@ class TestDetectionGaps:
                 assert "gaps" in data
                 assert "covered_techniques" in data
 
+    def test_accepts_force_refresh_query_param(self):
+        mock_gaps = {
+            "investigation_id": FAKE_INVESTIGATION_ID,
+            "techniques_analyzed": 2,
+            "covered": 1,
+            "not_covered": 1,
+            "coverage_score": 0.5,
+            "coverage_label": "PARTIAL COVERAGE",
+            "gaps": [],
+            "covered_techniques": [],
+            "saved_searches_checked": 10,
+            "cache_used": False,
+        }
+        analyze_mock = AsyncMock(return_value=mock_gaps)
+        with patch(
+            "app.api.routes.get_investigation_details",
+            return_value=FAKE_INVESTIGATION_ROW,
+        ), patch(
+            "app.api.routes.analyze_detection_gaps",
+            analyze_mock,
+        ), patch(
+            "app.api.routes.get_splunk_service",
+            return_value=MagicMock(),
+        ):
+            from app.main import app
+            client = TestClient(app)
+            response = client.get(
+                f"/api/investigations/{FAKE_INVESTIGATION_ID}"
+                f"/detection-gaps?force_refresh=true"
+            )
+
+            assert response.status_code == 200
+            assert analyze_mock.await_args.kwargs["force_refresh"] is True
+
+    def test_deploy_response_includes_refresh_recommended(self):
+        deploy_result = {
+            "success": True,
+            "already_deployed": False,
+            "name": "Sentinel â€” T1552.005 Detection",
+            "technique_id": "T1552.005",
+            "coverage_refresh_recommended": True,
+            "message": (
+                "Successfully deployed "
+                "'Sentinel â€” T1552.005 Detection' to Splunk"
+            ),
+        }
+        with patch(
+            "app.api.routes.deploy_detection",
+            new_callable=AsyncMock,
+            return_value=deploy_result,
+        ), patch(
+            "app.api.routes.get_splunk_service",
+            return_value=MagicMock(),
+        ):
+            from app.main import app
+            client = TestClient(app)
+            response = client.post(
+                f"/api/investigations/{FAKE_INVESTIGATION_ID}"
+                f"/detection-gaps/deploy",
+                json={
+                    "technique_id": "T1552.005",
+                    "spl": "index=botsv3 earliest=0 | head 10",
+                    "name": "Sentinel â€” T1552.005 Detection",
+                },
+            )
+
+            assert response.status_code == 200
+            assert response.json()["coverage_refresh_recommended"] is True
+
 
 class TestContainmentPlan:
     """GET /api/investigations/{id}/containment-plan"""

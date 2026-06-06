@@ -60,6 +60,13 @@ _saved_searches_cache: dict = {
     "ttl_seconds": 300,
 }
 
+
+def invalidate_saved_searches_cache() -> None:
+    """Clear cached Splunk saved searches after deployment changes."""
+    _saved_searches_cache["data"] = None
+    _saved_searches_cache["fetched_at"] = 0
+
+
 # Coverage score labels
 COVERAGE_LABELS = {
     (0.0, 0.25): "CRITICAL GAPS",
@@ -418,7 +425,10 @@ def _display_tactic(tech_id: str, reported_tactic: str = "") -> str:
         return " / ".join(config["tactics"])
     return config.get("tactic", "Unknown") if config else "Unknown"
 
-def _get_saved_searches(splunk_service) -> list[dict]:
+def _get_saved_searches(
+    splunk_service,
+    force_refresh: bool = False,
+) -> list[dict]:
     """
     Fetch all saved searches from Splunk with caching.
     Risk 1: 5-minute TTL cache prevents slow repeated calls.
@@ -428,7 +438,8 @@ def _get_saved_searches(splunk_service) -> list[dict]:
     cache = _saved_searches_cache
 
     if (
-        cache["data"] is not None
+        not force_refresh
+        and cache["data"] is not None
         and now - cache["fetched_at"] < cache["ttl_seconds"]
     ):
         logger.debug(
@@ -437,6 +448,9 @@ def _get_saved_searches(splunk_service) -> list[dict]:
             now - cache["fetched_at"],
         )
         return cache["data"]
+
+    if force_refresh:
+        logger.info("[GAPS] Saved searches cache bypassed by force_refresh")
 
     try:
         logger.info(
@@ -754,6 +768,7 @@ async def analyze_detection_gaps(
     threat_intel: dict,
     blast_radius: dict,
     splunk_service,
+    force_refresh: bool = False,
 ) -> dict:
     """
     Main detection gap analysis function.
@@ -823,8 +838,18 @@ async def analyze_detection_gaps(
         "sourcetypes": list(set(sourcetypes))[:5],
     }
 
-    # Get saved searches with cache
-    saved_searches = _get_saved_searches(splunk_service)
+    cache_was_used = (
+        not force_refresh
+        and _saved_searches_cache["data"] is not None
+        and time.time() - _saved_searches_cache["fetched_at"]
+        < _saved_searches_cache["ttl_seconds"]
+    )
+
+    # Get saved searches with cache unless force_refresh is requested
+    saved_searches = _get_saved_searches(
+        splunk_service,
+        force_refresh=force_refresh,
+    )
 
     # Extract unique technique IDs from TTP mappings
     technique_ids = []
@@ -937,11 +962,7 @@ async def analyze_detection_gaps(
         "weak_matches": weak_matches,
         "covered_techniques": covered_techniques,
         "saved_searches_checked": len(saved_searches),
-        "cache_used": (
-            time.time() - _saved_searches_cache["fetched_at"]
-            < _saved_searches_cache["ttl_seconds"]
-            and _saved_searches_cache["data"] is not None
-        ),
+        "cache_used": cache_was_used,
     }
 
     logger.info(
@@ -1009,11 +1030,13 @@ async def deploy_detection(
                 "[GAPS] Saved search '%s' already exists",
                 name,
             )
+            invalidate_saved_searches_cache()
             return {
                 "success": True,
                 "already_deployed": True,
                 "name": name,
                 "technique_id": technique_id,
+                "coverage_refresh_recommended": True,
                 "message": (
                     f"'{name}' already exists in Splunk"
                 ),
@@ -1050,11 +1073,14 @@ async def deploy_detection(
             technique_id,
         )
 
+        invalidate_saved_searches_cache()
+
         return {
             "success": True,
             "already_deployed": False,
             "name": name,
             "technique_id": technique_id,
+            "coverage_refresh_recommended": True,
             "message": (
                 f"Successfully deployed '{name}' to Splunk"
             ),

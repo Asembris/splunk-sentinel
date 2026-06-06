@@ -3,13 +3,18 @@ Tests for detection gap analyzer.
 All deterministic — no LLM, Splunk, or Supabase calls.
 Uses mock saved searches and TTP mappings.
 """
+import time
 import pytest
 from unittest.mock import MagicMock, patch
+import app.services.detection_gap_analyzer as dga
 from app.services.detection_gap_analyzer import (
     _check_technique_coverage,
     _compute_match_confidence,
     _coverage_label,
+    _get_saved_searches,
     _get_template_spl,
+    deploy_detection,
+    invalidate_saved_searches_cache,
     TECHNIQUE_KEYWORDS,
     TEMPLATE_SPL,
 )
@@ -20,6 +25,44 @@ def make_saved_searches(*spls) -> list[dict]:
         {"name": f"Search {i}", "search": spl, "description": ""}
         for i, spl in enumerate(spls)
     ]
+
+
+class FakeSavedSearch:
+    def __init__(self, name, search, description=""):
+        self.name = name
+        self._data = {
+            "search": search,
+            "description": description,
+        }
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+
+class FakeSavedSearchCollection:
+    def __init__(self, searches):
+        self.searches = list(searches)
+        self.created = []
+
+    def __iter__(self):
+        return iter(self.searches)
+
+    def create(self, name, spl, **kwargs):
+        self.created.append({
+            "name": name,
+            "spl": spl,
+            "kwargs": kwargs,
+        })
+
+
+@pytest.fixture
+def reset_saved_searches_cache():
+    invalidate_saved_searches_cache()
+    yield
+    invalidate_saved_searches_cache()
 
 
 class TestCoverageDetection:
@@ -211,6 +254,107 @@ class TestDeploymentLogic:
         }
         assert result["already_deployed"] is True
         assert result["success"] is True
+
+    def test_saved_search_cache_used_without_force_refresh(
+        self,
+        reset_saved_searches_cache,
+    ):
+        dga._saved_searches_cache["data"] = [{
+            "name": "Cached Search",
+            "search": "index=botsv3 cached",
+            "description": "",
+        }]
+        dga._saved_searches_cache["fetched_at"] = time.time()
+
+        service = MagicMock()
+        service.saved_searches = FakeSavedSearchCollection([
+            FakeSavedSearch("Fresh Search", "index=botsv3 fresh"),
+        ])
+
+        result = _get_saved_searches(service)
+
+        assert result[0]["name"] == "Cached Search"
+
+    def test_force_refresh_bypasses_saved_search_cache(
+        self,
+        reset_saved_searches_cache,
+    ):
+        dga._saved_searches_cache["data"] = [{
+            "name": "Cached Search",
+            "search": "index=botsv3 cached",
+            "description": "",
+        }]
+        dga._saved_searches_cache["fetched_at"] = time.time()
+
+        service = MagicMock()
+        service.saved_searches = FakeSavedSearchCollection([
+            FakeSavedSearch("Fresh Search", "index=botsv3 fresh"),
+        ])
+
+        result = _get_saved_searches(service, force_refresh=True)
+
+        assert result[0]["name"] == "Fresh Search"
+        assert dga._saved_searches_cache["data"][0]["name"] == "Fresh Search"
+
+    @pytest.mark.asyncio
+    async def test_deploy_success_invalidates_saved_search_cache(
+        self,
+        reset_saved_searches_cache,
+    ):
+        dga._saved_searches_cache["data"] = [{
+            "name": "Stale Search",
+            "search": "index=botsv3 stale",
+            "description": "",
+        }]
+        dga._saved_searches_cache["fetched_at"] = time.time()
+
+        service = MagicMock()
+        service.saved_searches = FakeSavedSearchCollection([])
+
+        result = await deploy_detection(
+            technique_id="T1552.005",
+            spl=TEMPLATE_SPL["T1552.005"],
+            name="Sentinel â€” T1552.005 Detection",
+            investigation_id="inv-123",
+            splunk_service=service,
+        )
+
+        assert result["success"] is True
+        assert result["coverage_refresh_recommended"] is True
+        assert dga._saved_searches_cache["data"] is None
+        assert dga._saved_searches_cache["fetched_at"] == 0
+
+    @pytest.mark.asyncio
+    async def test_deploy_already_deployed_invalidates_saved_search_cache(
+        self,
+        reset_saved_searches_cache,
+    ):
+        dga._saved_searches_cache["data"] = [{
+            "name": "Stale Search",
+            "search": "index=botsv3 stale",
+            "description": "",
+        }]
+        dga._saved_searches_cache["fetched_at"] = time.time()
+
+        name = "Sentinel â€” T1552.005 Detection"
+        service = MagicMock()
+        service.saved_searches = FakeSavedSearchCollection([
+            FakeSavedSearch(name, TEMPLATE_SPL["T1552.005"]),
+        ])
+
+        result = await deploy_detection(
+            technique_id="T1552.005",
+            spl=TEMPLATE_SPL["T1552.005"],
+            name=name,
+            investigation_id="inv-123",
+            splunk_service=service,
+        )
+
+        assert result["success"] is True
+        assert result["already_deployed"] is True
+        assert result["coverage_refresh_recommended"] is True
+        assert dga._saved_searches_cache["data"] is None
+        assert dga._saved_searches_cache["fetched_at"] == 0
 
 
 class TestDeterministicTemplates:
