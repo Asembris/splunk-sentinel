@@ -59,15 +59,60 @@ const TACTIC_NODE_BG = {
   'Unknown': 'bg-blue-500',
 }
 
+const MLTK_STATUS_STYLES = {
+  validated: {
+    label: 'MLTK Validated',
+    tone: 'text-green-300 border-green-500/30 bg-green-900/20',
+    dot: 'bg-green-400',
+  },
+  review: {
+    label: 'MLTK Review',
+    tone: 'text-amber-300 border-amber-500/30 bg-amber-900/20',
+    dot: 'bg-amber-400',
+  },
+  not_run: {
+    label: 'NOT RUN',
+    tone: 'text-sentinel-muted border-sentinel-border bg-sentinel-bg',
+    dot: 'bg-slate-600',
+  },
+}
+
+function getMltkStatus(mapping) {
+  if (!mapping) return 'not_run'
+  if (mapping.mltk_unavailable === true || mapping.mltk_error) return 'review'
+  if (mapping.mltk_validation_run === true) {
+    if (mapping.mltk_agrees === true) return 'validated'
+    if (mapping.mltk_agrees === false) return 'review'
+  }
+  return 'not_run'
+}
+
+function normalizeTechniqueId(id) {
+  if (!id) return ''
+  return String(id).trim().toUpperCase()
+}
+
 export default function MitreTable({ techniques, ttpMappings }) {
   const enriched = techniques.map(t => {
     // Extract clean ID: "T1190 - Exploit..." -> "T1190"
-    const cleanId = t.split(/[\s-]/)[0].trim()
-    const mapping = ttpMappings.find(m =>
-      m.technique_id === cleanId ||
-      m.technique_id?.startsWith(cleanId) ||
-      cleanId.startsWith(m.technique_id)
-    )
+    const rawTechniqueId = typeof t === 'string'
+      ? t.split(/[\s-]/)[0].trim()
+      : (t?.id || t?.technique_id || '')
+    const cleanId = rawTechniqueId.split(/[\s-]/)[0].trim()
+    const mapping = (ttpMappings || []).find(m => {
+      const mId = normalizeTechniqueId(m.technique_id)
+      const tId = normalizeTechniqueId(t.id || t.technique_id || cleanId)
+      if (!mId || !tId) return false
+      // Exact match first
+      if (mId === tId) return true
+      // Sub-technique fallback: T1562.004 in techniques, T1562 in mappings
+      const mBase = mId.split('.')[0]
+      const tBase = tId.split('.')[0]
+      // Only match base if one is a sub-technique of the other
+      if (mId === tBase && tId.startsWith(tBase + '.')) return true
+      if (tId === mBase && mId.startsWith(mBase + '.')) return true
+      return false
+    })
     const baseId = cleanId.split('.')[0]
     const tactic = TECHNIQUE_TACTIC_MAP[baseId] || 'Unknown'
     const tacticStyle = TACTIC_STYLE_MAP[tactic] || TACTIC_STYLE_MAP['Unknown']
@@ -75,20 +120,8 @@ export default function MitreTable({ techniques, ttpMappings }) {
     const confidencePct = (rawConf != null && isFinite(rawConf))
       ? Math.min(100, Math.max(0, Math.round(rawConf * 100)))
       : null
-    const mltkValidationRun = mapping?.mltk_validation_run === true
-    const mltkAgrees = mapping?.mltk_agrees
-    let validationLabel = 'NOT RUN'
-    let validationTone = 'muted'
-    if (mltkValidationRun) {
-      if (mltkAgrees === true) {
-        validationLabel = 'MLTK CONF'
-        validationTone = 'success'
-      }
-      if (mltkAgrees === false) {
-        validationLabel = 'MLTK REVIEW'
-        validationTone = 'warning'
-      }
-    }
+    const mltkStatus = getMltkStatus(mapping)
+    const mltkStyle = MLTK_STATUS_STYLES[mltkStatus]
     const rawCves = Array.isArray(mapping?.cves) ? mapping.cves : []
     const cveChips = rawCves.map(c => ({
       id: (typeof c === 'object' ? c.cve_id : c) || String(c),
@@ -111,8 +144,8 @@ export default function MitreTable({ techniques, ttpMappings }) {
       mltkValidationRun: mapping?.mltk_validation_run === true,
       mltkAgrees: mapping?.mltk_agrees,
       mltkAlternative: mapping?.mltk_alternative || null,
-      validationLabel,
-      validationTone,
+      mltkStatus,
+      mltkStyle,
       hasDetection,
       hasMitigation,
     }
@@ -132,26 +165,15 @@ export default function MitreTable({ techniques, ttpMappings }) {
             <p className="text-xs text-sentinel-muted ml-4">
               {enriched.length} technique{enriched.length !== 1 ? 's' : ''} mapped
               {(() => {
-                const validated = enriched.filter(t => t.mltkValidationRun).length
-                const agreements = enriched.filter(t => t.mltkValidationRun && t.mltkAgrees === true).length
-                const disagreements = enriched.filter(t => t.mltkValidationRun && t.mltkAgrees === false).length
-                if (validated === 0) return null
+                const validated = enriched.filter(t => t.mltkStatus === 'validated').length
+                const review = enriched.filter(t => t.mltkStatus === 'review').length
+                if (validated === 0 && review === 0) return null
                 return (
                   <>
-                    <span className="text-sentinel-muted"> &bull; </span>
-                    <span className="text-green-400">{validated} MLTK validated</span>
-                    {agreements > 0 && (
-                      <>
-                        <span className="text-sentinel-muted"> &bull; </span>
-                        <span className="text-green-400">{agreements} agreement{agreements !== 1 ? 's' : ''}</span>
-                      </>
-                    )}
-                    {disagreements > 0 && (
-                      <>
-                        <span className="text-sentinel-muted"> &bull; </span>
-                        <span className="text-amber-400">{disagreements} disagreement{disagreements !== 1 ? 's' : ''}</span>
-                      </>
-                    )}
+                    <span className="text-sentinel-muted"> &middot; </span>
+                    <span className="text-green-400">{validated} validated</span>
+                    <span className="text-sentinel-muted"> &middot; </span>
+                    <span className="text-amber-400">{review} review signal{review !== 1 ? 's' : ''}</span>
                   </>
                 )
               })()}
@@ -183,6 +205,8 @@ export default function MitreTable({ techniques, ttpMappings }) {
         const totalCves = enriched.reduce((sum, t) => sum + t.cveChips.length, 0)
         const detectionCount = enriched.filter(t => t.hasDetection).length
         const detectionOpportunities = enriched.length - detectionCount
+        const mltkValidatedCount = enriched.filter(t => t.mltkStatus === 'validated').length
+        const mltkReviewCount = enriched.filter(t => t.mltkStatus === 'review').length
         return (
           <div className="mb-4 p-3 rounded-lg bg-sentinel-bg border border-sentinel-border">
             <div className="flex items-center justify-between mb-3">
@@ -200,12 +224,22 @@ export default function MitreTable({ techniques, ttpMappings }) {
                     <span className="text-amber-300 font-bold">{totalCves}</span> CVEs
                   </span>
                 )}
+                {mltkValidatedCount > 0 && (
+                  <span className="text-xs text-sentinel-muted">
+                    <span className="text-green-400 font-bold">{mltkValidatedCount}</span> validated
+                  </span>
+                )}
+                {mltkReviewCount > 0 && (
+                  <span className="text-xs text-sentinel-muted">
+                    <span className="text-amber-400 font-bold">{mltkReviewCount}</span> review signal{mltkReviewCount !== 1 ? 's' : ''}
+                  </span>
+                )}
                 <span className="text-xs text-sentinel-muted">
                   <span className="text-teal-400 font-bold">{detectionCount}</span> deployed detection{detectionCount !== 1 ? 's' : ''}
                 </span>
                 {detectionOpportunities > 0 && (
                   <span className="text-xs text-sentinel-muted">
-                    <span className="text-amber-300 font-bold">{detectionOpportunities}</span> detection opportunit{detectionOpportunities !== 1 ? 'ies' : 'y'}
+                    <span className="text-amber-300 font-bold">{detectionOpportunities}</span> detection candidate{detectionOpportunities !== 1 ? 's' : ''}
                   </span>
                 )}
                 {detectionOpportunities === 0 && (
@@ -363,24 +397,13 @@ export default function MitreTable({ techniques, ttpMappings }) {
                       </div>
                     )}
                     <div className="w-full border-t border-sentinel-border/40 pt-2 flex flex-col items-center gap-1">
-                      {t.validationTone === 'success' && (
-                        <span className="flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded border border-green-500/30 bg-green-900/20 text-green-400 w-full justify-center">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-                          MLTK CONF
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.mltkStyle.dot}`} />
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border w-full text-center ${t.mltkStyle.tone}`}>
+                          {t.mltkStyle.label}
                         </span>
-                      )}
-                      {t.validationTone === 'warning' && (
-                        <span className="flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-900/20 text-amber-400 w-full justify-center">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                          MLTK REVIEW
-                        </span>
-                      )}
-                      {t.validationTone === 'muted' && (
-                        <span className="text-xs px-1.5 py-0.5 rounded border border-sentinel-border bg-sentinel-bg text-sentinel-muted w-full text-center">
-                          NOT RUN
-                        </span>
-                      )}
-                      {t.validationTone === 'warning' && t.mltkAlternative && (
+                      </div>
+                      {t.mltkStatus === 'review' && t.mltkAlternative && (
                         <p className="text-xs text-amber-400/70 text-center w-full leading-tight mt-0.5">
                           {t.mltkAlternative.slice(0, 20)}
                         </p>
@@ -389,9 +412,11 @@ export default function MitreTable({ techniques, ttpMappings }) {
                         <span className="text-xs px-1 py-0.5 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted" style={{ fontSize: '8px' }}>
                           RAG
                         </span>
-                        <span className="text-xs px-1 py-0.5 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted" style={{ fontSize: '8px' }}>
-                          MLTK
-                        </span>
+                        {(t.mltkStatus === 'validated' || t.mltkStatus === 'review') && (
+                          <span className="text-xs px-1 py-0.5 rounded bg-sentinel-bg border border-sentinel-border text-sentinel-muted" style={{ fontSize: '8px' }}>
+                            MLTK
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

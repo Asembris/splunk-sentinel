@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 MLTK_CONNECTION = "openai_sentinel"
 MLTK_TIMEOUT_PER_TECHNIQUE = 30
-MLTK_MAX_TECHNIQUES = 6
 
 
 async def enrich_ttp_with_mltk(investigation_id: str) -> None:
@@ -85,19 +84,31 @@ async def enrich_ttp_with_mltk(investigation_id: str) -> None:
             return
 
         if not _check_mltk_available(splunk_service):
-            await _patch_enrichment_status(
-                investigation_id,
-                "failed",
-                error="MLTK app not installed",
+            unavailable_mappings = [
+                _mark_mltk_unavailable(mapping, "MLTK app not installed")
+                for mapping in ttp_mappings
+            ]
+            summary = {
+                "techniques_validated": len(unavailable_mappings),
+                "agreements": 0,
+                "disagreements": len(unavailable_mappings),
+                "failed": len(unavailable_mappings),
+                "skipped": 0,
+                "connection": MLTK_CONNECTION,
+                "mltk_version": "5.7.4",
+                "enriched_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await _patch_enriched_ttp_mappings(
+                investigation_id=investigation_id,
+                enriched_mappings=unavailable_mappings,
+                summary=summary,
             )
             return
 
-        techniques_to_validate = ttp_mappings[:MLTK_MAX_TECHNIQUES]
-        enriched_mappings: list[dict] = []
+        techniques_to_validate = ttp_mappings
         agreements = 0
         disagreements = 0
         failed = 0
-        skipped = len(ttp_mappings) - len(techniques_to_validate)
 
         enriched_results = await asyncio.gather(
             *[
@@ -110,25 +121,21 @@ async def enrich_ttp_with_mltk(investigation_id: str) -> None:
                 for mapping in techniques_to_validate
             ]
         )
-        enriched_mappings.extend(enriched_results)
 
         for enriched in enriched_results:
-            if enriched.get("mltk_validation_run"):
-                if enriched.get("mltk_agrees"):
-                    agreements += 1
-                else:
-                    disagreements += 1
+            if enriched.get("mltk_agrees"):
+                agreements += 1
             else:
+                disagreements += 1
+            if enriched.get("mltk_unavailable"):
                 failed += 1
-
-        enriched_mappings.extend(ttp_mappings[MLTK_MAX_TECHNIQUES:])
 
         summary = {
             "techniques_validated": len(techniques_to_validate),
             "agreements": agreements,
             "disagreements": disagreements,
             "failed": failed,
-            "skipped": skipped,
+            "skipped": 0,
             "connection": MLTK_CONNECTION,
             "mltk_version": "5.7.4",
             "enriched_at": datetime.now(timezone.utc).isoformat(),
@@ -136,7 +143,7 @@ async def enrich_ttp_with_mltk(investigation_id: str) -> None:
 
         await _patch_enriched_ttp_mappings(
             investigation_id=investigation_id,
-            enriched_mappings=enriched_mappings,
+            enriched_mappings=enriched_results,
             summary=summary,
         )
 
@@ -218,10 +225,12 @@ async def _enrich_single_technique(
             timeout=MLTK_TIMEOUT_PER_TECHNIQUE,
         )
     except asyncio.TimeoutError:
-        enriched = dict(mapping)
-        enriched["mltk_validation_run"] = False
-        enriched["mltk_error"] = f"timeout after {MLTK_TIMEOUT_PER_TECHNIQUE}s"
-        return enriched
+        return _mark_mltk_unavailable(
+            mapping,
+            f"timeout after {MLTK_TIMEOUT_PER_TECHNIQUE}s",
+        )
+    except Exception as exc:
+        return _mark_mltk_unavailable(mapping, str(exc))
 
     enriched = dict(mapping)
 
@@ -263,9 +272,21 @@ async def _enrich_single_technique(
             enriched["confidence"],
         )
     else:
-        enriched["mltk_validation_run"] = False
+        enriched["mltk_validation_run"] = True
+        enriched["mltk_agrees"] = False
+        enriched["mltk_unavailable"] = True
         enriched["mltk_error"] = mltk_result.get("error", "unknown")
 
+    return enriched
+
+
+def _mark_mltk_unavailable(mapping: dict, error: str) -> dict:
+    enriched = dict(mapping)
+    enriched["mltk_validation_run"] = True
+    enriched["mltk_agrees"] = False
+    enriched["mltk_unavailable"] = True
+    enriched["mltk_error"] = error
+    enriched["confidence_source"] = "qdrant_only_mltk_unavailable"
     return enriched
 
 

@@ -1652,7 +1652,7 @@ function MltkEnrichmentStatus({
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-4 rounded-sm bg-sentinel-accent" />
               <h3 className="text-sm font-bold text-white tracking-wide">
-                MLTK Validation Pass
+                MLTK Enrichment Running
               </h3>
             </div>
             <p className="text-xs text-sentinel-muted ml-4">
@@ -1707,8 +1707,11 @@ function MltkEnrichmentStatus({
   }
 
   if (status === 'complete' && summary) {
-    const hasAgreements = (summary.agreements || 0) > 0
-    const hasDisagreements = (summary.disagreements || 0) > 0
+    const techniquesValidated = summary.techniques_validated || 0
+    const agreements = summary.agreements || 0
+    const reviewCount = summary.disagreements || 0
+    const allTechniquesValidated =
+      techniquesValidated > 0 && agreements === techniquesValidated
     return (
       <div
         className="bg-sentinel-surface border border-sentinel-border rounded-xl p-4"
@@ -1719,32 +1722,27 @@ function MltkEnrichmentStatus({
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-4 rounded-sm bg-green-400" />
               <h3 className="text-sm font-bold text-white tracking-wide">
-                MLTK Validation Pass
+                MLTK Enrichment Complete
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2 ml-4">
               <span className="text-xs text-green-400">
-                {summary.techniques_validated || 0} techniques validated by MLTK
+                {techniquesValidated} techniques evaluated
               </span>
-              {hasAgreements && (
-                <span className="text-xs text-sentinel-muted">
-                  {summary.agreements} agreement
-                  {summary.agreements !== 1 ? 's' : ''}
-                </span>
-              )}
-              {hasDisagreements && (
-                <span className="text-xs text-amber-400">
-                  {summary.disagreements} review signal
-                  {summary.disagreements !== 1 ? 's' : ''}
-                </span>
-              )}
+              <span className="text-xs text-sentinel-muted">
+                &middot; {agreements} MLTK validated
+              </span>
+              <span className="text-xs text-amber-400">
+                &middot; {reviewCount} review signal
+                {reviewCount !== 1 ? 's' : ''}
+              </span>
             </div>
             <p className="text-xs text-sentinel-muted ml-4 mt-1">
               MLTK enrichment synced into MITRE validation cards.
             </p>
           </div>
           <span className="text-xs px-2 py-1 rounded border border-green-500/30 bg-green-900/20 text-green-400 font-bold uppercase tracking-wider shrink-0">
-            Validated
+            {allTechniquesValidated ? 'VALIDATED' : 'COMPLETE'}
           </span>
         </div>
       </div>
