@@ -2439,11 +2439,55 @@ const formatSloTokens = (value) => (
     : `${Math.round(value / 1000)}k`
 )
 
+function getPerfSloMeta(sloReport, sloStatus) {
+  if (sloStatus === 'PASS') {
+    return {
+      badgeLabel: 'Perf SLO: PASS',
+      panelStatus: 'PASS',
+      cause: 'Performance budgets met',
+    }
+  }
+
+  const timeBreached = sloReport?.slo_1_time?.met === false
+  const tokenBreached = sloReport?.slo_2_tokens?.met === false
+
+  if (timeBreached && tokenBreached) {
+    return {
+      badgeLabel: 'Perf SLO: TIME + TOKEN BREACH',
+      panelStatus: 'TIME + TOKEN BREACH',
+      cause: 'Runtime and token budgets exceeded',
+    }
+  }
+
+  if (timeBreached) {
+    return {
+      badgeLabel: 'Perf SLO: TIME BREACH',
+      panelStatus: 'TIME BREACH',
+      cause: 'Runtime budget exceeded',
+    }
+  }
+
+  if (tokenBreached) {
+    return {
+      badgeLabel: 'Perf SLO: TOKEN BREACH',
+      panelStatus: 'TOKEN BREACH',
+      cause: 'Token budget exceeded',
+    }
+  }
+
+  return {
+    badgeLabel: 'Perf SLO: BREACH',
+    panelStatus: 'BREACH',
+    cause: 'Performance budget breach recorded',
+  }
+}
+
 function SloDetailsPanel({ sloReport, sloStatus }) {
   const time = sloReport?.slo_1_time || {}
   const tokens = sloReport?.slo_2_tokens || {}
   const breaches = asArray(sloReport?.slo_breaches)
   const isPass = sloStatus === 'PASS'
+  const sloMeta = getPerfSloMeta(sloReport, sloStatus)
 
   const timeValueClass =
     time.met === true
@@ -2477,19 +2521,24 @@ function SloDetailsPanel({ sloReport, sloStatus }) {
                   : "w-3.5 h-3.5 text-red-400"
               } />
               <span className="text-xs font-semibold text-sentinel-muted uppercase tracking-wider">
-                Performance Metrics
+                Performance SLO
               </span>
               <span className={
                 isPass
                   ? "text-xs font-bold text-green-400"
                   : "text-xs font-bold text-red-400"
               }>
-                {sloStatus}
+                {sloMeta.panelStatus}
               </span>
             </div>
             <p className="text-xs text-sentinel-muted leading-relaxed">
-              System performance compliance for this investigation run.
+              Performance SLO tracks runtime and token budget only; it does not invalidate the investigation findings.
             </p>
+            {!isPass && (
+              <p className="text-xs text-red-400/90 leading-relaxed mt-2">
+                {sloMeta.cause}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2 shrink-0 w-full lg:w-[420px]">
@@ -3607,6 +3656,7 @@ export default function ReportPage() {
   const sloStatus =
     sloReport?.overall_slo_status === 'ALL_MET' ? 'PASS' : 'BREACH'
   const sloTone = REPORT_SLO_TONES[sloStatus] || REPORT_SLO_TONES.BREACH
+  const sloMeta = getPerfSloMeta(sloReport, sloStatus)
   const safeContainmentPlan = normalizeContainmentPlan(report.containment_plan)
   const safeMitreTechniques = asArray(report.mitre_techniques_used).filter(
     (technique) => typeof technique === 'string' && technique.trim().length > 0
@@ -3693,7 +3743,7 @@ export default function ReportPage() {
                     >
                       <Zap className={`w-2.5 h-2.5 ${sloTone.icon}`} />
                       <span className="text-[10px] font-bold font-mono tracking-tight">
-                        SLO: {sloStatus}
+                        {sloMeta.badgeLabel}
                       </span>
                       <ChevronDown
                         className={`w-3 h-3 transition-transform ${sloExpanded ? 'rotate-180' : ''}`}
