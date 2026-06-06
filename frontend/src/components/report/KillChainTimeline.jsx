@@ -244,6 +244,17 @@ const DEFAULT_TACTIC_STYLE = {
   connector: "#3b82f6",
 }
 
+const ACTIVITY_SUBTITLES_BY_TECHNIQUE = {
+  "T1059.003": "Process execution",
+  "T1562.004": "Firewall modification",
+  "T1552.005": "Credential exposure",
+  "T1021.002": "Lateral access",
+  T1083: "File discovery",
+  T1547: "Persistence mechanism",
+  T1078: "Valid account activity",
+  T1486: "Encryption impact",
+}
+
 // --------------- Helpers ---------------
 
 const getTacticStyle = (tactic) => {
@@ -338,6 +349,64 @@ const extractEvidenceHighlight = (evidence) => {
   return null
 }
 
+const normalizeRepeatLabel = (value) =>
+  String(value || "").trim().toLowerCase()
+
+const buildRepeatCounts = (stages) => {
+  const counts = {
+    names: {},
+    tactics: {},
+    eventCodes: {},
+  }
+
+  stages.forEach((stage) => {
+    const name = normalizeRepeatLabel(stage.name)
+    const tactic = normalizeRepeatLabel(stage.tactic)
+    const eventCode = stage.evidence?.match(/EventCode\s+(\d{4,5})/i)?.[1]
+
+    if (name) counts.names[name] = (counts.names[name] || 0) + 1
+    if (tactic) counts.tactics[tactic] = (counts.tactics[tactic] || 0) + 1
+    if (eventCode) {
+      counts.eventCodes[eventCode] = (counts.eventCodes[eventCode] || 0) + 1
+    }
+  })
+
+  return counts
+}
+
+const getStageActivitySubtitle = (stage) => {
+  const techniqueId = stage.techniqueId
+  if (techniqueId && ACTIVITY_SUBTITLES_BY_TECHNIQUE[techniqueId]) {
+    return ACTIVITY_SUBTITLES_BY_TECHNIQUE[techniqueId]
+  }
+
+  return null
+}
+
+const shouldShowActivitySubtitle = (
+  stage,
+  activitySubtitle,
+  repeatCounts,
+  isLongChain
+) => {
+  if (!isLongChain || !activitySubtitle) return false
+
+  const stageName = String(stage.name || "")
+  if (activitySubtitle.toLowerCase() === stageName.toLowerCase()) {
+    return false
+  }
+
+  const nameKey = normalizeRepeatLabel(stage.name)
+  const tacticKey = normalizeRepeatLabel(stage.tactic)
+  const eventCode = stage.evidence?.match(/EventCode\s+(\d{4,5})/i)?.[1]
+
+  return (
+    (nameKey && repeatCounts.names[nameKey] > 1) ||
+    (tacticKey && repeatCounts.tactics[tacticKey] > 1) ||
+    (eventCode && repeatCounts.eventCodes[eventCode] > 1)
+  )
+}
+
 const joinClasses = (...classes) => classes.filter(Boolean).join(" ")
 
 // --------------- Main Component ---------------
@@ -357,6 +426,7 @@ const KillChainTimeline = ({ stages = [] }) => {
     .match(/impact|encrypt|exfil|compromise|credential/)
   const isLongChain = normalized.length > 5
   const timelineRows = splitTimelineRows(normalized)
+  const repeatCounts = buildRepeatCounts(normalized)
 
   return (
     <div
@@ -549,6 +619,13 @@ const KillChainTimeline = ({ stages = [] }) => {
             )
 
             const highlight = extractEvidenceHighlight(stage.evidence)
+            const activitySubtitle = getStageActivitySubtitle(stage)
+            const showActivitySubtitle = shouldShowActivitySubtitle(
+              stage,
+              activitySubtitle,
+              repeatCounts,
+              isLongChain
+            )
 
             return (
               <React.Fragment key={stage.originalIndex}>
@@ -615,6 +692,14 @@ const KillChainTimeline = ({ stages = [] }) => {
                         </span>
                       )}
                     </p>
+                    {showActivitySubtitle && (
+                      <p
+                        className="text-[10px] leading-tight text-sentinel-muted mb-1 truncate"
+                        title={activitySubtitle}
+                      >
+                        {activitySubtitle}
+                      </p>
+                    )}
 
                     {/* Technique badge */}
                     {stage.techniqueId && (
