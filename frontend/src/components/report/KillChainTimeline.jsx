@@ -298,6 +298,11 @@ const normalizeStages = (stages) => {
     .sort((a, b) => a.number - b.number)
 }
 
+const splitTimelineRows = (stages) => {
+  if (stages.length <= 5) return [stages]
+  return [stages.slice(0, 5), stages.slice(5)]
+}
+
 const joinClasses = (...classes) => classes.filter(Boolean).join(" ")
 
 // --------------- Main Component ---------------
@@ -315,8 +320,8 @@ const KillChainTimeline = ({ stages = [] }) => {
   const isFinalImpact = finalStage.name
     ?.toLowerCase()
     .match(/impact|encrypt|exfil|compromise|credential/)
-  const isDense = normalized.length > 5 && normalized.length <= 7
-  const useScroll = normalized.length > 7
+  const isLongChain = normalized.length > 5
+  const timelineRows = splitTimelineRows(normalized)
 
   return (
     <div
@@ -395,140 +400,99 @@ const KillChainTimeline = ({ stages = [] }) => {
             <span className="text-xs text-sentinel-muted uppercase tracking-wider font-medium shrink-0">
               Path
             </span>
-            {normalized.slice(0, 5).map((stage, idx) => {
-              // Prefer tactic name over stage name.
-              // Tactic names are shorter and more meaningful.
-              const label =
-                stage.tactic && !stage.tactic.match(/^TA\d{4}$/)
-                  ? stage.tactic
-                  : stage.name
-
-              const trimmedLabel = label
-                .replace(/ Stage$/, "")
-                .replace(/ Phase$/, "")
-                .trim()
-
-              const displayLabel =
-                trimmedLabel.length > 18
-                  ? trimmedLabel.slice(0, 18) + "..."
-                  : trimmedLabel
-
-              return (
-                <React.Fragment key={idx}>
-                  <span className="text-xs font-medium text-white">
-                    {displayLabel}
-                  </span>
-                  {idx < Math.min(normalized.length, 5) - 1 && (
-                    <svg
-                      width="10"
-                      height="8"
-                      viewBox="0 0 10 8"
-                      className="text-sentinel-muted shrink-0"
-                      fill="currentColor"
-                    >
-                      <path d="M0 0 L10 4 L0 8 Z" />
-                    </svg>
-                  )}
-                </React.Fragment>
-              )
-            })}
-            {normalized.length > 5 && (
-              <span className="text-xs text-sentinel-muted">
-                +{normalized.length - 5} more
-              </span>
-            )}
+            <span className="text-xs font-medium text-white">
+              {normalized.length}-stage attack chain
+            </span>
           </div>
         )}
       </div>
 
       <div
-        className={
-          useScroll
-            ? "overflow-x-auto pb-1"
-            : "overflow-visible relative"
-        }
+        className="overflow-visible relative"
       >
-        <div
-          className={
-            useScroll
-              ? "flex items-stretch gap-0 min-w-max"
-              : "flex flex-col gap-3 w-full sm:flex-row sm:items-stretch sm:gap-0 relative"
-          }
-        >
-          {/* Background attack rail layers - non-scroll desktop only */}
-          {!useScroll && (
-            <>
-              {/* Faint telemetry grid */}
-              <div
-                className="hidden sm:block absolute inset-0 rounded-lg pointer-events-none"
-                style={{
-                  background: `repeating-linear-gradient(
-                    90deg,
-                    transparent,
-                    transparent 59px,
-                    rgba(31, 41, 55, 0.4) 59px,
-                    rgba(31, 41, 55, 0.4) 60px
-                  )`,
-                  zIndex: 0,
-                }}
-              />
+        <div className={isLongChain ? "flex flex-col gap-5" : ""}>
+          {timelineRows.map((rowStages, rowIdx) => {
+            const rowFirstStage = rowStages[0]
+            const rowLastStage = rowStages[rowStages.length - 1]
+            const rowIsFinalImpact =
+              rowIdx === timelineRows.length - 1 && isFinalImpact
 
-              {/* Continuous attack rail line */}
+            return (
               <div
-                className="hidden sm:block absolute pointer-events-none"
-                style={{
-                  left: "12px",
-                  right: "12px",
-                  bottom: "18px",
-                  height: "2px",
-                  background: `linear-gradient(to right, ${
-                    normalized[0]
-                      ? (TACTIC_STYLES[normalized[0].tactic]?.connector ??
-                        DEFAULT_TACTIC_STYLE.connector)
-                      : DEFAULT_TACTIC_STYLE.connector
-                  }66, ${
-                    normalized.length > 1
-                      ? (TACTIC_STYLES[
-                          normalized[normalized.length - 1].tactic
-                        ]?.connector ?? DEFAULT_TACTIC_STYLE.connector)
-                      : DEFAULT_TACTIC_STYLE.connector
-                  }99)`,
-                  zIndex: 0,
-                }}
-              />
-
-              {/* Final impact radial glow */}
-              {isFinalImpact && (
+                key={rowIdx}
+                className="flex flex-col gap-3 w-full sm:flex-row sm:items-stretch sm:gap-0 relative"
+              >
+                {/* Faint telemetry grid */}
                 <div
-                  className="hidden sm:block absolute pointer-events-none"
+                  className="hidden sm:block absolute inset-0 rounded-lg pointer-events-none"
                   style={{
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                    width: "30%",
-                    background: `radial-gradient(
-                      ellipse at 90% 50%,
-                      ${
-                        normalized[normalized.length - 1]
-                          ? (TACTIC_STYLES[
-                              normalized[normalized.length - 1].tactic
-                            ]?.connector ?? "#dc2626")
-                          : "#dc2626"
-                      }18,
-                      transparent 70%
+                    background: `repeating-linear-gradient(
+                      90deg,
+                      transparent,
+                      transparent 59px,
+                      rgba(31, 41, 55, 0.4) 59px,
+                      rgba(31, 41, 55, 0.4) 60px
                     )`,
                     zIndex: 0,
                   }}
                 />
-              )}
-            </>
-          )}
-          {normalized.map((stage, idx) => {
+
+                {/* Continuous attack rail line */}
+                <div
+                  className="hidden sm:block absolute pointer-events-none"
+                  style={{
+                    left: "12px",
+                    right: "12px",
+                    bottom: "18px",
+                    height: "2px",
+                    background: `linear-gradient(to right, ${
+                      rowFirstStage
+                        ? (TACTIC_STYLES[rowFirstStage.tactic]?.connector ??
+                          DEFAULT_TACTIC_STYLE.connector)
+                        : DEFAULT_TACTIC_STYLE.connector
+                    }66, ${
+                      rowLastStage
+                        ? (TACTIC_STYLES[rowLastStage.tactic]?.connector ??
+                          DEFAULT_TACTIC_STYLE.connector)
+                        : DEFAULT_TACTIC_STYLE.connector
+                    }99)`,
+                    zIndex: 0,
+                  }}
+                />
+
+                {/* Final impact radial glow */}
+                {rowIsFinalImpact && (
+                  <div
+                    className="hidden sm:block absolute pointer-events-none"
+                    style={{
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      width: "30%",
+                      background: `radial-gradient(
+                        ellipse at 90% 50%,
+                        ${
+                          finalStage
+                            ? (TACTIC_STYLES[finalStage.tactic]?.connector ??
+                              "#dc2626")
+                            : "#dc2626"
+                        }18,
+                        transparent 70%
+                      )`,
+                      zIndex: 0,
+                    }}
+                  />
+                )}
+
+                {rowStages.map((stage, rowStageIdx) => {
             const tacticStyle = getTacticStyle(stage.tactic)
+            const idx = normalized.indexOf(stage)
             const isLast = idx === normalized.length - 1
+            const isLastInRow = rowStageIdx === rowStages.length - 1
             const isConfirmed = stage.confidence === "CONFIRMED"
             const isImpact = isLast && isFinalImpact
             const isFinalStage = isLast
+            const isDenseCard = isLongChain
 
             const nodeClasses = joinClasses(
               "w-9 h-9 rounded-full flex items-center",
@@ -541,11 +505,6 @@ const KillChainTimeline = ({ stages = [] }) => {
               isImpact
                 ? "shadow-xl ring-offset-sentinel-bg animate-pulse brightness-125"
                 : ""
-            )
-
-            const tacticClasses = joinClasses(
-              "text-xs font-medium",
-              tacticStyle.text
             )
 
             const techniqueBadgeClasses = joinClasses(
@@ -583,32 +542,23 @@ const KillChainTimeline = ({ stages = [] }) => {
               }
             }
 
-            const tacticLabel =
-              stage.tactic && !stage.tactic.match(/^TA\d{4}$/)
-                ? stage.tactic
-                : stage.name
-
             return (
               <React.Fragment key={stage.originalIndex}>
                 {/* Stage unit: capsule stem node */}
                 <div
-                  className={
-                    useScroll
-                      ? "flex flex-col items-center shrink-0 relative z-10"
-                      : "flex flex-col items-center flex-1 min-w-0 relative z-10"
-                  }
-                  style={useScroll ? { width: "180px" } : {}}
+                  className="flex flex-col items-center flex-1 min-w-0 relative z-10"
                 >
                   {/* Telemetry capsule above rail */}
                   <div
                     className={joinClasses(
-                      isDense
+                      isDenseCard
                         ? "w-full h-[116px] overflow-hidden p-2 rounded-lg"
                         : "w-full h-[132px] overflow-hidden p-2.5 rounded-lg",
                       "bg-sentinel-bg border border-sentinel-border",
                       "border-l-4 opacity-100",
                       tacticStyle.border,
-                      isImpact ? "shadow-lg " + tacticStyle.glow : "",
+                      isImpact ? "shadow-lg" : "",
+                      isImpact ? tacticStyle.glow : "",
                       isFinalStage && !isImpact
                         ? "border-b-2 border-b-sentinel-accent"
                         : ""
@@ -683,7 +633,7 @@ const KillChainTimeline = ({ stages = [] }) => {
                     )}
 
                     {/* Timestamp - compact */}
-                    {!isDense &&
+                    {!isDenseCard &&
                       stage.timestamp &&
                       stage.timestamp !== "unknown" && (
                       <p
@@ -726,20 +676,17 @@ const KillChainTimeline = ({ stages = [] }) => {
                   )}
                 </div>
 
-                {!isLast && (
+                {!isLastInRow && (
                   <div className="hidden sm:block shrink-0 w-1 relative z-10" />
                 )}
               </React.Fragment>
             )
+                })}
+              </div>
+            )
           })}
         </div>
       </div>
-
-      {useScroll && (
-        <p className="text-xs text-sentinel-muted mt-2 text-right">
-          {normalized.length} stages &bull; scroll to view all
-        </p>
-      )}
     </div>
   )
 }
