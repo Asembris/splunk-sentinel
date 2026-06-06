@@ -359,14 +359,14 @@ def compute_reconstruction_confidence(
         },
         {
             "internal_name": "external_ip_corroboration",
-            "name": "External Threat Corroboration",
-            "description": "External IP verified by threat intelligence",
+            "name": "External Indicator Evidence",
+            "description": "External/non-private IP evidence observed in Splunk telemetry",
             "raw_score": 1.0 if has_external_ip else 0.0,
             "weight": 0.10,
             "detail": (
-                "External IP evidence present"
+                "External IP evidence present in investigation telemetry"
                 if has_external_ip
-                else "No external IP corroboration"
+                else "No external IP evidence available for corroboration"
             ),
         },
         {
@@ -433,8 +433,8 @@ def compute_reconstruction_confidence(
         "Patient Zero Identification": (
             "Run deeper reconstruction to confirm initial compromise source"
         ),
-        "External Threat Corroboration": (
-            "Perform manual threat intel lookup for unverified external IPs"
+        "External Indicator Evidence": (
+            "Run threat-intel lookup on observed external IPs to add external corroboration"
         ),
         "Blast Radius Assessment": (
             "Expand blast radius analysis before containment"
@@ -449,7 +449,12 @@ def compute_reconstruction_confidence(
         "weakest_factor": {
             "name": weakest["name"],
             "raw_score": weakest["raw_score"],
-            "recommendation": recommendation_by_factor[weakest["name"]],
+            "recommendation": (
+                "Collect or extract external indicators before threat-intel corroboration"
+                if weakest["name"] == "External Indicator Evidence"
+                and weakest["raw_score"] <= 0
+                else recommendation_by_factor[weakest["name"]]
+            ),
         },
         "strongest_factor": {
             "name": strongest["name"],

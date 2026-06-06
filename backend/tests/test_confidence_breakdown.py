@@ -172,6 +172,6 @@ class TestComputeReconstructionConfidenceBreakdown:
             "Evidence Variety",
             "Kill Chain Completeness",
             "Patient Zero Identification",
-            "External Threat Corroboration",
+            "External Indicator Evidence",
             "Blast Radius Assessment",
         }

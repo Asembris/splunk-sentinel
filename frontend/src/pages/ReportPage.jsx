@@ -1394,6 +1394,7 @@ function ConfidenceBreakdownPanel({ investigationId }) {
           const tone = getScoreTone(rawScore)
           const isWeakest = factor.name === weakestName
           const isStrongest = factor.name === strongestName
+          const isExternalIndicatorGap = factor.name === 'External Indicator Evidence' && rawScore === 0
 
           return (
             <div
@@ -1438,7 +1439,7 @@ function ConfidenceBreakdownPanel({ investigationId }) {
                   )}
                   {isWeakest && (
                     <p className="text-[10px] text-amber-400/70 mt-2 uppercase tracking-wider">
-                      Missing validation signal
+                      {isExternalIndicatorGap ? 'External corroboration not available' : 'Missing validation signal'}
                     </p>
                   )}
                 </div>
