@@ -164,7 +164,6 @@ export default function KillChainGraph() {
           highlight: { background: color + '66', border: color },
           hover: { background: color + '55', border: color },
         },
-        level: totalOldCount + i,
       })
 
       // Add edge from previous node
