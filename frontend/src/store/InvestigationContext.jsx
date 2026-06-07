@@ -109,6 +109,11 @@ function reducer(state, action) {
 
       return {
         ...state,
+        agentStatuses: {
+          ...state.agentStatuses,
+          triage_agent: 'complete',
+          reconstruction_agent: 'running',
+        },
         currentIteration: iteration,
         confidence: confidence,
         killChainStages: [...state.killChainStages, ...newStages],
