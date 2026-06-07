@@ -2590,6 +2590,64 @@ function SloDetailsPanel({ sloReport, sloStatus }) {
   )
 }
 
+function normalizeTechniqueId(id) {
+  return String(id || '').trim().toUpperCase()
+}
+
+function getCoverageSets(result) {
+  const covered = new Set()
+  const weak = new Set()
+  const gaps = new Set()
+
+  ;(result?.covered_techniques || []).forEach(tech => {
+    const id = normalizeTechniqueId(tech.technique_id)
+    if (!id) return
+
+    if (tech.match_confidence === 'HIGH' || tech.match_confidence === 'MEDIUM') {
+      covered.add(id)
+    } else {
+      weak.add(id)
+    }
+  })
+
+  ;(result?.weak_matches || []).forEach(tech => {
+    const id = normalizeTechniqueId(tech.technique_id)
+    if (id) weak.add(id)
+  })
+
+  ;(result?.gaps || []).forEach(gap => {
+    const id = normalizeTechniqueId(gap.technique_id)
+    if (id) gaps.add(id)
+  })
+
+  return { covered, weak, gaps }
+}
+
+function getCoveragePercent(result) {
+  if (!result?.techniques_analyzed) return 0
+  const { covered } = getCoverageSets(result)
+  return Math.round((covered.size / result.techniques_analyzed) * 100)
+}
+
+function getCoverageComparison(baseline, latest) {
+  const beforeSets = getCoverageSets(baseline)
+  const afterSets = getCoverageSets(latest)
+  const newlyCovered = [...afterSets.covered].filter(id => !beforeSets.covered.has(id))
+  const gapsClosed = [...beforeSets.gaps].filter(id => afterSets.covered.has(id))
+  const movedToReview = [...beforeSets.gaps].filter(id => afterSets.weak.has(id))
+
+  return {
+    beforePercent: getCoveragePercent(baseline),
+    afterPercent: getCoveragePercent(latest),
+    newlyCovered,
+    gapsClosed,
+    movedToReview,
+    remainingGaps: afterSets.gaps.size,
+    savedSearchesBefore: baseline?.saved_searches_checked ?? null,
+    savedSearchesAfter: latest?.saved_searches_checked ?? null,
+  }
+}
+
 function DetectionGapPanel({ investigationId }) {
   const [gaps, setGaps] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2600,6 +2658,10 @@ function DetectionGapPanel({ investigationId }) {
   const [copied, setCopied] = useState({})
   const [deploying, setDeploying] = useState({})
   const [deployed, setDeployed] = useState({})
+  const [baselineCoverage, setBaselineCoverage] = useState(null)
+  const [deployedSinceBaseline, setDeployedSinceBaseline] = useState({})
+  const [coverageRefreshRecommended, setCoverageRefreshRecommended] = useState(false)
+  const [lastCoverageRefreshWasForced, setLastCoverageRefreshWasForced] = useState(false)
 
   const analysisStages = [
     'Inventorying mapped MITRE techniques',
@@ -2622,15 +2684,25 @@ function DetectionGapPanel({ investigationId }) {
     return () => clearInterval(intervalId)
   }, [loading, analysisStages.length])
 
-  const fetchGaps = async () => {
+  const fetchGaps = async ({ forceRefresh = false } = {}) => {
     if (!investigationId) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/investigations/${investigationId}/detection-gaps`)
+      const endpoint = forceRefresh
+        ? `/api/investigations/${investigationId}/detection-gaps?force_refresh=true`
+        : `/api/investigations/${investigationId}/detection-gaps`
+      const res = await fetch(endpoint)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
+      if (!baselineCoverage && Object.keys(deployedSinceBaseline).length === 0 && !forceRefresh) {
+        setBaselineCoverage(data)
+      }
       setGaps(data)
+      setLastCoverageRefreshWasForced(forceRefresh)
+      if (forceRefresh) {
+        setCoverageRefreshRecommended(false)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -2664,6 +2736,13 @@ function DetectionGapPanel({ investigationId }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Deploy failed')
       setDeployed(prev => ({ ...prev, [techId]: { success: true, message: data.message } }))
+      if (!baselineCoverage && gaps) {
+        setBaselineCoverage(gaps)
+      }
+      setDeployedSinceBaseline(prev => ({ ...prev, [normalizeTechniqueId(techId)]: true }))
+      if (data.coverage_refresh_recommended) {
+        setCoverageRefreshRecommended(true)
+      }
     } catch (err) {
       setDeployed(prev => ({ ...prev, [techId]: { success: false, error: err.message } }))
     } finally {
@@ -2709,6 +2788,13 @@ function DetectionGapPanel({ investigationId }) {
   const displayedCoverageScore = gaps?.techniques_analyzed > 0
     ? coveredCount / gaps.techniques_analyzed
     : gaps?.coverage_score ?? 0
+  const deployedTechniqueIds = Object.keys(deployedSinceBaseline)
+  const coverageComparison = baselineCoverage && gaps && lastCoverageRefreshWasForced && deployedTechniqueIds.length > 0
+    ? getCoverageComparison(baselineCoverage, gaps)
+    : null
+  const coverageDeltaPoints = coverageComparison
+    ? coverageComparison.afterPercent - coverageComparison.beforePercent
+    : 0
 
   return (
     <div
@@ -2985,6 +3071,140 @@ function DetectionGapPanel({ investigationId }) {
                     )}
                   </div>
                 </div>
+
+                {coverageRefreshRecommended && deployedTechniqueIds.length > 0 && (
+                  <div className="border border-sentinel-accent/30 rounded-xl p-3 bg-sentinel-accent/5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-white">
+                          Coverage refresh recommended
+                        </p>
+                        <p className="text-xs text-sentinel-muted mt-1 leading-relaxed">
+                          A saved search was deployed. Re-run coverage with fresh Splunk saved searches
+                          to measure saved-search coverage changes.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => fetchGaps({ forceRefresh: true })}
+                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider
+                                   bg-sentinel-accent/10 border border-sentinel-accent/30
+                                   rounded-lg text-sentinel-accent shrink-0
+                                   hover:bg-sentinel-accent/20 transition-colors"
+                      >
+                        Re-run Coverage
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {coverageComparison && (
+                  <div className="border border-sentinel-border rounded-xl p-4 bg-sentinel-bg">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-3">
+                      <div>
+                        <p className="text-xs font-semibold text-white">
+                          {coverageDeltaPoints > 0
+                            ? 'Saved-search coverage improved'
+                            : 'Coverage refreshed from Splunk saved searches'}
+                        </p>
+                        <p className="text-xs text-sentinel-muted mt-1 leading-relaxed">
+                          Measured by saved-search coverage matching after refresh. Review and tune
+                          deployed detections before production reliance.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded border
+                                       border-sentinel-border text-sentinel-muted bg-sentinel-surface shrink-0">
+                        Fresh saved-search check
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                      <div className="border border-sentinel-border rounded-lg p-2 bg-sentinel-surface">
+                        <p className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                          Before
+                        </p>
+                        <p className="text-lg font-bold font-mono text-white">
+                          {coverageComparison.beforePercent}%
+                        </p>
+                      </div>
+                      <div className="border border-sentinel-border rounded-lg p-2 bg-sentinel-surface">
+                        <p className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                          After
+                        </p>
+                        <p className="text-lg font-bold font-mono text-white">
+                          {coverageComparison.afterPercent}%
+                        </p>
+                      </div>
+                      <div className="border border-sentinel-border rounded-lg p-2 bg-sentinel-surface">
+                        <p className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                          Delta
+                        </p>
+                        {coverageDeltaPoints > 0 ? (
+                          <p className="text-lg font-bold font-mono text-green-400">
+                            +{coverageDeltaPoints} pts
+                          </p>
+                        ) : (
+                          <p className="text-lg font-bold font-mono text-sentinel-muted">
+                            {coverageDeltaPoints} pts
+                          </p>
+                        )}
+                      </div>
+                      <div className="border border-sentinel-border rounded-lg p-2 bg-sentinel-surface">
+                        <p className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                          Newly Covered
+                        </p>
+                        <p className="text-lg font-bold font-mono text-green-400">
+                          {coverageComparison.newlyCovered.length}
+                        </p>
+                      </div>
+                      <div className="border border-sentinel-border rounded-lg p-2 bg-sentinel-surface">
+                        <p className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                          Gaps Closed
+                        </p>
+                        <p className="text-lg font-bold font-mono text-green-400">
+                          {coverageComparison.gapsClosed.length}
+                        </p>
+                      </div>
+                      <div className="border border-sentinel-border rounded-lg p-2 bg-sentinel-surface">
+                        <p className="text-[10px] text-sentinel-muted uppercase tracking-wider">
+                          Remaining Gaps
+                        </p>
+                        <p className="text-lg font-bold font-mono text-red-400">
+                          {coverageComparison.remainingGaps}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-col gap-2 text-xs text-sentinel-muted">
+                      <p>
+                        Saved searches checked: {coverageComparison.savedSearchesBefore ?? '-'} to {coverageComparison.savedSearchesAfter ?? '-'}
+                      </p>
+                      {coverageComparison.newlyCovered.length > 0 && (
+                        <p>
+                          Newly covered by saved-search matching: {' '}
+                          <span className="font-mono text-green-400">
+                            {coverageComparison.newlyCovered.join(', ')}
+                          </span>
+                        </p>
+                      )}
+                      {coverageComparison.gapsClosed.length > 0 && (
+                        <p>
+                          Gaps closed after deployment refresh: {' '}
+                          <span className="font-mono text-green-400">
+                            {coverageComparison.gapsClosed.join(', ')}
+                          </span>
+                        </p>
+                      )}
+                      {coverageComparison.movedToReview.length > 0 && (
+                        <p>
+                          Moved to review: {' '}
+                          <span className="font-mono text-amber-400">
+                            {coverageComparison.movedToReview.join(', ')}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Weak matches */}
