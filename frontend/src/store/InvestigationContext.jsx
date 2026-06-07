@@ -125,21 +125,41 @@ function reducer(state, action) {
     }
 
     case 'COMPLETE': {
-      // Backfill evidence/details from final report if missing
-      const finalStages = action.data?.final_report?.key_findings || []
-      const enrichedStages = state.killChainStages.map(stage => {
-        const finding = finalStages.find(f => 
-          f.finding.toLowerCase().includes(stage.label.toLowerCase()) ||
-          stage.label.toLowerCase().includes(f.finding.toLowerCase())
-        )
-        return finding ? { ...stage, evidence: finding.evidence || stage.evidence } : stage
-      })
+      const finalKillChain = action.data?.kill_chain
+
+      let reconciledStages
+      if (Array.isArray(finalKillChain) && finalKillChain.length > 0) {
+        // Sync dashboard to the authoritative post-loop synthesis result
+        reconciledStages = finalKillChain.map((s, i) => ({
+          id: `final-stage-${i}`,
+          label: [s.mitre_tactic, s.stage_name].filter(Boolean).join(' - '),
+          iteration: 'final',
+          confidence: s.confidence === 'CONFIRMED' ? 0.9 : 0.6,
+          evidence: s.evidence || null,
+          mitre_tactic: s.mitre_tactic || null,
+          mitre_technique: s.mitre_technique || null,
+          timestamp: s.timestamp || null,
+        }))
+      } else {
+        // No final kill_chain — backfill evidence from report key_findings
+        const keyFindings = action.data?.final_report?.key_findings || []
+        reconciledStages = state.killChainStages.map(stage => {
+          const finding = keyFindings.find(f =>
+            f.finding.toLowerCase().includes(stage.label.toLowerCase()) ||
+            stage.label.toLowerCase().includes(f.finding.toLowerCase())
+          )
+          return finding ? { ...stage, evidence: finding.evidence || stage.evidence } : stage
+        })
+      }
 
       return {
         ...state,
         status: 'complete',
         result: action.data,
-        killChainStages: enrichedStages,
+        confidence: action.data?.reconstruction_confidence
+          ?? action.data?.final_report?.investigation_confidence
+          ?? state.confidence,
+        killChainStages: reconciledStages,
         agentStatuses: Object.fromEntries(
           Object.keys(state.agentStatuses).map(k => [k, 'complete'])
         ),
