@@ -9,7 +9,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2-orange?logo=langchain)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
-![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?logo=vite&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-latest-646CFF?logo=vite&logoColor=white)
 
 ![GPT-4o-mini](https://img.shields.io/badge/GPT--4o--mini-OpenAI-412991?logo=openai&logoColor=white)
 ![Qdrant Cloud](https://img.shields.io/badge/Qdrant-Cloud-DC244C?logo=qdrant&logoColor=white)
@@ -17,22 +17,20 @@
 ![LangSmith Traced](https://img.shields.io/badge/LangSmith-Traced-1C3C3C)
 ![Langfuse PromptOps](https://img.shields.io/badge/Langfuse-PromptOps-4B5563)
 
-![Tests](https://img.shields.io/badge/Tests-397_passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-425_passing-brightgreen)
 ![CI](https://github.com/Asembris/splunk-sentinel/actions/workflows/ci.yml/badge.svg)
-![DeepEval](https://img.shields.io/badge/DeepEval-93.3%25_pass-brightgreen)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## What Judges Can Verify In 10 Minutes
 
 ### Option A — Watch the demo video
-> Demo video coming soon — see investigation
-> walkthrough in the screenshots below.
+Demo video: see Devpost submission page for the full investigation walkthrough.
 
 ### Option B — Run it locally
 
 **Required dependencies:**
 Splunk Enterprise + botsv3, Python 3.12,
-Node 18, OpenAI API key, Qdrant Cloud (free tier)
+Node 20, OpenAI API key, Qdrant Cloud (free tier)
 
 **Optional (graceful fallback if missing):**
 - VirusTotal API key — threat intel shows
@@ -42,8 +40,14 @@ Node 18, OpenAI API key, Qdrant Cloud (free tier)
   prompts, pipeline unaffected
 - LangSmith API key — tracing disabled,
   pipeline unaffected
-- Supabase — investigations not persisted
-  between sessions
+- Supabase — **recommended** for full report persistence, investigation
+  history, analyst feedback, and reproducible report review. Without
+  Supabase, a live investigation may run but persisted history and
+  report storage will be unavailable.
+
+> **Platform note:** Shell commands below use Windows syntax.
+> On macOS/Linux replace `.venv\Scripts\activate` with
+> `source .venv/bin/activate` and `cd ..\frontend` with `cd ../frontend`.
 
 **1. Clone and install**
 
@@ -54,11 +58,11 @@ cd splunk-sentinel
 # Backend
 cd backend
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate        # Windows — see platform note above
 pip install -r requirements.txt
 
 # Frontend
-cd ..\frontend
+cd ../frontend
 npm install
 ```
 
@@ -87,6 +91,7 @@ LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ```
 
 **3. Create Supabase table:**
+For the full persisted demo/history/report workflow, complete the Supabase setup below.
 Run `supabase_schema.sql` in your Supabase SQL Editor:
 1. Go to your Supabase project dashboard
 2. Click SQL Editor -> New Query
@@ -112,7 +117,8 @@ This automatically creates:
 **5. Ingest RAG knowledge base (run once)**
 
 ```bash
-cd backend
+# continuing from frontend/ after step 1
+cd ../backend
 .venv\Scripts\activate
 python -m app.rag.ingest
 ```
@@ -120,6 +126,7 @@ python -m app.rag.ingest
 **6. Start backend**
 
 ```bash
+# from repo root — open a new terminal for this long-running process
 cd backend
 .venv\Scripts\activate
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
@@ -128,6 +135,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 **7. Start frontend**
 
 ```bash
+# from repo root — open a new terminal for this long-running process
 cd frontend
 npm run dev
 # http://localhost:5173
@@ -144,14 +152,18 @@ Expected:
   "status": "ok",
   "splunk_connected": true,
   "splunk_version": "10.2.2",
-  "promptops": "langfuse",
   "prompt_versions": {
-    "triage-agent": {"version": 1, "label": "production"},
-    "synthesis-narrative": {"version": 1, "label": "production"},
-    "containment-refinement": {"version": 1, "label": "production"}
-  }
+    "triage-agent": {"name": "triage-agent", "version": 1, "label": "production"},
+    "synthesis-narrative": {"name": "synthesis-narrative", "version": 1, "label": "production"},
+    "containment-refinement": {"name": "containment-refinement", "version": 1, "label": "production"}
+  },
+  "promptops": "langfuse"
 }
 ```
+
+> `promptops` is `"langfuse"` when Langfuse is configured and reachable.
+> If Langfuse credentials are missing or unreachable, the field shows
+> `"hardcoded"` and the pipeline continues with built-in fallback prompts.
 
 **9. Run your first investigation**
 
@@ -164,22 +176,23 @@ Expected:
 }
 ```
 
-Expected response includes:
-- `attack_classification: APT`
-- `investigation_confidence: ~0.75`
-- `kill_chain_stages: 4+ stages`
-- `ttp_mappings: 4+ MITRE techniques`
-- `containment_plan: 3 phases with actions`
+Typical response includes:
+- `classification` — attack type (e.g. APT, RANSOMWARE, INSIDER_THREAT, or UNKNOWN)
+- `investigation_confidence` — numeric confidence score
+- `kill_chain_stages` — reconstructed kill chain stages
+- `ttp_mappings` — mapped MITRE ATT&CK techniques
+- `containment_plan` — phased IR containment plan
 
 **10. Run the test suite**
 
 ```bash
+# from repo root
 cd backend
 .venv\Scripts\activate
 python -m pytest tests/ --ignore=tests/eval/ -v
 ```
 
-Expected: `397 passed, 0 failed`
+Expected: `425 passed, 0 failed`
 
 ## The Problem
 
@@ -405,13 +418,13 @@ Deterministic 5-factor confidence, not LLM-generated:
 - Kill chain completeness: `0.35`
 - Evidence variety: `0.30`
 - Patient zero identification: `0.10`
-- Threat corroboration: `0.10`
+- External indicator evidence: `0.10`
 - Blast radius assessment: `0.15`
 
 Includes weakest-factor callout plus a concrete recommendation.
 
 ### Feature 3 — MLTK Async TTP Validation
-After persistence, Splunk MLTK `ai` validates MITRE mappings asynchronously (~30s post-investigation). Validation runs in parallel and never blocks pipeline SLO. Qdrant/MLTK agreement boosts confidence using `Qdrant 60% + MLTK 40%`. UI updates via polling.
+After persistence, Splunk MLTK `ai` validates MITRE mappings asynchronously (~30s post-investigation). Validation runs in parallel and never blocks pipeline SLO. Qdrant/MLTK agreement boosts confidence using `Qdrant 60% + MLTK 40%`. UI updates via polling. MLTK validation runs as a post-investigation background enrichment step when Splunk MLTK 5.7.4 and the configured `openai_sentinel` connection are available. Techniques show `MLTK Validated`, `MLTK Review`, or `NOT RUN`. `NOT RUN` indicates enrichment has not completed or was not available for that investigation.
 
 ### Feature 4 — Containment Plan + Verification
 3-phase IR plan (`IMMEDIATE`, `SHORT TERM`, `REMEDIATION`) with analyst edits, SSE execution, and rollback via reversal SPL. `containment_verifier` proves measurable effect with deterministic before/after SPL counts and verdicts:
@@ -426,8 +439,10 @@ ContainmentRefinementAgent supports natural-language plan edits with ReAct tool 
 ### Feature 6 — Detection Gap Analysis
 Compares MITRE techniques against existing Splunk saved searches, identifies uncovered techniques, generates recommended detection SPL (LLM + templates), and deploys in one click through Splunk SDK. Includes cache, duplicate checks, and guardrails.
 
+**Before/After Coverage Improvement:** After deploying a generated saved search, analysts can click Re-run Coverage to force-refresh the gap analysis (`force_refresh=true`). The UI shows a before/after panel with coverage percentage before Sentinel, coverage percentage after deployment, delta in percentage points, newly covered techniques, gaps closed, and saved searches checked before and after. This is the closed-loop SOC improvement story.
+
 ### Feature 7 — PromptOps via Langfuse
-All 6 prompts managed in Langfuse (v1), with production/staging labels, startup validation, 5-minute TTL caching, memory fallback, and hardcoded fallback to prevent pipeline outages.
+Core production prompts are managed in Langfuse (v1), with production/staging labels, startup validation, 5-minute TTL caching, memory fallback, and hardcoded fallback to prevent pipeline outages.
 
 ### Feature 8 — Parallel Agent Fan-Out
 ThreatIntelAgent and TTPAgent run in parallel after reconstruction, reducing total latency versus sequential enrichment.
@@ -439,7 +454,10 @@ Synthesis pulls from Qdrant (`697 MITRE + 50 CVEs + 15 IR playbooks`) to ground 
 Every SPL query is recorded in a SHA-256 chain. Integrity is verifiable per investigation via API.
 
 ### Feature 11 — Full Observability
-LangSmith traces every LLM call. Langfuse manages prompt versions. Cost is approximately **$0.009 per investigation** with `gpt-4o-mini` exclusively.
+When configured, LangSmith traces LLM calls. Langfuse manages prompt versions. Cost is approximately **$0.009 per investigation** with `gpt-4o-mini` exclusively.
+
+### Feature 12 — Durable LangGraph Checkpointing
+The investigation graph uses AsyncSqliteSaver to checkpoint state at every node completion, keyed by `investigation_id` as `thread_id`. If the backend restarts mid-investigation, the graph resumes from the last completed node. Completed investigations are resumable via `POST /api/investigations/{id}/resume`. Check checkpoint status via `GET /api/investigations/{id}/checkpoint-status`. Backed by a local SQLite database at `backend/checkpoints.db` — suitable for single-node demo environments.
 
 ## Agent and Service Reference
 
@@ -511,8 +529,9 @@ index=sentinel_actions earliest=0
 |---|---|---|
 | `POST` | `/api/investigate` | Start a new investigation (JSON/SSE) |
 | `POST` | `/api/webhook/splunk` | Splunk autonomous trigger |
+| `GET` | `/api/webhook/splunk/test` | Webhook connectivity test |
 | `GET` | `/api/health` | Health and Splunk connectivity |
-| `GET` | `/api/investigations` | Investigation list |
+| `GET` | `/api/investigations/history` | Investigation history with pagination and search |
 | `GET` | `/api/investigations/{id}` | Investigation details |
 | `POST` | `/api/investigations/{id}/feedback` | Analyst feedback |
 | `GET` | `/api/investigations/{id}/report/pdf` | Download PDF |
@@ -531,7 +550,8 @@ index=sentinel_actions earliest=0
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/investigations/{id}/containment-plan` | Load plan |
-| `POST` | `/api/investigations/{id}/containment-plan/execute` | Execute phase |
+| `GET` | `/api/investigations/{id}/containment-plan/execute` | SSE stream for phase execution (EventSource / browser) |
+| `POST` | `/api/investigations/{id}/containment-plan/execute` | Execute phase (non-browser clients) |
 | `POST` | `/api/investigations/{id}/containment-plan/rollback` | Rollback action |
 | `GET` | `/api/investigations/{id}/containment-plan/chat/init` | Init chat |
 | `POST` | `/api/investigations/{id}/containment-plan/chat` | Refinement chat |
@@ -540,46 +560,40 @@ index=sentinel_actions earliest=0
 
 | Method | Endpoint | Description |
 |---|---|---|
+| `GET` | `/api/audit-log` | Full audit log entries |
 | `GET` | `/api/audit-log/verify/{id}` | Verify audit chain for investigation |
 | `GET` | `/api/audit-log/verify-latest` | Verify latest investigation |
 
+### Checkpointing
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/investigations/{id}/checkpoint-status` | Check if checkpoint exists and investigation completion state |
+| `POST` | `/api/investigations/{id}/resume` | Resume investigation from last checkpoint |
+
+### Monitoring
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/slo/status` | Pipeline SLO and latency metrics |
+
 ## Evaluation Results
 
-### TriageAgent — DeepEval Suite
+### TriageAgent — Golden Evaluation Cases
 
-| Golden | Classification | Confidence | Status |
-|:---|:---|:---|:---|
-| APT SSRF + IAM credential theft | APT | 0.90 | ✅ Pass |
-| DNS tunneling C2 beaconing | APT | 0.90 | ✅ Pass |
-| C2 beaconing periodic connections | APT | 0.90 | ✅ Pass |
-| WMIC + cmd.exe ransomware staging | RANSOMWARE | 0.80 | ✅ Pass |
-| Shadow copy deletion + lateral movement | RANSOMWARE | 0.90 | ✅ Pass |
-| reg.exe + svchost.exe execution chain | RANSOMWARE | 0.80 | ✅ Pass |
-| EventCode 4673 privilege abuse | INSIDER_THREAT | 0.80 | ✅ Pass |
-| Mass file access EventCode 4670 | INSIDER_THREAT | 0.80 | ✅ Pass |
-| Special privileges EventCode 4672 | INSIDER_THREAT | 0.80 | ✅ Pass |
-| Vague trigger (UNKNOWN) | UNKNOWN | 0.35 | ✅ Pass |
-| Empty trigger (UNKNOWN) | UNKNOWN | 0.35 | ✅ Pass |
-| **Hallucination trap**: 847 failed logins | UNKNOWN | 0.30 | ✅ Pass |
-| Multi-vector SSRF + DNS tunnel | APT | 0.90 | ✅ Pass |
-| CRITICAL ransomware guardrail | RANSOMWARE | 0.90 | ✅ Pass |
-| Confidence cap regression | APT | 0.95 | ✅ Pass |
+15 golden test cases covering APT, ransomware, insider threat, UNKNOWN escalation, and hallucination traps. Results vary based on environment and model temperature. Re-run offline evals with:
 
-**Pass rate: 14/15 (93.3%) at 0.7 threshold with gpt-4o-mini judge**
+```bash
+python -m pytest tests/eval/ -v
+```
+
+Requires live Splunk, running backend, and OPENAI_API_KEY configured.
 
 ### Unit Test Coverage
 
-| Module | Tests |
-|--------|-------|
-| Guardrails (SPL, escalation, telemetry) | 73 |
-| ReconstructionAgent (confidence, Pydantic) | 44 |
-| Containment (engine, models, routes, templates, chat) | 75 |
-| Detection gap analyzer | 28 |
-| Confidence breakdown | 15 |
-| Containment verifier | 31 |
-| API contracts | 27 |
-| Other (audit, parallel, schema, synthesis, triggers) | 104 |
-| **Total** | **397** |
+425 passing backend tests including parametrized expansions across guardrails, reconstruction, containment, detection gap analyzer, confidence breakdown, containment verifier, API contracts, audit, parallel agents, schema, synthesis, and trigger categorization.
+
+Run with `python -m pytest tests/ --ignore=tests/eval/ -v`.
 
 ### LangSmith Pipeline Trace
 
@@ -635,8 +649,8 @@ Each entry contains:
 - `rows_returned` — result count for executed queries
 
 Modifying any entry invalidates all subsequent hashes, making
-tampering immediately detectable. The `GET /api/audit-log/verify`
-endpoint provides real-time chain integrity verification.
+tampering immediately detectable. The `GET /api/audit-log/verify/{id}` and `GET /api/audit-log/verify-latest`
+endpoints provide real-time chain integrity verification.
 
 ### Splunk Notable Event Write-back
 
@@ -711,10 +725,13 @@ timeline
 > investigation flow end to end.
 
 ### Option A — Watch the demo video
-> Demo video coming soon — see investigation
-> walkthrough in the screenshots below.
+Demo video: see Devpost submission page for the full investigation walkthrough.
 
 ### Option B — Run locally with full commands
+
+> **Platform note:** Commands below use Windows syntax.
+> On macOS/Linux replace `.venv\Scripts\activate` with
+> `source .venv/bin/activate` and path separators accordingly.
 
 #### 1) Clone repository
 
@@ -735,7 +752,7 @@ pip install -r requirements.txt
 #### 3) Frontend setup
 
 ```bash
-cd ..\frontend
+cd ../frontend
 npm install
 ```
 
@@ -762,6 +779,7 @@ Create `backend/app/.env` from `backend/app/.env.example` with:
 
 #### 5) Create Supabase table
 
+For the full persisted demo/history/report workflow, complete the Supabase setup below.
 Run `supabase_schema.sql` in your Supabase SQL Editor:
 1. Go to your Supabase project at supabase.com/dashboard
 2. SQL Editor -> New Query
@@ -787,7 +805,8 @@ This automatically creates:
 #### 7) Ingest RAG data (one-time)
 
 ```bash
-cd backend
+# continuing from frontend/ after step 3
+cd ../backend
 .venv\Scripts\activate
 python -m app.rag.ingest
 ```
@@ -795,6 +814,7 @@ python -m app.rag.ingest
 #### 8) Run backend
 
 ```bash
+# from repo root — open a new terminal for this long-running process
 cd backend
 .venv\Scripts\activate
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
@@ -803,6 +823,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 #### 9) Run frontend
 
 ```bash
+# from repo root — open a new terminal for this long-running process
 cd frontend
 npm run dev
 ```
@@ -830,22 +851,23 @@ curl -X POST http://localhost:8001/api/investigate ^
   -d "{\"trigger\":\"Suspicious outbound requests to AWS metadata endpoint detected from internal web server. Possible SSRF attack leading to IAM credential exposure.\",\"investigation_id\":\"judge-test-001\"}"
 ```
 
-Expect:
-- `attack_classification: APT`
-- `investigation_confidence: ~0.75`
-- `kill_chain_stages: 4+`
-- `ttp_mappings: 4+`
-- `containment_plan: 3 phases`
+Typical response includes:
+- `classification` — attack type (e.g. APT, RANSOMWARE, INSIDER_THREAT, or UNKNOWN)
+- `investigation_confidence` — numeric confidence score
+- `kill_chain_stages` — reconstructed kill chain stages
+- `ttp_mappings` — mapped MITRE ATT&CK techniques
+- `containment_plan` — phased IR containment plan
 
 #### 12) Run tests
 
 ```bash
+# from repo root
 cd backend
 .venv\Scripts\activate
 python -m pytest tests/ --ignore=tests/eval/ -v
 ```
 
-Expected: `397 passed, 0 failed`
+Expected: `425 passed, 0 failed`
 
 ## Tech Stack
 
@@ -858,11 +880,12 @@ Expected: `397 passed, 0 failed`
 | Vector Store | Qdrant Cloud | 1.11 | RAG retrieval |
 | Embeddings | text-embedding-3-large | 3072 dims | Semantic search |
 | Backend | FastAPI | 0.115 | REST API + SSE streaming |
-| Frontend | React 18 + Vite | 18 / 5.0 | Real-time dashboard |
+| Frontend | React 18 + Vite | React 18 / Vite | Real-time dashboard |
 | Persistence | Supabase | PostgreSQL | Investigation storage (JSONB) |
 | PromptOps | Langfuse | 3.14.6 | Prompt versioning + validation |
 | AI Toolkit | Splunk MLTK | 5.7.4 | Native Splunk AI command |
 | ML Runtime | Python for Scientific Computing | 4.3.2 | MLTK dependency |
+| Checkpointing | SQLite via AsyncSqliteSaver | — | Durable graph state per investigation |
 | Tracing | LangSmith | — | End-to-end LLM traces |
 
 ## Documentation
@@ -875,7 +898,7 @@ Expected: `397 passed, 0 failed`
   syntax, Connection Management setup, and ai command
   usage
 - [architecture_diagram.md](architecture_diagram.md) —
-  Full system architecture as required by hackathon rules
+  System architecture overview
 
 ## License
 
