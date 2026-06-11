@@ -1,196 +1,191 @@
 # Splunk SDK Usage - Splunk Sentinel
 
-> Comprehensive documentation of all Splunk platform
-> integrations in Splunk Sentinel. Written for the
-> Splunk Agentic Ops Hackathon judge evaluation and
-> the Splunk developer community.
+> Technical documentation of the Splunk platform integrations used by
+> Splunk Sentinel. Written for Splunk Agentic Ops Hackathon judges and
+> Splunk developers who want to understand the SDK, saved-search, MLTK,
+> audit, and containment paths.
 
 ---
 
 ## 1. Splunk Python SDK Integration
 
 ### Version and Installation
-- splunk-sdk: 2.0.2
-- Splunk Enterprise: 10.2.2
-- Python: 3.12
+
+- `splunk-sdk==2.0.2`
+- Splunk Enterprise 10.2.2
+- Python 3.12
+
+`backend/requirements.txt` also includes `truststore==0.10.4`.
+`truststore` is imported and activated in `backend/app/utils/prompt_loader.py`,
+but it is not explicitly used in the Splunk SDK connection path in
+`backend/app/tools/splunk_tools.py`.
 
 ### SplunkClient Singleton
 
-The project uses a singleton SplunkClient
-(backend/app/tools/splunk_tools.py) that maintains
-a persistent authenticated connection to Splunk
-Enterprise throughout the FastAPI application lifecycle.
+`backend/app/tools/splunk_tools.py` exposes a singleton `SplunkClient`:
 
-Key implementation details:
-- Singleton pattern: one connection shared across
-  all 6 pipeline agents
-- Auto-reconnect: detects "Session is not logged in"
-  errors and reconnects automatically with one retry
-- Thread-safe reconnect guard: asyncio lock prevents
-  concurrent reconnection races
-- Connection: service.jobs.oneshot() for all SPL queries
-
-Authentication:
 ```python
-service = client.connect(
-    host=SPLUNK_HOST,
-    port=SPLUNK_PORT,
-    username=SPLUNK_USERNAME,
-    password=SPLUNK_PASSWORD,
-    scheme="https",
+def get_splunk_client() -> SplunkClient:
+    global _splunk_client_instance
+    if _splunk_client_instance is None:
+        _splunk_client_instance = SplunkClient()
+    return _splunk_client_instance
+
+
+def get_splunk_service() -> Any:
+    return get_splunk_client().service
+```
+
+The SDK service is created with environment-backed settings:
+
+```python
+self.service = splunk_client.connect(
+    host=settings.SPLUNK_HOST,
+    port=settings.SPLUNK_PORT,
+    username=settings.SPLUNK_USERNAME,
+    password=settings.SPLUNK_PASSWORD,
 )
 ```
 
-### SPL Query Execution
+The browser Splunk Web login is not used by this backend path. Backend
+reads, writes, saved-search deployment, and MLTK execution authenticate
+through the Splunk SDK against the management port, normally `8089`,
+using `SPLUNK_HOST`, `SPLUNK_PORT`, `SPLUNK_USERNAME`, and
+`SPLUNK_PASSWORD`.
 
-All SPL queries pass through a 3-layer guardrail
-before execution. The run_search() method:
+### SPL Query Execution and Reconnect
 
-1. Normalizes SPL (adds "search " prefix if missing)
-2. Passes through validate_spl() guardrail
-3. Executes via service.jobs.oneshot()
-4. Returns parsed results
+`SplunkClient.run_search()`:
 
-```python
-result = service.jobs.oneshot(
-    spl,
-    output_mode="json",
-    timeout=30,
-)
-```
+1. Runs the SPL guardrail before execution.
+2. Adds a `search ` prefix when required by `jobs.oneshot()`.
+3. Executes through `self.service.jobs.oneshot(...)`.
+4. Parses JSON results with `splunklib.results.JSONResultsReader`.
+5. Reconnects and retries once on Splunk SDK session/auth errors.
+
+The search retry is triggered by error text such as:
+
+- `Session is not logged in`
+- `not logged in`
+- `unauthorized`
+- `http 401`
+
+Reconnect uses a thread lock around `splunk_client.connect(...)` to
+avoid concurrent reconnect races.
+
+### Local Splunk Certificate Note
+
+The current Splunk SDK connection code does not explicitly pass a
+certificate bundle, `verify=False`, or a custom SSL context. If a local
+Splunk Enterprise instance uses a self-signed certificate on management
+port `8089`, verify SDK connectivity independently with the same host,
+port, username, and password. If certificate validation fails in your
+environment, fix trust at the local Python/Splunk SDK environment level
+or configure Splunk management-port TLS appropriately. Do not assume the
+installed `truststore` package alone solves Splunk SDK certificate
+trust; this repository does not explicitly wire it into
+`splunk_client.connect(...)`.
 
 ---
 
 ## 2. Splunk Indexes
 
-### sentinel_findings
+### `sentinel_findings`
 
-Purpose: Stores completed investigation findings
-as Splunk notable events. Closes the detection
-to investigation to response loop.
+Completed investigations are written back as structured notable events
+to `index=sentinel_findings`.
 
-Created automatically on startup if not present.
+Useful review query:
 
-Fields written per investigation:
-- investigation_id
-- classification (APT/RANSOMWARE/INSIDER_THREAT/UNKNOWN)
-- severity (CRITICAL/HIGH/MEDIUM/LOW)
-- confidence_pct
-- confidence_tier
-- kill_chain_summary
-- patient_zero_ip
-- containment_priority
-
-Query to view findings:
 ```spl
-index=sentinel_findings earliest=0
-sourcetype="sentinel:investigation"
-| table investigation_id, classification,
-        severity, confidence_tier,
-        kill_chain_summary, patient_zero_ip
+index=sentinel_findings earliest=0 sourcetype="sentinel:investigation"
+| table investigation_id, classification, confidence_tier,
+        kill_chain_summary, patient_zero_ip, severity
 | sort -_time
 ```
 
-### sentinel_actions
+### `sentinel_actions`
 
-Purpose: Audit trail for every containment action
-executed by Sentinel. Written by containment_engine.py
-after each phase execution.
+Containment actions write audit events to `index=sentinel_actions`.
+Current events can vary by action type, so demo queries should coalesce
+field variants instead of assuming one target field.
 
-Fields written per action:
-- investigation_id
-- action_type (BLOCK_IP/ISOLATE_HOST/REVOKE_CREDENTIALS etc)
-- target (IP address, hostname, or account name)
-- containment_spl (the SPL that was executed)
-- status (PENDING/VERIFYING/VERIFIED_EFFECTIVE etc)
-- executed_at
-- executed_by
+Robust action review query:
 
-Query to view containment audit trail:
 ```spl
 index=sentinel_actions earliest=0
-| table investigation_id, action_type, target,
-        status, executed_at
-| sort -executed_at
+| eval target_value=coalesce(target, ip, user, resource, dest, orig_host)
+| eval action_label=upper(coalesce(action, action_type, "AUDIT"))
+| table _time, investigation_id, action_label, target_value,
+        status, executed_at, verification_verdict
+| sort -_time
+```
+
+Compact video/demo query:
+
+```spl
+index=sentinel_actions earliest=0
+| eval target_value=coalesce(target, ip, user, resource, dest, orig_host)
+| eval action_label=upper(coalesce(action, action_type, "AUDIT"))
+| stats latest(status) as status latest(verification_verdict) as verdict
+        by investigation_id, action_label, target_value
+| sort investigation_id, action_label
 ```
 
 ---
 
 ## 3. Splunk Webhook Integration
 
-### Autonomous Alert Trigger
+Splunk saved searches can trigger autonomous investigations via:
 
-Splunk saved searches can trigger autonomous
-investigations via webhook when alert conditions
-are met. No human input required.
+```text
+POST http://localhost:8001/api/webhook/splunk
+```
 
-Webhook URL: POST http://localhost:8001/api/webhook/splunk
+Example botsv3 alert SPL:
 
-Configured saved search (botsv3 demo):
 ```spl
-index=botsv3 earliest=0 sourcetype=stream:http
-dest_ip=169.254.169.254
+index=botsv3 earliest=0 sourcetype=stream:http dest_ip=169.254.169.254
 | stats count by src_ip
 | where count > 5
 ```
 
-Name: "Sentinel - AWS Metadata Access Detected"
-
-When fired, Splunk POSTs the alert payload to Sentinel.
-The full 6-agent pipeline runs autonomously and
-results are written back to sentinel_findings.
-
-### Webhook Payload Handling
-
-backend/app/api/webhook.py extracts the trigger text
-from the Splunk alert payload and initiates the
-investigation pipeline:
-
-```python
-trigger = payload.get("result", {}).get(
-    "trigger_description",
-    payload.get("search_name", "Splunk alert triggered")
-)
-```
+The webhook handler converts the Splunk alert payload into a trigger and
+starts the investigation pipeline. Results are later persisted and can
+be written back to `sentinel_findings`.
 
 ---
 
-## 4. Splunk Saved Searches - SDK Management
+## 4. Detection Gap Analysis and Saved-Search Deployment
 
-### Detection Gap Deployment
+Detection Gap Analysis is analyst-triggered and compares mapped MITRE
+techniques against Splunk saved searches. It reports saved-search
+coverage posture; it does not prove detection effectiveness or attack
+prevention.
 
-detection_gap_analyzer.py deploys recommended
-detection SPL as Splunk saved searches via SDK.
+### API Flow
 
-Duplicate check before creation:
-```python
-existing = [s.name for s in splunk_service.saved_searches]
-if name in existing:
-    return {"already_deployed": True, "name": name}
+Initial coverage run:
+
+```text
+GET /api/investigations/{id}/detection-gaps
 ```
 
-Create new saved search:
-```python
-splunk_service.saved_searches.create(
-    name,
-    spl,
-    description=f"Auto-generated by Splunk Sentinel
-    from investigation {investigation_id}"
-)
+Deploy generated SPL as a Splunk saved search:
+
+```text
+POST /api/investigations/{id}/detection-gaps/deploy
 ```
 
-Verify deployment:
-```spl
-| rest /services/saved/searches
-| where match(title, "Sentinel")
-| table title, updated
-| sort -updated
+Refresh after deployment using fresh saved-search data:
+
+```text
+GET /api/investigations/{id}/detection-gaps?force_refresh=true
 ```
 
-### Saved Searches Cache
+### Saved-Search Cache
 
-Fetching all saved searches is slow (2-5 seconds).
-detection_gap_analyzer.py caches results for 5 minutes:
+Saved-search reads are cached for five minutes:
 
 ```python
 _saved_searches_cache = {
@@ -200,310 +195,396 @@ _saved_searches_cache = {
 }
 ```
 
+`force_refresh=true` bypasses this cache and fetches fresh saved
+searches from Splunk. Successful saved-search deployment and
+already-deployed duplicate success both invalidate the cache and return:
+
+```json
+{
+  "coverage_refresh_recommended": true
+}
+```
+
+### Deployment Guardrails and Retry
+
+Before deploying a saved search, `deploy_detection(...)`:
+
+1. Blocks placeholder SPL such as `your_sourcetype`, `<sourcetype>`,
+   `TODO`, `replace_me`, fake fields, and similar tokens.
+2. Blocks raw sourcetype terms such as `stream:http OR stream:dns`
+   unless expressed as fielded filters like `sourcetype=stream:http`.
+3. Runs `validate_spl(...)`.
+4. Checks for duplicate saved-search names.
+5. Creates the saved search through `splunk_service.saved_searches.create(...)`.
+6. Invalidates the saved-search cache on success or duplicate success.
+
+The deploy path also retries once after reconnecting the SDK session
+when Splunk returns session/auth errors:
+
+- `Session is not logged in`
+- `not logged in`
+- `unauthorized`
+- HTTP 401
+
+This is separate from browser Splunk Web login. A user can be logged
+into Splunk Web while the backend SDK service object has expired.
+
+### Sentinel Saved-Search Exact Matching
+
+Coverage matching checks Sentinel-deployed saved searches first. A
+Sentinel saved search is treated as a high-confidence match only when
+the exact technique ID appears in the saved-search name or in the
+deployment description field written as:
+
+```text
+Technique: {technique_id}
+```
+
+The exact-match regex prevents parent/sub-technique accidents. For
+example, `T1547` should not satisfy `T1547.001`, and `T1547.001` should
+not satisfy `T1547`.
+
+Keyword-based matching is used for non-Sentinel saved searches. Match
+confidence levels are:
+
+- `HIGH`: high-confidence technique keywords matched.
+- `MEDIUM`: two or more regular keywords matched.
+- `LOW`: one regular keyword matched.
+- `NONE`: no useful match.
+
+Only `HIGH` and `MEDIUM` count as covered in the coverage posture.
+`LOW` and `NONE` saved-search matches are review signals.
+
+### Before/After Coverage UI
+
+The frontend stores the first pre-deploy detection-gap result as the
+baseline. After deploy success, it tracks deployed technique IDs and
+shows a CTA to rerun coverage with `force_refresh=true`.
+
+The before/after comparison uses normalized `technique_id` sets only.
+It never compares generated SPL text.
+
+Displayed comparison fields:
+
+- before coverage %
+- after coverage %
+- delta percentage points
+- newly covered techniques
+- gaps closed
+- moved to review
+- remaining gaps
+- saved searches checked before/after
+
+Semantics:
+
+- Covered means latest `covered_techniques` with `match_confidence`
+  `HIGH` or `MEDIUM`.
+- Newly covered means a technique is covered after refresh but was not
+  covered in the baseline.
+- Gaps closed means baseline gap technique IDs are now in latest
+  `HIGH`/`MEDIUM` covered techniques.
+- Moved to review means a baseline gap moved into weak matches, not
+  covered.
+- Remaining gaps are latest gap technique IDs with no usable coverage.
+
+Use this wording in demos: saved-search coverage improved, coverage
+posture refreshed, newly covered by saved-search matching. Avoid claims
+that imply real-world attack prevention or executed detection efficacy.
+
 ---
 
 ## 5. MLTK AI Toolkit Integration
 
-### Version
-- Splunk AI Toolkit (MLTK): 5.7.4
-- Python for Scientific Computing (PSC): 4.3.2 (Windows)
+### Version and Setup
 
-### Installation
-- PSC installed via direct extraction to Splunk apps
-  directory (UI upload timed out for 417MB package)
-- MLTK installed via Apps -> Manage Apps ->
-  Install from file
-- Connection configured via Connection Management UI:
-  connection name: openai_sentinel
-  provider: OpenAI
-  model: gpt-4o-mini
-  endpoint: https://api.openai.com/v1/chat/completions
-  timeout: 30 seconds
+- Splunk AI Toolkit / MLTK: 5.7.4
+- Python for Scientific Computing: 4.3.2
+- Connection Management name: `openai_sentinel`
+- Model: `gpt-4o-mini`
 
-### Permissions Required
+Role capability examples for the MLTK `ai` command:
 
-authorize.conf additions for role_admin:
+```conf
 [role_admin]
 apply_ai_commander_command = enabled
 list_ai_commander_config = enabled
 edit_ai_commander_config = enabled
+```
 
-### The ai Command - Correct Syntax for MLTK 5.7.4
-
-The ai command syntax changed between versions.
-For 5.7.4 the correct syntax is:
+### Correct MLTK 5.7.4 `ai` Syntax
 
 ```spl
 | ai connection="openai_sentinel"
     prompt="Your prompt with {field_name} inline"
 ```
 
-NOT:
-- provider= (wrong - use connection=)
-- field= (wrong - inline as {field_name})
-- input_field= (wrong)
+Do not use:
 
-Output appears in field: ai_result_1
+- `provider=`
+- `field=`
+- `input_field=`
 
-### Async Post-Processing Architecture
+Output appears in:
 
-MLTK ai command latency (8-25s per call) is
-incompatible with inline pipeline execution.
+```text
+ai_result_1
+```
 
-The implemented solution - async post-processing:
+### Async Post-Persistence Enrichment
 
-1. Investigation pipeline completes (~100s, SLO green)
-2. report_agent.py fires background task:
-   asyncio.create_task(enrich_ttp_with_mltk(id))
-3. mltk_enrichment.py validates all techniques
-   in parallel via asyncio.gather() (~30 seconds)
-4. Results patched into report_json["ttp_mappings"]
-   in Supabase permanently - never reruns
-5. Frontend polls /ttp-enrichment every 3s
-6. MITRE table updates with MLTK badges
+MLTK validation runs asynchronously after investigation persistence when
+MLTK 5.7.4 and the configured `openai_sentinel` connection are
+available.
+
+Flow:
+
+1. Investigation completes and report persists.
+2. Background `enrich_ttp_with_mltk(investigation_id)` starts.
+3. `mltk_enrichment.py` processes persisted `ttp_mappings`.
+4. Results patch `report_json["ttp_mappings"]`,
+   `mltk_enrichment_status`, and `mltk_enrichment_summary`.
+5. Frontend polls `GET /api/investigations/{id}/ttp-enrichment`.
+
+Technique status in the UI:
+
+- `MLTK Validated`: MLTK agreed with the Qdrant mapping.
+- `MLTK Review`: MLTK disagreed, failed, was unavailable, or produced
+  no usable result after enrichment.
+- `NOT RUN`: enrichment has not completed or was unavailable for that
+  investigation.
+
+Avoid blanket validation wording. The enrichment service records whether
+validation ran, whether MLTK agreed, and whether MLTK was unavailable.
 
 ### MLTK Validation SPL Pattern
 
-For each MITRE technique, a makeresults query
-sends evidence context to the MLTK ai command:
-
 ```spl
 | makeresults count=1
-| eval evidence="HTTP requests to 169.254.169.254
-  AWS metadata service from internal host 172.16.0.178"
+| eval evidence="HTTP requests to 169.254.169.254 AWS metadata service"
 | eval qdrant_technique="T1552.005"
 | eval qdrant_name="Cloud Instance Metadata API"
 | ai connection="openai_sentinel"
-    prompt="You are a MITRE ATT&CK expert.
-    Validate technique: {qdrant_technique}
-    ({qdrant_name}).
+    prompt="Validate technique: {qdrant_technique} ({qdrant_name}).
     Evidence: {evidence}.
-    Return ONLY JSON: {\"technique_id\": \"T1552.005\",
-    \"technique_name\": \"name\",
-    \"confidence\": 0.85,
-    \"reasoning\": \"one sentence\"}"
+    Return ONLY JSON with technique_id, technique_name, confidence, reasoning."
 ```
 
-Output: ai_result_1 contains JSON response
-from gpt-4o-mini via MLTK Connection Management.
-
-### Verified Validation Results
-
-All 4 techniques validated in parallel:
-- T1190: agreement, confidence boosted to 0.826
-- T1552.005: agreement, confidence 0.856
-- T1082: agreement, confidence 0.842
-- T1021: agreement, confidence 0.814
-
-agreements=4, disagreements=0, failed=0
-Enrichment time: ~30s parallel
-
-### Confidence Weighting
-
-When Qdrant and MLTK agree on a technique:
-- New confidence = (Qdrant * 0.6) + (MLTK * 0.4)
-- confidence_source = "qdrant_mltk_agreement"
-
-When they disagree:
-- New confidence = Qdrant * 0.75 (reduced 25%)
-- confidence_source = "qdrant_mltk_disagreement"
-- mltk_alternative recorded for analyst review
-
-### MLTK Connection vs Direct API
-
-Routing OpenAI calls through MLTK Connection Management
-adds Splunk-native governance:
-- Centralized API key management in Splunk
-- Connection Management audit logging
-- Rate limiting and timeout control
-- No API keys in application code or environment
+When MLTK agrees, confidence is blended using Qdrant 60% + MLTK 40%.
+When MLTK disagrees or is unavailable, the technique remains visible for
+analyst review.
 
 ---
 
 ## 6. Containment Verification SPL
 
-### Purpose
+Containment execution writes audit events to `sentinel_actions` and
+fires background verification when possible. Verification uses
+deterministic before/after SPL counts, not an LLM.
 
-After each containment action executes,
-containment_verifier.py runs verification SPL
-to prove measurable effect on Splunk telemetry.
+Verification templates include:
 
-### Verification SPL Templates
-
-BLOCK_IP verification:
 ```spl
-search index=botsv3 earliest=-10m
-(src_ip="{target}" OR dest_ip="{target}")
+search index=botsv3 earliest=0 (src_ip="{target}" OR dest_ip="{target}")
 | stats count
 ```
 
-ISOLATE_HOST verification:
 ```spl
-search index=botsv3 earliest=-10m
-host="{target}"
+search index=botsv3 earliest=0 host="{target}"
 | stats count
 ```
 
-REVOKE_CREDENTIALS verification:
 ```spl
-search index=botsv3 earliest=-10m
-sourcetype=WinEventLog:Security
-EventCode=4624
-Account_Name="{target}"
+search index=botsv3 earliest=0 sourcetype=WinEventLog:Security
+EventCode=4624 Account_Name="{target}"
 | stats count
 ```
 
-### Verdict Thresholds
+Verdicts:
 
-- VERIFIED_EFFECTIVE: 80%+ event reduction
-- PARTIAL_EFFECT: 20-80% reduction
-- VERIFICATION_FAILED: under 20% reduction
-- ROLLBACK_RECOMMENDED: events increased 10%+
-- VERIFICATION_SKIPPED: no template for action type
+- `VERIFIED_EFFECTIVE`: 80%+ reduction.
+- `PARTIAL_EFFECT`: 20-80% reduction.
+- `VERIFICATION_FAILED`: under 20% reduction.
+- `ROLLBACK_RECOMMENDED`: events increased 10%+.
+- `VERIFICATION_SKIPPED`: no template for the action type.
 
-### Target Sanitization
-
-All targets sanitized before SPL interpolation
-to prevent injection:
-```python
-safe_target = target.replace('"', '').replace(
-    "'", ""
-).replace("|", "").strip()[:100]
-```
+Targets are sanitized before SPL interpolation by removing quotes,
+pipes, common boolean fragments, excess whitespace, and truncating to
+100 characters.
 
 ---
 
-## 7. Detection Gap Analysis SPL
+## 7. Recommended Detection SPL Generation
 
-### Coverage Assessment
+For uncovered techniques, Detection Gap Analysis generates recommended
+SPL from investigation evidence and falls back to deterministic
+templates when needed.
 
-For each MITRE technique from the investigation,
-checks existing Splunk saved searches for
-keyword coverage:
+Generation rules include:
 
-```python
-TECHNIQUE_KEYWORDS = {
-    "T1552.005": {
-        "keywords": [
-            "169.254.169.254", "metadata", "imds",
-            "stream:http", "dest_ip",
-        ],
-        "high_confidence_keywords": [
-            "169.254.169.254", "metadata",
-        ],
-    },
-    # ... 13 more techniques
-}
-```
+- Query must start with `index=botsv3 earliest=0`.
+- Use concrete fielded sourcetypes, such as `sourcetype=stream:http`.
+- Do not emit raw terms like `stream:http OR stream:dns`.
+- Do not emit placeholders such as `your_sourcetype`, `<sourcetype>`,
+  `TODO`, or `replace_me`.
+- For T1078, use account/authentication-oriented fields and Windows
+  auth events such as `EventCode=4624`, `EventCode=4672`, or
+  `EventCode=4673`.
+- Validate through the SPL guardrail before UI display and deployment.
 
-Match confidence levels:
-- HIGH: high_confidence_keywords matched
-- MEDIUM: 2+ regular keywords matched
-- LOW: 1 regular keyword matched
-- NONE: no keywords matched
-
-### Recommended Detection SPL
-
-For uncovered techniques, LLM generates targeted
-SPL using real investigation evidence. Example
-for T1552.005:
+Example T1552.005 template:
 
 ```spl
-index=botsv3 earliest=0
-sourcetype=stream:http
-dest_ip=169.254.169.254
+index=botsv3 earliest=0 sourcetype=stream:http dest_ip=169.254.169.254
 | stats count by src_ip, uri_path
 | where count > 5
 | sort -count
 ```
 
-All generated SPL validated through validate_spl()
-guardrail before returning to frontend.
+Example T1078 template:
 
----
-
-## 8. 3-Layer SPL Guardrail
-
-### Layer 1 - Deterministic Keyword Blocking (0ms)
-
-Blocks queries containing dangerous terms:
-- | delete
-- delete-index
-- | outputlookup overwrite=true
-- | sendemail
-- DROP, TRUNCATE
-- index=_internal, index=_audit
-
-Also blocks SPL injection bypass vectors:
-- Subsearch injection: [search index=_internal ...]
-- Backtick macros: `macro_name`
-- IN operator multi-index: index IN (botsv3, _internal)
-- REST command: | rest /services/...
-- inputlookup command
-
-### Layer 2 - Index Authorization
-
-Every query must target only permitted indexes:
-- index=botsv3 (investigation data)
-- index=sentinel_findings (write-back)
-- index=sentinel_actions (containment audit)
-
-Queries targeting any other index are blocked.
-
-### Layer 3 - SHA-256 Hash Chain Audit Log
-
-Every SPL query attempt is recorded with:
-- prev_hash: hash of previous entry
-- entry_hash: SHA-256(prev_hash + canonical entry)
-- correction_attempts: LLM self-correction count
-- was_corrected: whether query was rewritten
-- rows_returned: result count
-
-Integrity verification:
-GET /api/audit-log/verify/{investigation_id}
--> {"valid": true, "total_entries": 16, "chain_intact": true}
-
----
-
-## 9. Splunk Health Check
-
-### Health Endpoint
-
-GET /api/health verifies Splunk connectivity
-on every request:
-
-```python
-service.info  # Splunk SDK version check
+```spl
+index=botsv3 earliest=0 sourcetype=WinEventLog:Security
+(EventCode=4624 OR EventCode=4672 OR EventCode=4673)
+| eval account=coalesce(Account_Name, user)
+| stats count dc(host) as host_count by account, src_ip, EventCode
+| where count > 3 OR host_count > 1
+| sort -count
 ```
 
-Returns:
+---
+
+## 8. SPL Guardrail and Audit Chain
+
+### Guardrail Scope
+
+Layered SPL validation blocks:
+
+- destructive commands such as `| delete`
+- `delete-index`
+- `| outputlookup overwrite=true`
+- `| sendemail`
+- `DROP`, `TRUNCATE`
+- internal indexes such as `_internal` and `_audit`
+- subsearch injection patterns
+- backtick macros
+- multi-index `index IN (...)` bypasses
+- `| rest /services/...`
+- unsafe lookup/input paths
+
+Detection Gap Analysis adds deployment-specific blocking for placeholder
+SPL and unfielded sourcetype tokens.
+
+### SHA-256 Hash Chain
+
+`backend/app/utils/audit_chain.py` stores each audit entry with:
+
+- `prev_hash`
+- `entry_hash`
+
+`entry_hash` is SHA-256 over canonical JSON content plus the previous
+hash. The first entry uses `"0" * 64` as the genesis previous hash.
+Changing any entry invalidates that entry and all later entries.
+
+Audit endpoints:
+
+```text
+GET /api/audit-log
+GET /api/audit-log/verify/{investigation_id}
+GET /api/audit-log/verify-latest
+```
+
+Example verification response shape:
+
 ```json
 {
-  "status": "ok",
-  "splunk_connected": true,
-  "splunk_version": "10.2.2",
-  "promptops": "langfuse",
-  "prompt_versions": {
-    "triage-agent": {"version": 1, "label": "production"}
-  }
+  "valid": true,
+  "details": "Successfully verified 16 entries.",
+  "investigation_id": "sentinel-..."
 }
 ```
 
 ---
 
-## 10. Summary - Splunk API Surface Used
+## 9. Health Endpoint
+
+`GET /api/health` establishes a Splunk SDK connection on each request
+and returns connectivity plus core prompt metadata.
+
+Expected response shape:
+
+```json
+{
+  "status": "ok",
+  "splunk_connected": true,
+  "splunk_version": "10.2.2",
+  "prompt_versions": {
+    "triage-agent": {
+      "name": "triage-agent",
+      "version": 1,
+      "label": "production"
+    },
+    "synthesis-narrative": {
+      "name": "synthesis-narrative",
+      "version": 1,
+      "label": "production"
+    },
+    "containment-refinement": {
+      "name": "containment-refinement",
+      "version": 1,
+      "label": "production"
+    }
+  },
+  "promptops": "langfuse"
+}
+```
+
+Current `/api/health` behavior: `promptops` currently returns
+`"langfuse"` unconditionally. If Langfuse credentials are missing or
+Langfuse is unreachable, `prompt_versions` entries may be empty objects
+while the prompt loader internally falls back to memory cache or
+built-in hardcoded prompts. The health endpoint exposes core prompt
+metadata only; it should not be read as a complete list of every prompt
+or as a full PromptOps fallback-state indicator.
+
+---
+
+## 10. API Surface Summary
 
 | Integration | SDK/API Used | Purpose |
 |------------|--------------|---------|
-| SPL queries | service.jobs.oneshot() | Investigation data retrieval |
-| Index write | service.jobs.oneshot() + collect | sentinel_findings write-back |
-| Saved searches read | service.saved_searches | Detection gap coverage check |
-| Saved searches create | service.saved_searches.create() | Detection deployment |
-| Webhook receive | FastAPI endpoint | Autonomous alert trigger |
-| MLTK ai command | jobs.oneshot() with ai SPL | TTP technique validation |
-| Health check | service.info | Connectivity monitoring |
-| Containment audit | jobs.oneshot() + collect | sentinel_actions write |
-| Verification SPL | jobs.oneshot() | Post-action verification |
+| SPL queries | `service.jobs.oneshot()` | Investigation telemetry retrieval |
+| SDK reconnect | `splunk_client.connect(...)` | Session renewal on auth/session errors |
+| Saved searches read | `service.saved_searches` | Detection gap coverage posture |
+| Saved searches create | `service.saved_searches.create()` | Detection saved-search deployment |
+| Force refresh | `GET /detection-gaps?force_refresh=true` | Bypass saved-search cache |
+| MLTK `ai` command | `jobs.oneshot()` with `| ai` SPL | Async MITRE mapping validation |
+| Containment audit | `jobs.oneshot()` with `collect` | `sentinel_actions` write |
+| Verification SPL | `jobs.oneshot()` | Before/after containment counts |
+| Health check | `service.info` | Splunk connectivity and version |
+| Audit verification | FastAPI + SHA-256 chain | Hash-chain integrity checks |
+| Webhook receive | FastAPI endpoint | Autonomous Splunk alert trigger |
+
+---
+
+## 11. Tests and Current Verification
+
+Current backend verification target:
+
+```bash
+python -m pytest tests/ --ignore=tests/eval/ -v
+```
+
+Current expected result from the project docs:
+
+```text
+425 passed, 0 failed
+```
+
+Eval tests are directional and should be run separately when needed:
+
+```bash
+python -m pytest tests/eval/ -v
+```
 
 ---
 
