@@ -161,9 +161,13 @@ Expected:
 }
 ```
 
-> `promptops` is `"langfuse"` when Langfuse is configured and reachable.
-> If Langfuse credentials are missing or unreachable, the field shows
-> `"hardcoded"` and the pipeline continues with built-in fallback prompts.
+> Current `/api/health` behavior: `promptops` currently returns
+> `"langfuse"` unconditionally. If Langfuse credentials are missing or
+> Langfuse is unreachable, `prompt_versions` entries may be empty objects
+> while the prompt loader internally falls back to memory cache or built-in
+> hardcoded prompts. The health endpoint exposes core prompt metadata only;
+> it should not be read as a complete list of every prompt or as a full
+> PromptOps fallback-state indicator.
 
 **9. Run your first investigation**
 
@@ -890,13 +894,13 @@ Expected: `425 passed, 0 failed`
 
 ## Documentation
 
-- [FINDINGS.md](FINDINGS.md) — 8 architectural findings
+- [FINDINGS.md](FINDINGS.md) — 10 technical findings
   including MLTK latency analysis, SPL guardrail design,
   Langfuse PromptOps, and containment verification
 - [SPLUNK_SDK_USAGE.md](SPLUNK_SDK_USAGE.md) — Complete
-  Splunk SDK integration guide including MLTK 5.7.4
-  syntax, Connection Management setup, and ai command
-  usage
+  Splunk SDK integration guide including SDK reconnect,
+  saved-search deployment, before/after coverage, MLTK
+  syntax, and local certificate notes
 - [architecture_diagram.md](architecture_diagram.md) —
   System architecture overview
 
