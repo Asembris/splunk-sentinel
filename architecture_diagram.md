@@ -11,7 +11,7 @@ Agentic SOC investigation platform for Splunk Enterprise. Security-track hackath
 - Post-pipeline services handle human-in-the-loop containment, MLTK enrichment, and Detection Gap Analysis without blocking report delivery.
 - Closed-loop detection coverage deploys generated saved searches, invalidates cached saved-search metadata, and re-measures saved-search coverage with `force_refresh=true`.
 
-## 2. Judge Criteria Mapping
+## 2. Architecture-to-Criteria Mapping
 
 | Criterion | Architecture evidence |
 | --- | --- |
@@ -57,6 +57,7 @@ flowchart LR
     Graph["LangGraph"]
     SDK["Splunk SDK queries"]
     Report["Report and write-back"]
+    Gaps["Detection Gap Analysis"]
     Deploy["Saved-search deployment"]
 
     SavedSearch --> Webhook
@@ -64,7 +65,8 @@ flowchart LR
     API --> Graph
     Graph --> SDK
     SDK --> Report
-    Report --> Deploy
+    Report --> Gaps
+    Gaps --> Deploy
 ```
 
 - Splunk saved searches or manual analyst input can start an investigation through the backend API.
@@ -104,17 +106,17 @@ flowchart LR
 - Containment refinement uses ReAct tool calling while keeping execution under analyst control.
 - Final report synthesis produces the persisted report, and the frontend reconciles live dashboard state from the terminal COMPLETE state and persisted report data.
 
-## 6. Closed-Loop Detection Coverage Architecture
+## 6. Closed-Loop Saved-Search Coverage Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
     Mapped["Mapped MITRE techniques"]
     Read["Read Splunk saved searches"]
-    Classify["Classify HIGH / MEDIUM / LOW / NONE"]
-    Generate["Generate safe SPL"]
-    Deploy["Deploy saved search"]
-    Cache["Invalidate cache"]
-    Refresh["Rerun force_refresh=true"]
+    Classify["Classify saved-search coverage<br/>HIGH / MEDIUM / LOW / NONE"]
+    Generate["Generate guardrail-validated SPL"]
+    Deploy["Deploy Sentinel saved search<br/>through Splunk SDK"]
+    Cache["Invalidate saved-search cache"]
+    Refresh["Rerun Detection Gap Analysis<br/>force_refresh=true"]
     Panel["Before / after coverage panel"]
 
     Mapped --> Read
@@ -223,7 +225,7 @@ Evaluation tests are directional and can be rerun separately with:
 python -m pytest tests/eval/ -v
 ```
 
-## 11. Judge Verification Checklist
+## 11. Verification Checklist
 
 - Run the backend and frontend.
 - Check `GET /api/health`.
@@ -235,5 +237,3 @@ python -m pytest tests/eval/ -v
 - Rerun coverage with `force_refresh=true`.
 - Verify Splunk saved searches and write-back indexes `sentinel_findings` / `sentinel_actions`.
 - Run backend tests with eval tests excluded.
-
-Before committing, preview this document in GitHub to confirm the Mermaid diagrams remain readable at default zoom.
