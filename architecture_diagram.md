@@ -50,21 +50,23 @@ Splunk Sentinel keeps Splunk Enterprise at the center of the architecture. Splun
 ## 4. Splunk Integration Architecture
 
 ```mermaid
-flowchart LR
-    SavedSearch["Splunk saved search"]
-    Webhook["Webhook trigger"]
-    API["FastAPI"]
-    Graph["LangGraph"]
-    SDK["Splunk SDK queries"]
-    Report["Report and write-back"]
+flowchart TD
+    Start["Splunk saved search<br/>or manual trigger"]
+    API["FastAPI backend"]
+    Graph["LangGraph investigation"]
+    SDK["Guarded SPL via Splunk SDK"]
+    Report["Report + Splunk write-back"]
+    Findings["sentinel_findings"]
+    Actions["sentinel_actions"]
     Gaps["Detection Gap Analysis"]
-    Deploy["Saved-search deployment"]
+    Deploy["Deploy Sentinel saved search"]
 
-    SavedSearch --> Webhook
-    Webhook --> API
+    Start --> API
     API --> Graph
     Graph --> SDK
     SDK --> Report
+    Report --> Findings
+    Report --> Actions
     Report --> Gaps
     Gaps --> Deploy
 ```
