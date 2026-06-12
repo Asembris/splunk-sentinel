@@ -21,10 +21,17 @@
 ![CI](https://github.com/Asembris/splunk-sentinel/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
+## Submission Links
+
+- Devpost submission: https://devpost.com/software/splunk-sentinel
+- Demo video: https://youtu.be/vdQYQY1cXFA?si=Vgykh75108fiCi5D
+- Architecture: [architecture_diagram.md](./architecture_diagram.md)
+- Splunk SDK usage: [SPLUNK_SDK_USAGE.md](./SPLUNK_SDK_USAGE.md)
+
 ## What Judges Can Verify In 10 Minutes
 
 ### Option A — Watch the demo video
-Demo video: see Devpost submission page for the full investigation walkthrough.
+Demo video: https://youtu.be/vdQYQY1cXFA?si=Vgykh75108fiCi5D
 
 ### Option B — Run it locally
 
@@ -44,6 +51,8 @@ Node 20, OpenAI API key, Qdrant Cloud (free tier)
   history, analyst feedback, and reproducible report review. Without
   Supabase, a live investigation may run but persisted history and
   report storage will be unavailable.
+
+> **Testing / API cost note:** Splunk Sentinel is open source and free to review, test, and use. Running the full AI investigation workflow locally requires the tester to provide their own OpenAI API key. The project itself does not charge any fee, does not require proprietary hardware, and uses `gpt-4o-mini` to keep per-investigation cost low. The public demo video shows the end-to-end workflow for reviewers who choose not to run the full local Splunk/OpenAI/Qdrant stack.
 
 > **Platform note:** Shell commands below use Windows syntax.
 > On macOS/Linux replace `.venv\Scripts\activate` with
@@ -324,6 +333,8 @@ graph LR
     D --> E --> I --> J
     J --> K[SynthesisAgent<br/>RAG-grounded report]
 ```
+
+> **Evidence integrity note:** Kill-chain reconstruction is driven by Splunk telemetry and guarded SPL execution. The `botsv3_investigation` RAG collection is retrieved only during final synthesis to support explanation, remediation, and report context after reconstruction is complete.
 
 ### LangGraph State Machine
 
@@ -729,7 +740,7 @@ timeline
 > investigation flow end to end.
 
 ### Option A — Watch the demo video
-Demo video: see Devpost submission page for the full investigation walkthrough.
+Demo video: https://youtu.be/vdQYQY1cXFA?si=Vgykh75108fiCi5D
 
 ### Option B — Run locally with full commands
 
@@ -903,6 +914,14 @@ Expected: `425 passed, 0 failed`
   syntax, and local certificate notes
 - [architecture_diagram.md](architecture_diagram.md) —
   System architecture overview
+
+## Hackathon Compliance Notes
+
+- Public open-source repository with a root `LICENSE` file.
+- Architecture diagram included in [`architecture_diagram.md`](./architecture_diagram.md).
+- Runtime Splunk integration through the Splunk Python SDK, guarded SPL execution, saved-search deployment, and write-back to `sentinel_findings` / `sentinel_actions`.
+- Splunk AI capability path documented through asynchronous MLTK `ai` enrichment when Splunk MLTK and the `openai_sentinel` connection are configured.
+- The submitted project was substantially developed and polished during the hackathon period, as reflected in commit history.
 
 ## License
 
